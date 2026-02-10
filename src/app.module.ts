@@ -9,6 +9,7 @@ import { BookingsModule } from './bookings/bookings.module';
 import { ShipmentsModule } from './shipments/shipments.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { UploadModule } from './upload/upload.module';
+import { CargoModule } from './cargo/cargo.module';
 import { SeedModule } from './database/seed.module';
 
 @Module({
@@ -33,6 +34,7 @@ import { SeedModule } from './database/seed.module';
     ShipmentsModule,
     ReviewsModule,
     UploadModule,
+    CargoModule,
     SeedModule,
   ],
 })

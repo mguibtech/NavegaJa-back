@@ -8,6 +8,7 @@ import { Route } from '../routes/route.entity';
 import { Booking } from '../bookings/booking.entity';
 import { Shipment } from '../shipments/shipment.entity';
 import { Review } from '../reviews/review.entity';
+import { CargoShipment } from '../cargo/cargo.entity';
 
 export enum TripStatus {
   SCHEDULED = 'scheduled',
@@ -87,4 +88,7 @@ export class Trip {
 
   @OneToMany(() => Review, (review) => review.trip)
   reviews: Review[];
+
+  @OneToMany(() => CargoShipment, (cargo) => cargo.trip)
+  cargoShipments: CargoShipment[];
 }

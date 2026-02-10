@@ -8,10 +8,11 @@ import { Trip } from '../trips/trip.entity';
 import { Booking } from '../bookings/booking.entity';
 import { Shipment } from '../shipments/shipment.entity';
 import { Review } from '../reviews/review.entity';
+import { CargoShipment } from '../cargo/cargo.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Boat, Route, Trip, Booking, Shipment, Review]),
+    TypeOrmModule.forFeature([User, Boat, Route, Trip, Booking, Shipment, Review, CargoShipment]),
   ],
   providers: [SeedService],
 })

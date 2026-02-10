@@ -9,6 +9,7 @@ import { Trip, TripStatus } from '../trips/trip.entity';
 import { Booking, BookingStatus, PaymentStatus } from '../bookings/booking.entity';
 import { Shipment, ShipmentStatus } from '../shipments/shipment.entity';
 import { Review } from '../reviews/review.entity';
+import { CargoShipment, CargoType, CargoStatus } from '../cargo/cargo.entity';
 
 @Injectable()
 export class SeedService implements OnModuleInit {
@@ -22,6 +23,7 @@ export class SeedService implements OnModuleInit {
     @InjectRepository(Booking) private bookingsRepo: Repository<Booking>,
     @InjectRepository(Shipment) private shipmentsRepo: Repository<Shipment>,
     @InjectRepository(Review) private reviewsRepo: Repository<Review>,
+    @InjectRepository(CargoShipment) private cargoRepo: Repository<CargoShipment>,
   ) {}
 
   async onModuleInit() {
@@ -294,6 +296,93 @@ export class SeedService implements OnModuleInit {
     ]);
 
     this.logger.log(`  → ${reviews.length} avaliações criadas`);
+
+    // ====== CARGO SHIPMENTS (cargas comerciais) ======
+    const cargoShipments = await this.cargoRepo.save([
+      {
+        senderId: passengers[0].id, tripId: trips[7].id,
+        cargoType: CargoType.MOTORCYCLE,
+        description: '1 moto Honda CG 160 Titan preta, placa PHD-2A34',
+        quantity: 1, estimatedWeightKg: 120,
+        dimensions: '2m x 0.8m x 1.1m',
+        receiverName: 'Francisco Mendes', receiverPhone: '92993002001',
+        totalPrice: 150, status: CargoStatus.CONFIRMED,
+        trackingCode: 'CRG0001AM',
+      },
+      {
+        senderId: passengers[1].id, tripId: trips[2].id,
+        cargoType: CargoType.RANCHO,
+        description: 'Rancho completo: 10 fardos de arroz, 5 de feijão, 3 caixas de óleo, 2 sacos de açúcar, farinha e charque',
+        quantity: 1, estimatedWeightKg: 850,
+        receiverName: 'Mercadinho do Seu Raimundo', receiverPhone: '92993002002',
+        totalPrice: 200, status: CargoStatus.LOADED,
+        trackingCode: 'CRG0002AM',
+        notes: 'Manter longe da água, produtos alimentícios',
+      },
+      {
+        senderId: passengers[2].id, tripId: trips[9].id,
+        cargoType: CargoType.CONSTRUCTION,
+        description: '50 sacos de cimento, 20 barras de ferro 3/8, 5 telhas brasilit',
+        quantity: 1, estimatedWeightKg: 2800,
+        receiverName: 'Construção Manacapuru Ltda', receiverPhone: '92993002003',
+        totalPrice: 540, status: CargoStatus.IN_TRANSIT,
+        trackingCode: 'CRG0003AM',
+        notes: 'Cimento não pode molhar',
+      },
+      {
+        senderId: passengers[3].id, tripId: trips[7].id,
+        cargoType: CargoType.FUEL,
+        description: '4 tambores de diesel para gerador da comunidade',
+        quantity: 4, estimatedWeightKg: 680,
+        receiverName: 'Comunidade São José', receiverPhone: '92993002004',
+        totalPrice: 320, status: CargoStatus.CONFIRMED,
+        trackingCode: 'CRG0004AM',
+        notes: 'Carga perigosa - inflamável',
+      },
+      {
+        senderId: passengers[0].id, tripId: trips[8].id,
+        cargoType: CargoType.ELECTRONICS,
+        description: '3 TVs 50pol, 2 geladeiras, 1 fogão industrial',
+        quantity: 6, estimatedWeightKg: 350,
+        dimensions: 'Diversas - palletizado',
+        receiverName: 'Eletro Itacoatiara', receiverPhone: '92993002005',
+        totalPrice: 600, status: CargoStatus.PENDING_QUOTE,
+        trackingCode: 'CRG0005AM',
+        notes: 'Frágil - não empilhar',
+      },
+      {
+        senderId: passengers[4].id, tripId: trips[2].id,
+        cargoType: CargoType.LIVESTOCK,
+        description: '8 cabeças de gado nelore para fazenda',
+        quantity: 8, estimatedWeightKg: 3200,
+        receiverName: 'Fazenda Boa Esperança', receiverPhone: '92993002006',
+        totalPrice: 480, status: CargoStatus.CONFIRMED,
+        trackingCode: 'CRG0006AM',
+        notes: 'Gado vacinado, levar no convés aberto',
+      },
+      {
+        senderId: passengers[1].id, tripId: trips[5].id,
+        cargoType: CargoType.CAR,
+        description: '1 Fiat Strada cabine dupla branca, placa QRA-5B67',
+        quantity: 1, estimatedWeightKg: 1280,
+        dimensions: '4.5m x 1.7m x 1.5m',
+        receiverName: 'Carlos Alberto Souza', receiverPhone: '92993002007',
+        totalPrice: 500, status: CargoStatus.QUOTED,
+        trackingCode: 'CRG0007AM',
+      },
+      {
+        senderId: passengers[2].id, tripId: trips[0].id,
+        cargoType: CargoType.GENERAL,
+        description: '15 caixas de material escolar para escola municipal',
+        quantity: 15, estimatedWeightKg: 180,
+        receiverName: 'Escola Municipal Rui Barbosa', receiverPhone: '92993002008',
+        totalPrice: 150, status: CargoStatus.DELIVERED,
+        trackingCode: 'CRG0008AM',
+        deliveredAt: new Date(),
+      },
+    ]);
+
+    this.logger.log(`  → ${cargoShipments.length} cargas comerciais criadas`);
 
     this.logger.log('');
     this.logger.log('📱 Contas de teste:');
