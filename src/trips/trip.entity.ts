@@ -12,9 +12,8 @@ import { CargoShipment } from '../cargo/cargo.entity';
 
 export enum TripStatus {
   SCHEDULED = 'scheduled',
-  BOARDING = 'boarding',
-  SAILING = 'sailing',
-  ARRIVED = 'arrived',
+  IN_PROGRESS = 'in_progress',
+  COMPLETED = 'completed',
   CANCELLED = 'cancelled',
 }
 
@@ -37,12 +36,18 @@ export class Trip {
   @JoinColumn({ name: 'boat_id' })
   boat: Boat;
 
-  @Column({ name: 'route_id' })
+  @Column({ name: 'route_id', nullable: true })
   routeId: string;
 
   @ManyToOne(() => Route, (route) => route.trips)
   @JoinColumn({ name: 'route_id' })
   route: Route;
+
+  @Column({ length: 255, nullable: true, default: '' })
+  origin: string;
+
+  @Column({ length: 255, nullable: true, default: '' })
+  destination: string;
 
   @Column({ name: 'departure_at', type: 'timestamp' })
   departureAt: Date;
@@ -52,6 +57,9 @@ export class Trip {
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   price: number;
+
+  @Column({ type: 'int', default: 0, comment: 'Desconto em porcentagem (0-100)' })
+  discount: number;
 
   @Column({ name: 'cargo_price_kg', type: 'decimal', precision: 10, scale: 2, default: 0 })
   cargoPriceKg: number;

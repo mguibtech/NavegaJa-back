@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, IsDateString, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsOptional, IsDateString, IsEnum, Min, Max } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { TripStatus } from '../trip.entity';
 
@@ -29,6 +29,13 @@ export class CreateTripDto {
   @ApiProperty({ example: 45.00 })
   @IsNumber()
   price: number;
+
+  @ApiProperty({ example: 0, description: 'Desconto em % (0-100)', required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  discount?: number;
 
   @ApiProperty({ example: 20 })
   @IsNumber()

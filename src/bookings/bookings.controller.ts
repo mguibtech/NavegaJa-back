@@ -1,9 +1,10 @@
-import { Controller, Post, Get, Patch, Param, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Param, Body, UseGuards, Request, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { BookingsService } from './bookings.service';
-import { CreateBookingDto } from './dto/create-booking.dto';
+import { CreateBookingDto, CancelBookingDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
+import { ValidateCouponDto, CalculatePriceDto } from '../coupons/dto/coupon.dto';
 
 @ApiTags('Bookings')
 @Controller('bookings')
@@ -12,22 +13,39 @@ import { RolesGuard, Roles } from '../common/roles.guard';
 export class BookingsController {
   constructor(private bookingsService: BookingsService) {}
 
-  @Post()
-  @ApiOperation({ summary: 'Criar reserva' })
-  create(@Request() req: any, @Body() dto: CreateBookingDto) {
-    return this.bookingsService.create(req.user.sub, dto);
-  }
-
   @Get('my-bookings')
-  @ApiOperation({ summary: 'Minhas reservas' })
+  @ApiOperation({ summary: 'Minhas reservas (passageiro logado)' })
   myBookings(@Request() req: any) {
     return this.bookingsService.findByPassenger(req.user.sub);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Detalhes da reserva' })
-  findById(@Param('id') id: string) {
+  @ApiOperation({ summary: 'Detalhes de uma reserva (com QR code)' })
+  findById(@Param('id') id: string, @Request() req: any) {
     return this.bookingsService.findById(id);
+  }
+
+  @Post('calculate-price')
+  @ApiOperation({ summary: 'Calcular preço com descontos (preview antes de confirmar)' })
+  calculatePrice(@Request() req: any, @Body() dto: CalculatePriceDto) {
+    return this.bookingsService.calculatePrice(
+      req.user.sub,
+      dto.tripId,
+      dto.quantity,
+      dto.couponCode,
+    );
+  }
+
+  @Post()
+  @ApiOperation({ summary: 'Criar reserva (gera QR code automaticamente)' })
+  create(@Request() req: any, @Body() dto: CreateBookingDto) {
+    return this.bookingsService.create(req.user.sub, dto);
+  }
+
+  @Get(':id/tracking')
+  @ApiOperation({ summary: 'Rastreamento da viagem em tempo real' })
+  getTracking(@Param('id') id: string, @Request() req: any) {
+    return this.bookingsService.getTracking(id, req.user.sub);
   }
 
   @Get('trip/:tripId')
@@ -38,17 +56,25 @@ export class BookingsController {
     return this.bookingsService.findByTrip(tripId);
   }
 
-  @Patch(':id/checkin')
+  @Post(':id/cancel')
+  @ApiOperation({ summary: 'Cancelar reserva' })
+  cancel(@Param('id') id: string, @Request() req: any, @Body() dto: CancelBookingDto) {
+    return this.bookingsService.cancel(id, req.user.sub);
+  }
+
+  @Post(':id/checkin')
   @UseGuards(RolesGuard)
   @Roles('captain')
-  @ApiOperation({ summary: 'Check-in via QR (captain)' })
+  @ApiOperation({ summary: 'Fazer check-in (captain only)' })
   checkin(@Param('id') id: string) {
     return this.bookingsService.checkin(id);
   }
 
-  @Patch(':id/cancel')
-  @ApiOperation({ summary: 'Cancelar reserva' })
-  cancel(@Param('id') id: string, @Request() req: any) {
-    return this.bookingsService.cancel(id, req.user.sub);
+  @Patch(':id/complete')
+  @UseGuards(RolesGuard)
+  @Roles('captain')
+  @ApiOperation({ summary: 'Concluir viagem do passageiro (captain)' })
+  complete(@Param('id') id: string) {
+    return this.bookingsService.complete(id);
   }
 }

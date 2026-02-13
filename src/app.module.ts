@@ -14,6 +14,7 @@ import { CargoModule } from './cargo/cargo.module';
 import { SeedModule } from './database/seed.module';
 import { GamificationModule } from './gamification/gamification.module';
 import { FavoritesModule } from './favorites/favorites.module';
+import { CouponsModule } from './coupons/coupons.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { FavoritesModule } from './favorites/favorites.module';
     CargoModule,
     GamificationModule,
     FavoritesModule,
+    CouponsModule,
     SeedModule,
   ],
 })

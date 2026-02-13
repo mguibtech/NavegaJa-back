@@ -6,6 +6,8 @@ import { Trip, TripStatus } from '../trips/trip.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { GamificationService } from '../gamification/gamification.service';
 import { PointAction } from '../gamification/point-transaction.entity';
+import { CouponsService } from '../coupons/coupons.service';
+import { User } from '../users/user.entity';
 
 @Injectable()
 export class BookingsService {
@@ -14,8 +16,70 @@ export class BookingsService {
     private bookingsRepo: Repository<Booking>,
     @InjectRepository(Trip)
     private tripsRepo: Repository<Trip>,
+    @InjectRepository(User)
+    private usersRepo: Repository<User>,
     private gamificationService: GamificationService,
+    private couponsService: CouponsService,
   ) {}
+
+  async calculatePrice(passengerId: string, tripId: string, quantity: number, couponCode?: string) {
+    const trip = await this.tripsRepo.findOne({ where: { id: tripId } });
+    if (!trip) throw new NotFoundException('Viagem não encontrada');
+
+    const user = await this.usersRepo.findOne({ where: { id: passengerId } });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    const basePrice = Number(trip.price) * quantity;
+    let priceAfterTripDiscount = basePrice;
+    let tripDiscount = 0;
+    let couponDiscount = 0;
+    let loyaltyDiscount = 0;
+
+    // 1. Desconto da viagem (capitão)
+    if (trip.discount > 0) {
+      tripDiscount = (basePrice * trip.discount) / 100;
+      priceAfterTripDiscount = basePrice - tripDiscount;
+    }
+
+    // 2. Cupom promocional
+    let couponData = null;
+    if (couponCode) {
+      const validation = await this.couponsService.validate(couponCode, passengerId, priceAfterTripDiscount);
+      if (validation.valid && validation.discount) {
+        couponDiscount = validation.discount;
+        couponData = validation.coupon;
+      }
+    }
+
+    const priceAfterCoupon = priceAfterTripDiscount - couponDiscount;
+
+    // 3. Desconto de gamificação
+    const userDiscount = await this.gamificationService.getUserDiscount(passengerId);
+    if (userDiscount > 0) {
+      loyaltyDiscount = (priceAfterCoupon * userDiscount) / 100;
+    }
+
+    const finalPrice = priceAfterCoupon - loyaltyDiscount;
+    const totalDiscount = tripDiscount + couponDiscount + loyaltyDiscount;
+
+    return {
+      basePrice,
+      tripDiscount,
+      tripDiscountPercent: trip.discount,
+      couponDiscount,
+      couponCode: couponData?.code,
+      loyaltyDiscount,
+      loyaltyDiscountPercent: userDiscount,
+      loyaltyLevel: user.level,
+      totalDiscount,
+      finalPrice: Math.max(0, finalPrice),
+      discountsApplied: [
+        trip.discount > 0 && { type: 'trip', label: 'Promoção Especial', percent: trip.discount, amount: tripDiscount },
+        couponData && { type: 'coupon', code: couponData.code, label: couponData.description || 'Cupom', amount: couponDiscount },
+        userDiscount > 0 && { type: 'loyalty', level: user.level, percent: userDiscount, amount: loyaltyDiscount },
+      ].filter(Boolean),
+    };
+  }
 
   async create(passengerId: string, dto: CreateBookingDto): Promise<Booking> {
     const trip = await this.tripsRepo.findOne({ where: { id: dto.tripId } });
@@ -26,7 +90,9 @@ export class BookingsService {
       throw new BadRequestException(`Apenas ${trip.availableSeats} assentos disponíveis`);
     }
 
-    const totalPrice = Number(trip.price) * quantity;
+    // Calcular preço com descontos
+    const priceBreakdown = await this.calculatePrice(passengerId, dto.tripId, quantity, dto.couponCode);
+    const totalPrice = priceBreakdown.finalPrice;
 
     const booking = this.bookingsRepo.create({
       passengerId,
@@ -52,6 +118,15 @@ export class BookingsService {
     // Atualiza assentos disponíveis
     trip.availableSeats -= quantity;
     await this.tripsRepo.save(trip);
+
+    // Incrementar uso do cupom se foi aplicado
+    if (dto.couponCode && priceBreakdown.couponDiscount > 0) {
+      const coupon = await this.couponsService.findByCode(dto.couponCode);
+      await this.couponsService.incrementUsage(coupon.id);
+    }
+
+    // Adicionar breakdown de preços na resposta
+    (saved as any).priceBreakdown = priceBreakdown;
 
     return saved;
   }
