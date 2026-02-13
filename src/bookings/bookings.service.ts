@@ -41,24 +41,17 @@ export class BookingsService {
     });
 
     // Salva o booking primeiro para gerar o ID
-    const saved = await this.bookingsRepo.save(booking);
+    let saved = await this.bookingsRepo.save(booking);
 
     // Gera QR code compacto (apenas o ID do booking para validação)
     // O app irá gerar a imagem QR a partir deste dado
     const qrCodeData = `NVGJ-${saved.id}`;
     saved.qrCode = qrCodeData;
-    await this.bookingsRepo.save(saved);
+    saved = await this.bookingsRepo.save(saved);
 
     // Atualiza assentos disponíveis
     trip.availableSeats -= quantity;
     await this.tripsRepo.save(trip);
-
-    // Registrar pontos de gamificação
-    await this.gamificationService.addPoints(
-      passengerId,
-      PointAction.BOOKING_CREATED,
-      'Nova reserva criada'
-    );
 
     return saved;
   }
@@ -109,7 +102,18 @@ export class BookingsService {
     }
 
     const trip = booking.trip;
-    const route = trip.route;
+
+    // Se não tem route, criar objeto com dados da trip
+    const route = trip.route || {
+      originName: trip.origin,
+      destinationName: trip.destination,
+      originLat: -3.1190,  // Default Manaus
+      originLng: -60.0217,
+      destinationLat: -2.6286,  // Default Parintins (caso comum)
+      destinationLng: -56.7356,
+      distanceKm: 369,
+      durationMin: 360,
+    };
 
     // Calcula progresso baseado no status da trip
     let progress = 0;

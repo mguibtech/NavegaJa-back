@@ -13,6 +13,13 @@ export enum BookingStatus {
   CANCELLED = 'cancelled',
 }
 
+export enum PaymentMethod {
+  PIX = 'pix',
+  CASH = 'cash',
+  CREDIT_CARD = 'credit_card',
+  DEBIT_CARD = 'debit_card',
+}
+
 export enum PaymentStatus {
   PENDING = 'pending',
   PAID = 'paid',
@@ -38,6 +45,9 @@ export class Booking {
   @JoinColumn({ name: 'trip_id' })
   trip: Trip;
 
+  @Column({ name: 'seat_number', type: 'int', nullable: true })
+  seatNumber: number;
+
   @Column({ default: 1 })
   seats: number;
 
@@ -47,11 +57,11 @@ export class Booking {
   @Column({ type: 'enum', enum: BookingStatus, default: BookingStatus.PENDING })
   status: BookingStatus;
 
-  @Column({ name: 'qr_code', length: 255, unique: true })
-  qrCode: string;
+  @Column({ name: 'qr_code', type: 'text', nullable: true })
+  qrCode: string | null;
 
-  @Column({ name: 'payment_method', length: 50, default: 'pix' })
-  paymentMethod: string;
+  @Column({ name: 'payment_method', type: 'enum', enum: PaymentMethod, default: PaymentMethod.PIX })
+  paymentMethod: PaymentMethod;
 
   @Column({ name: 'payment_status', type: 'enum', enum: PaymentStatus, default: PaymentStatus.PENDING })
   paymentStatus: PaymentStatus;
