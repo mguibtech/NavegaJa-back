@@ -4,7 +4,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CouponsService } from './coupons.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan } from 'typeorm';
-import { Trip } from '../trips/trip.entity';
+import { Trip, TripStatus } from '../trips/trip.entity';
 import { ActivePromotionsResponseDto } from './dto/promotions.dto';
 
 @ApiTags('Promotions')
@@ -29,7 +29,7 @@ export class PromotionsController {
     const trips = await this.tripsRepo.find({
       where: {
         discount: MoreThan(0),
-        status: 'scheduled',
+        status: TripStatus.SCHEDULED,
       },
       relations: ['captain', 'boat'],
       order: { departureAt: 'ASC' },
