@@ -1,0 +1,23 @@
+### Buscar Rotas Populares
+GET http://localhost:3000/trips/popular
+Authorization: Bearer {{token}}
+
+### Response esperado:
+# {
+#   "origins": [
+#     { "city": "Manaus", "tripsCount": 25 }
+#   ],
+#   "destinations": [
+#     { "city": "Parintins", "tripsCount": 18 },
+#     { "city": "Beruri", "tripsCount": 15 }
+#   ],
+#   "routes": [
+#     {
+#       "origin": "Manaus",
+#       "destination": "Parintins",
+#       "tripsCount": 12,
+#       "minPrice": 45.00,
+#       "avgPrice": 52.50
+#     }
+#   ]
+# }

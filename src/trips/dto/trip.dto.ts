@@ -3,10 +3,15 @@ import { ApiProperty } from '@nestjs/swagger';
 import { TripStatus } from '../trip.entity';
 
 export class CreateTripDto {
-  @ApiProperty({ description: 'ID da rota' })
+  @ApiProperty({ example: 'Manaus' })
   @IsString()
   @IsNotEmpty()
-  routeId: string;
+  origin: string;
+
+  @ApiProperty({ example: 'Parintins' })
+  @IsString()
+  @IsNotEmpty()
+  destination: string;
 
   @ApiProperty({ description: 'ID da embarcação' })
   @IsString()
@@ -15,25 +20,19 @@ export class CreateTripDto {
 
   @ApiProperty({ example: '2026-02-15T08:00:00Z' })
   @IsDateString()
-  departureAt: string;
+  departureTime: string;
+
+  @ApiProperty({ example: '2026-02-15T14:00:00Z' })
+  @IsDateString()
+  arrivalTime: string;
 
   @ApiProperty({ example: 45.00 })
   @IsNumber()
   price: number;
 
-  @ApiProperty({ example: 5.00, required: false })
-  @IsNumber()
-  @IsOptional()
-  cargoPriceKg?: number;
-
   @ApiProperty({ example: 20 })
   @IsNumber()
   totalSeats: number;
-
-  @ApiProperty({ required: false })
-  @IsString()
-  @IsOptional()
-  notes?: string;
 }
 
 export class UpdateTripStatusDto {
@@ -50,4 +49,41 @@ export class UpdateLocationDto {
   @ApiProperty({ example: -60.0217 })
   @IsNumber()
   lng: number;
+}
+
+// Popular Destinations Response DTOs
+export class PopularCityDto {
+  @ApiProperty({ example: 'Manaus' })
+  city: string;
+
+  @ApiProperty({ example: 15 })
+  tripsCount: number;
+}
+
+export class PopularRouteDto {
+  @ApiProperty({ example: 'Manaus' })
+  origin: string;
+
+  @ApiProperty({ example: 'Parintins' })
+  destination: string;
+
+  @ApiProperty({ example: 8 })
+  tripsCount: number;
+
+  @ApiProperty({ example: 45.00 })
+  minPrice: number;
+
+  @ApiProperty({ example: 52.50 })
+  avgPrice: number;
+}
+
+export class PopularDestinationsResponseDto {
+  @ApiProperty({ type: [PopularCityDto] })
+  origins: PopularCityDto[];
+
+  @ApiProperty({ type: [PopularCityDto] })
+  destinations: PopularCityDto[];
+
+  @ApiProperty({ type: [PopularRouteDto] })
+  routes: PopularRouteDto[];
 }

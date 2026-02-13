@@ -1,0 +1,100 @@
+### Login
+POST http://localhost:3000/auth/login
+Content-Type: application/json
+
+{
+  "phone": "92991001001",
+  "password": "123456"
+}
+
+### Variável do token (copie o accessToken do login acima)
+@token = eyJhbGc...
+
+###############################################
+# FAVORITOS
+###############################################
+
+### Adicionar destino aos favoritos (apenas destino)
+POST http://localhost:3000/favorites
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "destination": "Parintins"
+}
+
+### Adicionar rota aos favoritos (origem + destino)
+POST http://localhost:3000/favorites
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "destination": "Novo Airão",
+  "origin": "Manaus (Porto da Ceasa)"
+}
+
+### Adicionar outro favorito
+POST http://localhost:3000/favorites
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "destination": "Manacapuru",
+  "origin": "Manaus (Porto da Ceasa)"
+}
+
+### Listar todos os favoritos do usuário
+GET http://localhost:3000/favorites
+Authorization: Bearer {{token}}
+
+### Verificar se destino está favoritado (apenas destino)
+GET http://localhost:3000/favorites/check?destination=Parintins
+Authorization: Bearer {{token}}
+
+### Verificar se rota está favoritada (origem + destino)
+GET http://localhost:3000/favorites/check?destination=Novo Airão&origin=Manaus (Porto da Ceasa)
+Authorization: Bearer {{token}}
+
+### Toggle favorito (adicionar se não existe, remover se existe)
+POST http://localhost:3000/favorites/toggle
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "destination": "Parintins",
+  "origin": "Manaus (Porto da Ceasa)"
+}
+
+### Remover favorito (substitua {id} pelo UUID do favorito)
+DELETE http://localhost:3000/favorites/{id}
+Authorization: Bearer {{token}}
+
+###############################################
+# CASOS DE USO
+###############################################
+
+### Caso 1: Usuário favorita destino genérico
+# Útil quando o usuário quer ver TODAS as viagens para Parintins
+POST http://localhost:3000/favorites
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "destination": "Parintins"
+}
+
+### Caso 2: Usuário favorita rota específica
+# Útil quando o usuário sempre faz Manaus → Parintins
+POST http://localhost:3000/favorites
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "destination": "Parintins",
+  "origin": "Manaus (Porto da Ceasa)"
+}
+
+### Caso 3: Buscar viagens a partir de um favorito
+# Após pegar os favoritos, usa para buscar viagens
+GET http://localhost:3000/trips?origin=Manaus (Porto da Ceasa)&destination=Parintins
+Authorization: Bearer {{token}}
