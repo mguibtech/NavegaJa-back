@@ -37,6 +37,30 @@ export class CouponsService {
     return this.couponsRepo.find({ order: { createdAt: 'DESC' } });
   }
 
+  async findActive(): Promise<Coupon[]> {
+    const now = new Date();
+    const qb = this.couponsRepo.createQueryBuilder('coupon');
+
+    qb.where('coupon.isActive = :active', { active: true });
+
+    // Verificar se está dentro do período de validade
+    qb.andWhere(
+      '(coupon.validFrom IS NULL OR coupon.validFrom <= :now)',
+      { now }
+    );
+    qb.andWhere(
+      '(coupon.validUntil IS NULL OR coupon.validUntil >= :now)',
+      { now }
+    );
+
+    // Verificar se não atingiu limite de uso
+    qb.andWhere(
+      '(coupon.usageLimit IS NULL OR coupon.usageCount < coupon.usageLimit)'
+    );
+
+    return qb.orderBy('coupon.createdAt', 'DESC').getMany();
+  }
+
   async findByCode(code: string): Promise<Coupon> {
     const coupon = await this.couponsRepo.findOne({ where: { code: code.toUpperCase() } });
     if (!coupon) {
