@@ -1,0 +1,351 @@
+### ========================================
+### 🚢 ENCOMENDAS COM CUPONS - NavegaJá
+### Exemplos de cálculo de preço e criação
+### ========================================
+
+@baseUrl = http://localhost:3000
+@accessToken = seu_token_aqui
+
+### ========================================
+### 1️⃣ CUPOM SEM RESTRIÇÕES
+### ========================================
+
+### 1.1 - Calcular preço COM cupom genérico (10% off em qualquer encomenda)
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "tripId": "uuid-da-viagem",
+  "weightKg": 5.5,
+  "length": 30,
+  "width": 20,
+  "height": 15,
+  "couponCode": "FRETE10"
+}
+
+### Resposta esperada:
+### {
+###   "basePrice": 66.00,
+###   "volumetricWeight": 1.5,
+###   "chargedWeight": 5.5,
+###   "couponDiscount": 6.60,    ✅ 10% aplicado
+###   "couponCode": "FRETE10",
+###   "finalPrice": 59.40
+### }
+
+
+### ========================================
+### 2️⃣ CUPOM POR FAIXA DE PESO
+### ========================================
+
+### 2.1 - Cupom para encomendas LEVES (0.1-5kg) ✅ VÁLIDO
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "tripId": "uuid-da-viagem",
+  "weightKg": 3.0,
+  "couponCode": "PEQUENO5KG"
+}
+
+### Resposta esperada:
+### {
+###   "basePrice": 36.00,
+###   "chargedWeight": 3.0,
+###   "couponDiscount": 7.20,    ✅ 20% aplicado (peso dentro da faixa)
+###   "couponCode": "PEQUENO5KG",
+###   "finalPrice": 28.80
+### }
+
+
+### 2.2 - Cupom para encomendas LEVES (0.1-5kg) ❌ INVÁLIDO
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "tripId": "uuid-da-viagem",
+  "weightKg": 10.0,
+  "couponCode": "PEQUENO5KG"
+}
+
+### Resposta esperada:
+### {
+###   "basePrice": 120.00,
+###   "chargedWeight": 10.0,
+###   "couponDiscount": 0,        ❌ Cupom NÃO aplicado (peso fora da faixa)
+###   "finalPrice": 120.00
+### }
+
+
+### 2.3 - Cupom para encomendas PESADAS (20-50kg) ✅ VÁLIDO
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "tripId": "uuid-da-viagem",
+  "weightKg": 25.0,
+  "couponCode": "GRANDE20"
+}
+
+### Resposta esperada:
+### {
+###   "basePrice": 300.00,
+###   "chargedWeight": 25.0,
+###   "couponDiscount": 50.00,    ✅ R$ 50 de desconto fixo
+###   "couponCode": "GRANDE20",
+###   "finalPrice": 250.00
+### }
+
+
+### ========================================
+### 3️⃣ CUPOM POR ROTA ESPECÍFICA
+### ========================================
+
+### 3.1 - Cupom exclusivo Manaus → Parintins ✅ VÁLIDO
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "tripId": "uuid-viagem-manaus-parintins",
+  "weightKg": 8.0,
+  "couponCode": "FRETE-MANAUS-PARINTINS"
+}
+
+### Resposta esperada (se trip.origin = "Manaus" e trip.destination = "Parintins"):
+### {
+###   "basePrice": 96.00,
+###   "chargedWeight": 8.0,
+###   "couponDiscount": 14.40,    ✅ 15% aplicado (rota correta)
+###   "couponCode": "FRETE-MANAUS-PARINTINS",
+###   "finalPrice": 81.60
+### }
+
+
+### 3.2 - Cupom exclusivo Manaus → Parintins ❌ INVÁLIDO
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "tripId": "uuid-viagem-manaus-beruri",
+  "weightKg": 8.0,
+  "couponCode": "FRETE-MANAUS-PARINTINS"
+}
+
+### Resposta esperada (se trip.destination ≠ "Parintins"):
+### {
+###   "basePrice": 96.00,
+###   "chargedWeight": 8.0,
+###   "couponDiscount": 0,        ❌ Cupom NÃO aplicado (rota incorreta)
+###   "finalPrice": 96.00
+### }
+
+
+### ========================================
+### 4️⃣ CUPOM COMBINADO (ROTA + PESO)
+### ========================================
+
+### 4.1 - Cupom para Beruri até 3kg ✅ VÁLIDO
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "tripId": "uuid-viagem-para-beruri",
+  "weightKg": 2.5,
+  "couponCode": "PRIMEIRA-BERURI"
+}
+
+### Resposta esperada (se trip.destination = "Beruri" E peso <= 3kg):
+### {
+###   "basePrice": 30.00,
+###   "chargedWeight": 2.5,
+###   "couponDiscount": 15.00,    ✅ 50% aplicado (rota E peso corretos)
+###   "couponCode": "PRIMEIRA-BERURI",
+###   "finalPrice": 15.00
+### }
+
+
+### 4.2 - Cupom para Beruri até 3kg ❌ INVÁLIDO (peso)
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "tripId": "uuid-viagem-para-beruri",
+  "weightKg": 5.0,
+  "couponCode": "PRIMEIRA-BERURI"
+}
+
+### Resposta esperada (peso > 3kg):
+### {
+###   "basePrice": 60.00,
+###   "couponDiscount": 0,        ❌ Cupom NÃO aplicado (peso acima do limite)
+###   "finalPrice": 60.00
+### }
+
+
+### 4.3 - Cupom para Beruri até 3kg ❌ INVÁLIDO (rota)
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "tripId": "uuid-viagem-para-parintins",
+  "weightKg": 2.5,
+  "couponCode": "PRIMEIRA-BERURI"
+}
+
+### Resposta esperada (destination ≠ "Beruri"):
+### {
+###   "basePrice": 30.00,
+###   "couponDiscount": 0,        ❌ Cupom NÃO aplicado (rota incorreta)
+###   "finalPrice": 30.00
+### }
+
+
+### ========================================
+### 5️⃣ CUPOM COM PESO VOLUMÉTRICO
+### ========================================
+
+### 5.1 - Encomenda leve mas volumosa (peso volumétrico > peso real)
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "tripId": "uuid-da-viagem",
+  "weightKg": 2.0,
+  "length": 60,
+  "width": 50,
+  "height": 40,
+  "couponCode": "FRETE10"
+}
+
+### Resposta esperada:
+### Peso volumétrico = (60 × 50 × 40) / 6000 = 20kg
+### Peso cobrado = max(2.0, 20.0) = 20kg
+### {
+###   "basePrice": 240.00,
+###   "volumetricWeight": 20.0,   ⚠️ Peso volumétrico maior que real
+###   "actualWeight": 2.0,
+###   "chargedWeight": 20.0,      💡 Cobrado pelo volumétrico
+###   "couponDiscount": 24.00,    ✅ 10% sobre R$ 240
+###   "finalPrice": 216.00
+### }
+
+
+### ========================================
+### 6️⃣ CRIAR ENCOMENDA COM CUPOM
+### ========================================
+
+### 6.1 - Criar encomenda aplicando cupom
+POST {{baseUrl}}/shipments
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "tripId": "uuid-da-viagem",
+  "description": "Caixa com medicamentos e alimentos",
+  "weightKg": 5.5,
+  "length": 40,
+  "width": 30,
+  "height": 20,
+  "photos": [
+    "https://cdn.example.com/photo1.jpg",
+    "https://cdn.example.com/photo2.jpg"
+  ],
+  "recipientName": "Maria Santos",
+  "recipientPhone": "92998765432",
+  "recipientAddress": "Rua das Flores, 123 - Centro, Parintins-AM",
+  "paymentMethod": "pix",
+  "couponCode": "FRETE10"
+}
+
+### Resposta esperada:
+### {
+###   "id": "uuid-encomenda",
+###   "trackingCode": "NJ2026000123",
+###   "totalPrice": 59.40,        💰 Preço final JÁ com desconto aplicado
+###   "qrCode": "data:image/png;base64...",
+###   "status": "pending",
+###   ...
+### }
+
+
+### ========================================
+### 7️⃣ VERIFICAR CUPOM APLICADO
+### ========================================
+
+### 7.1 - Ver detalhes da encomenda (verificar preço final)
+GET {{baseUrl}}/shipments/NJ2026000123
+Authorization: Bearer {{accessToken}}
+
+### 7.2 - Buscar encomenda por ID
+GET {{baseUrl}}/shipments/uuid-encomenda
+Authorization: Bearer {{accessToken}}
+
+
+### ========================================
+### 8️⃣ CENÁRIOS DE ERRO
+### ========================================
+
+### 8.1 - Cupom inválido / expirado
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "tripId": "uuid-da-viagem",
+  "weightKg": 5.0,
+  "couponCode": "CUPOM-INEXISTENTE"
+}
+
+### Resposta esperada:
+### {
+###   "basePrice": 60.00,
+###   "couponDiscount": 0,        ⚠️ Cupom não encontrado ou inativo
+###   "finalPrice": 60.00
+### }
+
+
+### 8.2 - Cupom desativado (isActive = false)
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "tripId": "uuid-da-viagem",
+  "weightKg": 5.0,
+  "couponCode": "CUPOM-DESATIVADO"
+}
+
+### Resposta esperada:
+### {
+###   "basePrice": 60.00,
+###   "couponDiscount": 0,        ⚠️ Cupom encontrado mas isActive = false
+###   "finalPrice": 60.00
+### }
+
+
+### ========================================
+### 📊 RESUMO DAS VALIDAÇÕES
+### ========================================
+###
+### Um cupom é aplicado SOMENTE se TODAS as condições forem atendidas:
+###
+### ✅ Cupom existe e isActive = true
+### ✅ Data atual entre validFrom e validUntil (se definidas)
+### ✅ Rota da viagem bate com fromCity/toCity (se definidos)
+### ✅ Peso da encomenda entre minWeight e maxWeight (se definidos)
+### ✅ Valor mínimo de compra atingido (minPurchase, se definido)
+###
+### Se QUALQUER validação falhar, o cupom NÃO é aplicado
+### (couponDiscount = 0, couponCode = undefined)
+###
+### ========================================
