@@ -28,8 +28,18 @@ export class ShipmentsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Calcular preço da encomenda (com peso volumétrico e cupom)' })
   @ApiResponse({ status: 200, description: 'Cálculo realizado com sucesso', type: CalculatePriceResponseDto })
-  calculatePrice(@Body() dto: CalculatePriceDto) {
-    return this.shipmentsService.calculatePrice(dto);
+  async calculatePrice(@Body() dto: any) {
+    // Normalizar (aceitar 'weight' ou 'weightKg', 'dimensions' ou campos separados)
+    const normalizedDto: CalculatePriceDto = {
+      tripId: dto.tripId,
+      weightKg: dto.weight || dto.weightKg,
+      length: dto.dimensions?.length || dto.length,
+      width: dto.dimensions?.width || dto.width,
+      height: dto.dimensions?.height || dto.height,
+      couponCode: dto.couponCode,
+    };
+
+    return this.shipmentsService.calculatePrice(normalizedDto);
   }
 
   @Post('upload/presigned-urls')
@@ -49,16 +59,22 @@ export class ShipmentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Criar encomenda' })
-  create(@Request() req: any, @Body() dto: CreateShipmentDto) {
-    return this.shipmentsService.create(req.user.sub, dto);
+  async create(@Request() req: any, @Body() dto: any) {
+    // Normalizar dados (aceitar tanto JSON quanto FormData)
+    const normalizedDto = this.normalizeCreateShipmentDto(dto);
+    const shipment = await this.shipmentsService.create(req.user.sub, normalizedDto);
+
+    // Serializar response com aliases para frontend
+    return this.serializeShipment(shipment);
   }
 
   @Get('my-shipments')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Minhas encomendas' })
-  myShipments(@Request() req: any) {
-    return this.shipmentsService.findBySender(req.user.sub);
+  async myShipments(@Request() req: any) {
+    const shipments = await this.shipmentsService.findBySender(req.user.sub);
+    return shipments.map(s => this.serializeShipment(s));
   }
 
   @Get('track/:code')
@@ -66,23 +82,38 @@ export class ShipmentsController {
   async track(@Param('code') code: string) {
     const shipment = await this.shipmentsService.findByTrackingCode(code);
     const timeline = await this.shipmentsService.getTimeline(shipment.id);
-    return { shipment, timeline };
+
+    // Serializar com aliases
+    return {
+      shipment: this.serializeShipment(shipment),
+      timeline: timeline.map(event => ({
+        ...event,
+        timestamp: event.createdAt,
+      })),
+    };
   }
 
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Buscar encomenda por ID' })
-  findById(@Param('id') id: string, @Request() req: any) {
-    return this.shipmentsService.findById(id, req.user.sub);
+  async findById(@Param('id') id: string, @Request() req: any) {
+    const shipment = await this.shipmentsService.findById(id, req.user.sub);
+    return this.serializeShipment(shipment);
   }
 
   @Get(':id/timeline')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Timeline de eventos da encomenda' })
-  getTimeline(@Param('id') id: string) {
-    return this.shipmentsService.getTimeline(id);
+  async getTimeline(@Param('id') id: string) {
+    const timeline = await this.shipmentsService.getTimeline(id);
+
+    // Adicionar campo 'timestamp' como alias para 'createdAt' (compatibilidade frontend)
+    return timeline.map(event => ({
+      ...event,
+      timestamp: event.createdAt,
+    }));
   }
 
   @Post(':id/cancel')
@@ -158,5 +189,62 @@ export class ShipmentsController {
       where: { shipmentId: id },
       relations: ['sender'],
     });
+  }
+
+  // ========== HELPER METHODS ==========
+
+  /**
+   * Normaliza dados de entrada (aceita JSON ou FormData)
+   */
+  private normalizeCreateShipmentDto(dto: any): CreateShipmentDto {
+    // Converter string para number (FormData envia tudo como string)
+    const parseNumber = (value: any): number | undefined => {
+      if (value === undefined || value === null || value === '') return undefined;
+      const parsed = typeof value === 'string' ? parseFloat(value) : value;
+      return isNaN(parsed) ? undefined : parsed;
+    };
+
+    // Aceitar tanto 'weight' quanto 'weightKg'
+    const weightKg = parseNumber(dto.weight || dto.weightKg);
+
+    // Aceitar tanto 'dimensions' (objeto) quanto campos separados
+    const dimensions = dto.dimensions
+      ? (typeof dto.dimensions === 'string' ? JSON.parse(dto.dimensions) : dto.dimensions)
+      : {};
+
+    const length = parseNumber(dimensions.length || dto.length);
+    const width = parseNumber(dimensions.width || dto.width);
+    const height = parseNumber(dimensions.height || dto.height);
+
+    // Normalizar array de fotos (FormData envia como múltiplos campos)
+    const photos = Array.isArray(dto.photos)
+      ? dto.photos
+      : (dto.photos ? [dto.photos] : []).filter(Boolean);
+
+    return {
+      ...dto,
+      weightKg,
+      length,
+      width,
+      height,
+      photos,
+    };
+  }
+
+  /**
+   * Serializa encomenda para frontend (adiciona aliases)
+   */
+  private serializeShipment(shipment: any) {
+    return {
+      ...shipment,
+      // Aliases para compatibilidade com frontend
+      weight: shipment.weightKg,
+      price: shipment.totalPrice,
+      dimensions: shipment.length || shipment.width || shipment.height ? {
+        length: shipment.length,
+        width: shipment.width,
+        height: shipment.height,
+      } : null,
+    };
   }
 }
