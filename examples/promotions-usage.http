@@ -1,0 +1,260 @@
+### ====================================
+### EXEMPLOS DE USO - PROMOÇÕES NO APP
+### ====================================
+
+### 1. APP: Buscar promoções ativas (sem autenticação)
+### Use este endpoint na home do app para mostrar banners com descontos
+GET http://localhost:3000/promotions/active
+Content-Type: application/json
+
+### RESPONSE EXEMPLO:
+# {
+#   "promotions": [
+#     {
+#       "id": "promo-123",
+#       "title": "Verão 2026 - 20% OFF",
+#       "description": "Desconto em todas as viagens! Use o cupom VERAO2026",
+#       "imageUrl": "https://cdn.example.com/banner-verao.jpg",
+#       "ctaText": "Ver Viagens",
+#       "ctaAction": "search",
+#       "ctaValue": null,
+#       "backgroundColor": "#FF6B35",
+#       "textColor": "#FFFFFF",
+#       "priority": 10,
+#       "startDate": "2026-02-01T00:00:00Z",
+#       "endDate": "2026-03-31T23:59:59Z",
+#       "coupon": {
+#         "code": "VERAO2026",
+#         "type": "percentage",
+#         "value": 20,
+#         "minPurchase": 50,
+#         "maxDiscount": 100
+#       },
+#       "fromCity": null,              // ← null = vale para TODAS as rotas
+#       "toCity": null,
+#       "sampleTrips": [
+#         {
+#           "id": "trip-456",
+#           "from": "Manaus",
+#           "to": "Beruri",
+#           "departureDate": "2026-03-15T08:00:00Z",
+#           "originalPrice": 100.00,     // ← Preço normal
+#           "discountedPrice": 80.00,    // ← Preço com 20% de desconto
+#           "savedAmount": 20.00         // ← Economia de R$ 20
+#         },
+#         {
+#           "id": "trip-789",
+#           "from": "Manaus",
+#           "to": "Manacapuru",
+#           "departureDate": "2026-03-16T10:00:00Z",
+#           "originalPrice": 150.00,
+#           "discountedPrice": 120.00,
+#           "savedAmount": 30.00
+#         }
+#       ]
+#     },
+#     {
+#       "id": "promo-456",
+#       "title": "Rota Manaus-Beruri com Desconto!",
+#       "description": "R$ 15 de desconto apenas nesta rota",
+#       "imageUrl": "https://cdn.example.com/banner-beruri.jpg",
+#       "ctaText": "Buscar Viagens",
+#       "ctaAction": "search",
+#       "ctaValue": "from=Manaus&to=Beruri",
+#       "backgroundColor": "#2196F3",
+#       "textColor": "#FFFFFF",
+#       "priority": 5,
+#       "coupon": {
+#         "code": "BERURI15",
+#         "type": "fixed",
+#         "value": 15,
+#         "minPurchase": null,
+#         "maxDiscount": null
+#       },
+#       "fromCity": "Manaus",          // ← Filtro: só rotas que saem de Manaus
+#       "toCity": "Beruri",            // ← Filtro: só rotas que vão para Beruri
+#       "sampleTrips": [
+#         {
+#           "id": "trip-111",
+#           "from": "Manaus",
+#           "to": "Beruri",
+#           "departureDate": "2026-03-20T07:00:00Z",
+#           "originalPrice": 100.00,
+#           "discountedPrice": 85.00,    // ← R$ 15 de desconto fixo
+#           "savedAmount": 15.00
+#         }
+#       ]
+#     }
+#   ]
+# }
+
+### ====================================
+### COMO O APP USA ISSO:
+### ====================================
+#
+# 1. Na HOME, fazer GET /promotions/active
+# 2. Mostrar cards/banners com:
+#    - Imagem (imageUrl)
+#    - Título e descrição
+#    - Viagens exemplo com preço riscado (originalPrice) e preço com desconto
+#    - Botão CTA com código do cupom destacado
+#
+# 3. Quando usuário clica no banner:
+#    - Se ctaAction = "search": abrir tela de busca (com filtros de ctaValue se houver)
+#    - Se ctaAction = "url": abrir URL externa
+#    - Se ctaAction = "deeplink": navegar para tela específica
+#
+# 4. Na tela de CHECKOUT:
+#    - Usuário digita código do cupom (ex: "VERAO2026")
+#    - Backend valida com POST /coupons/validate
+#    - Desconto é aplicado automaticamente
+
+###
+
+### ====================================
+### ADMIN: Criar cupom primeiro
+### ====================================
+POST http://localhost:3000/coupons
+Content-Type: application/json
+Authorization: Bearer {{admin_token}}
+
+{
+  "code": "VERAO2026",
+  "description": "Desconto de verão em todas as viagens",
+  "type": "percentage",
+  "value": 20,
+  "minPurchase": 50,
+  "maxDiscount": 100,
+  "validFrom": "2026-02-01T00:00:00Z",
+  "validUntil": "2026-03-31T23:59:59Z",
+  "isActive": true
+}
+
+### RESPONSE:
+# {
+#   "id": "coupon-abc-123",
+#   "code": "VERAO2026",
+#   "type": "percentage",
+#   "value": 20,
+#   ...
+# }
+
+###
+
+### ====================================
+### ADMIN: Criar promoção vinculada ao cupom
+### ====================================
+### CASO 1: Promoção geral (todas as rotas)
+POST http://localhost:3000/promotions
+Content-Type: application/json
+Authorization: Bearer {{admin_token}}
+
+{
+  "title": "Verão 2026 - 20% OFF",
+  "description": "Desconto em todas as viagens! Use o cupom VERAO2026 no checkout",
+  "imageUrl": "https://cdn.example.com/banner-verao.jpg",
+  "ctaText": "Ver Viagens",
+  "ctaAction": "search",
+  "backgroundColor": "#FF6B35",
+  "textColor": "#FFFFFF",
+  "priority": 10,
+  "startDate": "2026-02-01T00:00:00Z",
+  "endDate": "2026-03-31T23:59:59Z",
+  "couponId": "coupon-abc-123",
+  "fromCity": null,
+  "toCity": null
+}
+
+###
+
+### CASO 2: Promoção para rota específica
+POST http://localhost:3000/promotions
+Content-Type: application/json
+Authorization: Bearer {{admin_token}}
+
+{
+  "title": "Rota Manaus-Beruri com Desconto!",
+  "description": "R$ 15 OFF em todas as viagens Manaus → Beruri",
+  "imageUrl": "https://cdn.example.com/banner-beruri.jpg",
+  "ctaText": "Buscar Viagens",
+  "ctaAction": "search",
+  "ctaValue": "from=Manaus&to=Beruri",
+  "backgroundColor": "#2196F3",
+  "textColor": "#FFFFFF",
+  "priority": 5,
+  "startDate": "2026-02-15T00:00:00Z",
+  "endDate": "2026-03-15T23:59:59Z",
+  "couponId": "coupon-beruri-456",
+  "fromCity": "Manaus",
+  "toCity": "Beruri"
+}
+
+###
+
+### ====================================
+### ADMIN: Atualizar promoção
+### ====================================
+PUT http://localhost:3000/promotions/promo-123
+Content-Type: application/json
+Authorization: Bearer {{admin_token}}
+
+{
+  "title": "NOVA OFERTA: Verão 2026 - 30% OFF!",
+  "priority": 15
+}
+
+###
+
+### ====================================
+### ADMIN: Ativar/Desativar promoção
+### ====================================
+PUT http://localhost:3000/promotions/promo-123/toggle
+Authorization: Bearer {{admin_token}}
+
+###
+
+### ====================================
+### ADMIN: Listar todas as promoções
+### ====================================
+GET http://localhost:3000/promotions
+Authorization: Bearer {{admin_token}}
+
+###
+
+### ====================================
+### ADMIN: Deletar promoção
+### ====================================
+DELETE http://localhost:3000/promotions/promo-123
+Authorization: Bearer {{admin_token}}
+
+###
+
+### ====================================
+### FLUXO COMPLETO NO APP:
+### ====================================
+#
+# 1. USUÁRIO ABRE O APP
+#    └─> GET /promotions/active
+#    └─> Mostra banners com viagens e preços com desconto
+#
+# 2. USUÁRIO CLICA NO BANNER "Verão 2026 - 20% OFF"
+#    └─> Vê detalhes da promoção
+#    └─> Vê exemplos: "De R$ 100 por R$ 80"
+#    └─> Copia código: "VERAO2026"
+#    └─> Clica em "Ver Viagens"
+#
+# 3. USUÁRIO BUSCA VIAGEM
+#    └─> GET /trips/search?from=Manaus&to=Beruri&date=2026-03-15
+#    └─> Escolhe uma viagem
+#
+# 4. USUÁRIO VAI PARA CHECKOUT
+#    └─> Vê preço original: R$ 100
+#    └─> Cola código do cupom: "VERAO2026"
+#    └─> POST /coupons/validate { code: "VERAO2026", amount: 100 }
+#    └─> Backend retorna desconto calculado: R$ 20
+#    └─> App mostra: "De R$ 100 por R$ 80" ✅
+#
+# 5. USUÁRIO FINALIZA COMPRA
+#    └─> POST /bookings { tripId, seats, couponCode: "VERAO2026" }
+#    └─> Desconto aplicado automaticamente
+#

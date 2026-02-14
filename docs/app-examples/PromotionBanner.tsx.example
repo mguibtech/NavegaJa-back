@@ -1,0 +1,217 @@
+import React from 'react';
+import {
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+  Dimensions,
+  Linking,
+} from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+
+const { width } = Dimensions.get('window');
+
+interface Promotion {
+  id: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  ctaText?: string;
+  ctaAction?: 'search' | 'url' | 'deeplink';
+  ctaValue?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  priority: number;
+}
+
+interface PromotionBannerProps {
+  promotion: Promotion;
+  onPress?: (promotion: Promotion) => void;
+}
+
+export const PromotionBanner: React.FC<PromotionBannerProps> = ({
+  promotion,
+  onPress,
+}) => {
+  const navigation = useNavigation();
+
+  const handlePress = () => {
+    // Callback customizado (analytics, tracking, etc)
+    onPress?.(promotion);
+
+    // Ação do CTA
+    if (!promotion.ctaAction || !promotion.ctaValue) {
+      return; // Banner apenas informativo
+    }
+
+    switch (promotion.ctaAction) {
+      case 'search':
+        handleSearchAction(promotion.ctaValue);
+        break;
+
+      case 'url':
+        handleUrlAction(promotion.ctaValue);
+        break;
+
+      case 'deeplink':
+        handleDeeplinkAction(promotion.ctaValue);
+        break;
+    }
+  };
+
+  // 1. BUSCA DE VIAGENS
+  const handleSearchAction = (value: string) => {
+    // Formato esperado: "Manaus-Parintins" ou apenas "Manaus" ou ""
+    const parts = value.split('-');
+    const origin = parts[0]?.trim() || '';
+    const destination = parts[1]?.trim() || '';
+
+    navigation.navigate('SearchTrips', {
+      origin,
+      destination,
+      // Pode adicionar outros parâmetros:
+      // date: new Date().toISOString(),
+      // passengers: 1,
+    });
+  };
+
+  // 2. URL EXTERNA
+  const handleUrlAction = async (url: string) => {
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+      } else {
+        console.warn('Não foi possível abrir a URL:', url);
+      }
+    } catch (error) {
+      console.error('Erro ao abrir URL:', error);
+    }
+  };
+
+  // 3. DEEPLINK (navegação interna)
+  const handleDeeplinkAction = (deeplink: string) => {
+    // Exemplos de deeplinks:
+    // - "navegaja://trips/uuid" → TripDetails
+    // - "navegaja://profile" → Profile
+    // - "navegaja://bookings" → MyBookings
+
+    if (deeplink.startsWith('navegaja://trips/')) {
+      const tripId = deeplink.replace('navegaja://trips/', '');
+      navigation.navigate('TripDetails', { tripId });
+    } else if (deeplink === 'navegaja://profile') {
+      navigation.navigate('Profile');
+    } else if (deeplink === 'navegaja://bookings') {
+      navigation.navigate('MyBookings');
+    }
+    // Adicione mais deeplinks conforme necessário
+  };
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.container,
+        { backgroundColor: promotion.backgroundColor || '#FF6B35' },
+      ]}
+      onPress={handlePress}
+      activeOpacity={0.9}
+    >
+      {/* Imagem de fundo */}
+      <Image
+        source={{ uri: promotion.imageUrl }}
+        style={styles.backgroundImage}
+        resizeMode="cover"
+      />
+
+      {/* Overlay escuro para melhor legibilidade */}
+      <View style={styles.overlay} />
+
+      {/* Conteúdo */}
+      <View style={styles.content}>
+        <Text
+          style={[
+            styles.title,
+            { color: promotion.textColor || '#FFFFFF' },
+          ]}
+          numberOfLines={2}
+        >
+          {promotion.title}
+        </Text>
+
+        <Text
+          style={[
+            styles.description,
+            { color: promotion.textColor || '#FFFFFF' },
+          ]}
+          numberOfLines={2}
+        >
+          {promotion.description}
+        </Text>
+
+        {/* Botão CTA */}
+        {promotion.ctaText && (
+          <View style={styles.ctaButton}>
+            <Text style={styles.ctaText}>
+              {promotion.ctaText}
+            </Text>
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    width: width - 32,
+    height: 180,
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginVertical: 8,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  backgroundImage: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+  },
+  overlay: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  content: {
+    flex: 1,
+    padding: 20,
+    justifyContent: 'flex-end',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  description: {
+    fontSize: 14,
+    marginBottom: 12,
+    opacity: 0.9,
+  },
+  ctaButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  ctaText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+});

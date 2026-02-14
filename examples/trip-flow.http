@@ -1,0 +1,235 @@
+### 🚢 FLUXO COMPLETO DE VIAGEM - NavegaJá
+
+###############################################
+# 1. LOGIN PASSAGEIRO
+###############################################
+
+### Login como passageiro
+POST http://localhost:3000/auth/login
+Content-Type: application/json
+
+{
+  "phone": "92991002002",
+  "password": "123456"
+}
+
+### @passengerToken = (copie o accessToken acima)
+
+###############################################
+# 2. LOGIN CAPITÃO
+###############################################
+
+### Login como capitão
+POST http://localhost:3000/auth/login
+Content-Type: application/json
+
+{
+  "phone": "92991001001",
+  "password": "123456"
+}
+
+### @captainToken = (copie o accessToken acima)
+
+###############################################
+# 3. PASSO 1: PASSAGEIRO FAZ RESERVA
+###############################################
+
+### Buscar viagens disponíveis
+GET http://localhost:3000/trips?origin=Manaus&destination=Parintins
+Authorization: Bearer {{passengerToken}}
+
+### @tripId = (copie um ID de viagem acima)
+
+### Criar reserva (gera QR code automaticamente)
+POST http://localhost:3000/bookings
+Authorization: Bearer {{passengerToken}}
+Content-Type: application/json
+
+{
+  "tripId": "{{tripId}}",
+  "quantity": 1,
+  "seatNumber": "A1",
+  "paymentMethod": "pix"
+}
+
+### @bookingId = (copie o ID da reserva criada)
+### @qrCode = (copie o qrCode gerado - formato: NVGJ-{uuid})
+
+### Ver detalhes da reserva (com QR code)
+GET http://localhost:3000/bookings/{{bookingId}}
+Authorization: Bearer {{passengerToken}}
+
+### Minhas reservas
+GET http://localhost:3000/bookings/my-bookings
+Authorization: Bearer {{passengerToken}}
+
+###############################################
+# 4. PASSO 2: CAPITÃO FAZ CHECK-IN
+###############################################
+
+### Ver passageiros da viagem (captain only)
+GET http://localhost:3000/bookings/trip/{{tripId}}
+Authorization: Bearer {{captainToken}}
+
+### Escanear QR Code - Fazer check-in (captain only)
+# O capitão escaneia o QR code "NVGJ-{bookingId}"
+POST http://localhost:3000/bookings/{{bookingId}}/checkin
+Authorization: Bearer {{captainToken}}
+
+###############################################
+# 5. PASSO 2.1: CAPITÃO INICIA VIAGEM
+###############################################
+
+### Iniciar viagem (muda status para "in_progress")
+PATCH http://localhost:3000/trips/{{tripId}}/status
+Authorization: Bearer {{captainToken}}
+Content-Type: application/json
+
+{
+  "status": "in_progress"
+}
+
+###############################################
+# 6. PASSO 3: RASTREAMENTO EM TEMPO REAL
+###############################################
+
+### Passageiro acompanha viagem (TrackingScreen)
+# Atualizar a cada 30 segundos no app
+GET http://localhost:3000/bookings/{{bookingId}}/tracking
+Authorization: Bearer {{passengerToken}}
+
+# Retorna:
+# - Posição atual do barco
+# - Progresso da viagem (%)
+# - Timeline de status
+# - Informações do capitão e barco
+# - Rota completa
+
+###############################################
+# 7. PASSO 3.1: CAPITÃO ATUALIZA LOCALIZAÇÃO GPS
+###############################################
+
+### Atualizar posição GPS (a cada 5 minutos no app)
+PATCH http://localhost:3000/trips/{{tripId}}/location
+Authorization: Bearer {{captainToken}}
+Content-Type: application/json
+
+{
+  "lat": -3.1190,
+  "lng": -60.0217
+}
+
+### Atualizar novamente (simulando movimento)
+PATCH http://localhost:3000/trips/{{tripId}}/location
+Authorization: Bearer {{captainToken}}
+Content-Type: application/json
+
+{
+  "lat": -2.9500,
+  "lng": -59.5000
+}
+
+### Verificar rastreamento atualizado
+GET http://localhost:3000/bookings/{{bookingId}}/tracking
+Authorization: Bearer {{passengerToken}}
+
+###############################################
+# 8. PASSO 4: VIAGEM TERMINA
+###############################################
+
+### Opção 1: Capitão finaliza a VIAGEM inteira
+PATCH http://localhost:3000/trips/{{tripId}}/status
+Authorization: Bearer {{captainToken}}
+Content-Type: application/json
+
+{
+  "status": "completed"
+}
+
+### Opção 2: Capitão finaliza reserva INDIVIDUAL
+PATCH http://localhost:3000/bookings/{{bookingId}}/complete
+Authorization: Bearer {{captainToken}}
+
+# Benefícios automáticos:
+# - Credita NavegaCoins ao passageiro
+# - Verifica bônus primeira viagem do mês
+# - Muda status para "completed"
+
+### Verificar reserva finalizada
+GET http://localhost:3000/bookings/{{bookingId}}
+Authorization: Bearer {{passengerToken}}
+
+###############################################
+# 9. TESTES EXTRAS
+###############################################
+
+### Testar rastreamento com viagem cancelada
+PATCH http://localhost:3000/trips/{{tripId}}/status
+Authorization: Bearer {{captainToken}}
+Content-Type: application/json
+
+{
+  "status": "cancelled"
+}
+
+GET http://localhost:3000/bookings/{{bookingId}}/tracking
+Authorization: Bearer {{passengerToken}}
+
+### Filtrar minhas reservas por status
+GET http://localhost:3000/bookings/my-bookings?status=active
+Authorization: Bearer {{passengerToken}}
+
+GET http://localhost:3000/bookings/my-bookings?status=completed
+Authorization: Bearer {{passengerToken}}
+
+GET http://localhost:3000/bookings/my-bookings?status=cancelled
+Authorization: Bearer {{passengerToken}}
+
+###############################################
+# 10. CENÁRIOS DE ERRO
+###############################################
+
+### Tentar check-in com token de passageiro (deve dar 403)
+POST http://localhost:3000/bookings/{{bookingId}}/checkin
+Authorization: Bearer {{passengerToken}}
+
+### Tentar atualizar localização com token de passageiro (deve dar 403)
+PATCH http://localhost:3000/trips/{{tripId}}/location
+Authorization: Bearer {{passengerToken}}
+Content-Type: application/json
+
+{
+  "lat": -3.1190,
+  "lng": -60.0217
+}
+
+### Tentar fazer check-in de reserva já em check-in (deve dar 400)
+POST http://localhost:3000/bookings/{{bookingId}}/checkin
+Authorization: Bearer {{captainToken}}
+
+### QR Code inválido (deve dar 404)
+POST http://localhost:3000/bookings/00000000-0000-0000-0000-000000000000/checkin
+Authorization: Bearer {{captainToken}}
+
+###############################################
+# 📊 RESUMO DO FLUXO
+###############################################
+
+# PASSAGEIRO:
+# 1. POST /bookings → Cria reserva, recebe QR code (NVGJ-{uuid})
+# 2. GET /bookings/:id → Ver ticket com QR code
+# 3. GET /bookings/:id/tracking → Rastrear viagem (a cada 30s)
+# 4. Viagem termina automaticamente
+
+# CAPITÃO:
+# 1. GET /bookings/trip/:tripId → Ver passageiros
+# 2. POST /bookings/:id/checkin → Escanear QR code (check-in)
+# 3. PATCH /trips/:id/status → Iniciar viagem (in_progress)
+# 4. PATCH /trips/:id/location → Atualizar GPS (a cada 5min)
+# 5. PATCH /trips/:id/status → Finalizar viagem (completed)
+#    OU
+#    PATCH /bookings/:id/complete → Finalizar reserva individual
+
+###############################################
+# ✅ TUDO IMPLEMENTADO NO BACKEND!
+###############################################

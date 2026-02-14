@@ -1,0 +1,66 @@
+### Login
+POST http://localhost:3000/auth/login
+Content-Type: application/json
+
+{
+  "phone": "92991001001",
+  "password": "123456"
+}
+
+### @token = (copie o accessToken acima)
+
+###############################################
+# FILTROS AVANÇADOS
+###############################################
+
+### 1. Busca básica (origem + destino)
+GET http://localhost:3000/trips?origin=Manaus&destination=Parintins
+Authorization: Bearer {{token}}
+
+### 2. Filtro por preço mínimo
+GET http://localhost:3000/trips?origin=Manaus&minPrice=50
+Authorization: Bearer {{token}}
+
+### 3. Filtro por preço máximo
+GET http://localhost:3000/trips?origin=Manaus&maxPrice=100
+Authorization: Bearer {{token}}
+
+### 4. Filtro por faixa de preço
+GET http://localhost:3000/trips?origin=Manaus&minPrice=50&maxPrice=200
+Authorization: Bearer {{token}}
+
+### 5. Filtro por período - Manhã (6h - 12h)
+GET http://localhost:3000/trips?origin=Manaus&departureTime=morning
+Authorization: Bearer {{token}}
+
+### 6. Filtro por período - Tarde (12h - 18h)
+GET http://localhost:3000/trips?origin=Manaus&departureTime=afternoon
+Authorization: Bearer {{token}}
+
+### 7. Filtro por período - Noite (18h - 6h)
+GET http://localhost:3000/trips?origin=Manaus&departureTime=night
+Authorization: Bearer {{token}}
+
+### 8. Filtro por avaliação mínima do capitão
+GET http://localhost:3000/trips?origin=Manaus&minRating=4.5
+Authorization: Bearer {{token}}
+
+### 9. Filtro combinado - Preço + Período
+GET http://localhost:3000/trips?origin=Manaus&minPrice=50&maxPrice=200&departureTime=morning
+Authorization: Bearer {{token}}
+
+### 10. Filtro combinado - Todos os filtros
+GET http://localhost:3000/trips?origin=Manaus&destination=Parintins&date=2026-02-15&minPrice=50&maxPrice=200&departureTime=morning&minRating=4
+Authorization: Bearer {{token}}
+
+### 11. Viagens econômicas (até R$ 50)
+GET http://localhost:3000/trips?maxPrice=50
+Authorization: Bearer {{token}}
+
+### 12. Viagens premium (capitão 4.5+ e preço alto)
+GET http://localhost:3000/trips?minRating=4.5&minPrice=150
+Authorization: Bearer {{token}}
+
+### 13. Viagens matinais baratas
+GET http://localhost:3000/trips?departureTime=morning&maxPrice=50
+Authorization: Bearer {{token}}

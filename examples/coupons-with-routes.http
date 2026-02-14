@@ -1,0 +1,336 @@
+### ====================================
+### CUPONS COM FILTROS DE ROTA
+### Sistema "Cupom de Combustível"
+### ====================================
+
+### 1. CUPOM GERAL (Funciona em QUALQUER rota)
+### Como cupom de combustível que vale em QUALQUER posto
+POST http://localhost:3000/coupons
+Content-Type: application/json
+Authorization: Bearer {{admin_token}}
+
+{
+  "code": "VERAO2026",
+  "description": "20% de desconto em TODAS as viagens do verão",
+  "type": "percentage",
+  "value": 20,
+  "minPurchase": 50,
+  "maxDiscount": 100,
+  "validFrom": "2026-02-01T00:00:00Z",
+  "validUntil": "2026-03-31T23:59:59Z",
+  "isActive": true,
+  "fromCity": null,
+  "toCity": null
+}
+
+### RESPONSE:
+# {
+#   "id": "coupon-123",
+#   "code": "VERAO2026",
+#   "type": "percentage",
+#   "value": 20,
+#   "fromCity": null,   // ← null = vale para TODAS as rotas
+#   "toCity": null
+# }
+
+###
+
+### 2. CUPOM PARA ROTA ESPECÍFICA (Origem E Destino)
+### Como cupom de combustível que só vale em 1 posto específico
+POST http://localhost:3000/coupons
+Content-Type: application/json
+Authorization: Bearer {{admin_token}}
+
+{
+  "code": "BERURI15",
+  "description": "R$ 15 OFF apenas em viagens Manaus → Beruri",
+  "type": "fixed",
+  "value": 15,
+  "validFrom": "2026-02-01T00:00:00Z",
+  "validUntil": "2026-12-31T23:59:59Z",
+  "isActive": true,
+  "fromCity": "Manaus",
+  "toCity": "Beruri"
+}
+
+### RESPONSE:
+# {
+#   "id": "coupon-456",
+#   "code": "BERURI15",
+#   "type": "fixed",
+#   "value": 15,
+#   "fromCity": "Manaus",   // ← Só viagens que saem de Manaus
+#   "toCity": "Beruri"       // ← Só viagens que vão para Beruri
+# }
+
+###
+
+### 3. CUPOM PARA QUALQUER DESTINO DE UMA ORIGEM
+### Como cupom que vale em qualquer posto de uma rede específica
+POST http://localhost:3000/coupons
+Content-Type: application/json
+Authorization: Bearer {{admin_token}}
+
+{
+  "code": "MANAUS10",
+  "description": "10% OFF em viagens saindo de Manaus (qualquer destino)",
+  "type": "percentage",
+  "value": 10,
+  "validFrom": "2026-02-01T00:00:00Z",
+  "validUntil": "2026-12-31T23:59:59Z",
+  "isActive": true,
+  "fromCity": "Manaus",
+  "toCity": null
+}
+
+### RESPONSE:
+# {
+#   "id": "coupon-789",
+#   "code": "MANAUS10",
+#   "fromCity": "Manaus",   // ← Só viagens que saem de Manaus
+#   "toCity": null          // ← Pode ir para QUALQUER destino
+# }
+
+###
+
+### 4. CUPOM PARA QUALQUER ORIGEM ATÉ UM DESTINO
+POST http://localhost:3000/coupons
+Content-Type: application/json
+Authorization: Bearer {{admin_token}}
+
+{
+  "code": "CHEGABERU",
+  "description": "R$ 20 OFF chegando em Beruri (de qualquer origem)",
+  "type": "fixed",
+  "value": 20,
+  "validFrom": "2026-02-01T00:00:00Z",
+  "validUntil": "2026-12-31T23:59:59Z",
+  "isActive": true,
+  "fromCity": null,
+  "toCity": "Beruri"
+}
+
+### RESPONSE:
+# {
+#   "id": "coupon-999",
+#   "code": "CHEGABERU",
+#   "fromCity": null,      // ← Pode sair de QUALQUER cidade
+#   "toCity": "Beruri"     // ← Só viagens que vão para Beruri
+# }
+
+###
+
+### ====================================
+### APP: Listar cupons ativos
+### ====================================
+GET http://localhost:3000/coupons/active
+
+### RESPONSE:
+# {
+#   "coupons": [
+#     {
+#       "code": "VERAO2026",
+#       "description": "20% de desconto em TODAS as viagens do verão",
+#       "type": "percentage",
+#       "value": 20,
+#       "minPurchase": 50,
+#       "maxDiscount": 100,
+#       "validUntil": "2026-03-31T23:59:59Z"
+#     },
+#     {
+#       "code": "BERURI15",
+#       "description": "R$ 15 OFF apenas em viagens Manaus → Beruri",
+#       "type": "fixed",
+#       "value": 15,
+#       "validUntil": "2026-12-31T23:59:59Z"
+#     }
+#   ]
+# }
+
+###
+
+### ====================================
+### APP: Validar cupom NO CHECKOUT
+### ====================================
+
+### CASO 1: Cupom válido para a rota
+POST http://localhost:3000/coupons/validate
+Content-Type: application/json
+
+{
+  "code": "BERURI15",
+  "tripId": "trip-abc-123",
+  "quantity": 2
+}
+
+### RESPONSE (SUCESSO):
+# {
+#   "valid": true,
+#   "coupon": {
+#     "code": "BERURI15",
+#     "type": "fixed",
+#     "value": 15
+#   },
+#   "originalPrice": 200.00,    // 2 passagens × R$ 100
+#   "discount": 15.00,
+#   "finalPrice": 185.00,       // R$ 200 - R$ 15
+#   "savedAmount": 15.00
+# }
+
+###
+
+### CASO 2: Cupom INVÁLIDO para a rota (filtros não batem)
+POST http://localhost:3000/coupons/validate
+Content-Type: application/json
+
+{
+  "code": "BERURI15",
+  "tripId": "trip-manaus-manacapuru",
+  "quantity": 1
+}
+
+### RESPONSE (ERRO):
+# {
+#   "valid": false,
+#   "message": "Este cupom só vale para viagens indo para Beruri"
+# }
+
+###
+
+### CASO 3: Cupom expirado
+POST http://localhost:3000/coupons/validate
+Content-Type: application/json
+
+{
+  "code": "NATAL2025",
+  "tripId": "trip-abc-123",
+  "quantity": 1
+}
+
+### RESPONSE (ERRO):
+# {
+#   "valid": false,
+#   "message": "Cupom expirado"
+# }
+
+###
+
+### CASO 4: Valor mínimo não atingido
+POST http://localhost:3000/coupons/validate
+Content-Type: application/json
+
+{
+  "code": "VERAO2026",
+  "tripId": "trip-barato-30-reais",
+  "quantity": 1
+}
+
+### RESPONSE (ERRO):
+# {
+#   "valid": false,
+#   "message": "Valor mínimo de compra: R$ 50.00"
+# }
+
+###
+
+### CASO 5: Cupom esgotado (atingiu limite de uso)
+POST http://localhost:3000/coupons/validate
+Content-Type: application/json
+
+{
+  "code": "LIMITED100",
+  "tripId": "trip-abc-123",
+  "quantity": 1
+}
+
+### RESPONSE (ERRO):
+# {
+#   "valid": false,
+#   "message": "Cupom esgotado"
+# }
+
+###
+
+### ====================================
+### RESUMO: Como funciona a validação
+### ====================================
+#
+# A validação do cupom verifica (NESTA ORDEM):
+#
+# 1. ✅ Cupom existe?
+# 2. ✅ Cupom está ativo?
+# 3. ✅ Cupom está dentro do período de validade?
+# 4. ✅ Cupom não atingiu limite de uso?
+# 5. ✅ Valor mínimo de compra foi atingido?
+# 6. ✅ Cupom vale para essa rota? (fromCity/toCity)
+#    - Se fromCity != null: viagem deve sair dessa cidade
+#    - Se toCity != null: viagem deve ir para essa cidade
+#    - Se ambos null: vale para QUALQUER rota
+#
+# 7. 💰 Calcular desconto:
+#    - Percentage: (preço × valor) / 100
+#    - Fixed: valor fixo
+#    - Aplicar maxDiscount se houver
+#
+
+###
+
+### ====================================
+### EXEMPLOS DE USO NO APP
+### ====================================
+#
+# CENÁRIO 1: Cupom genérico
+# - Admin cria cupom "VERAO2026" (fromCity: null, toCity: null)
+# - Usuário pode usar em QUALQUER viagem
+# - Como cupom de combustível que vale em qualquer posto
+#
+# CENÁRIO 2: Cupom de rota específica
+# - Admin cria cupom "BERURI15" (fromCity: "Manaus", toCity: "Beruri")
+# - Usuário SÓ pode usar em viagens Manaus → Beruri
+# - Como cupom que só vale em 1 posto específico
+#
+# CENÁRIO 3: Cupom de origem específica
+# - Admin cria cupom "MANAUS10" (fromCity: "Manaus", toCity: null)
+# - Usuário pode usar em qualquer viagem que saia de Manaus
+# - Como cupom que vale em qualquer posto da rede X
+#
+# CENÁRIO 4: Cupom de destino específico
+# - Admin cria cupom "CHEGABERU" (fromCity: null, toCity: "Beruri")
+# - Usuário pode usar em qualquer viagem que vá para Beruri
+# - Como cupom para chegar em um local específico
+#
+
+###
+
+### ====================================
+### FLUXO COMPLETO NO APP
+### ====================================
+#
+# 1. USUÁRIO VÊ BANNER DE PROMOÇÃO
+#    └─> GET /promotions/active
+#    └─> Vê "VERAO2026 - 20% OFF em todas as viagens"
+#
+# 2. USUÁRIO BUSCA VIAGEM
+#    └─> GET /trips/search?from=Manaus&to=Beruri
+#    └─> Escolhe viagem (R$ 100,00)
+#
+# 3. USUÁRIO VAI PARA CHECKOUT
+#    └─> Digita cupom "VERAO2026"
+#    └─> POST /coupons/validate { code: "VERAO2026", tripId: "...", quantity: 1 }
+#
+# 4. BACKEND VALIDA
+#    ✅ Cupom existe
+#    ✅ Está ativo
+#    ✅ Não expirou
+#    ✅ Não esgotou
+#    ✅ Valor mínimo OK (R$ 100 >= R$ 50)
+#    ✅ Rota OK (fromCity: null = qualquer rota)
+#    💰 Desconto: 20% de R$ 100 = R$ 20
+#
+# 5. APP MOSTRA DESCONTO
+#    └─> "Desconto aplicado! De R$ 100 por R$ 80"
+#
+# 6. USUÁRIO CONFIRMA COMPRA
+#    └─> POST /bookings { tripId, seats: 1, couponCode: "VERAO2026" }
+#    └─> Backend aplica desconto e incrementa usageCount
+#

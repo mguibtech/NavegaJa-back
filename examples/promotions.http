@@ -1,0 +1,152 @@
+### Variáveis
+@baseUrl = http://localhost:3000
+@adminToken = seu_token_admin_aqui
+
+### ==============================================
+### 📱 ENDPOINTS PÚBLICOS (App)
+### ==============================================
+
+### GET - Listar promoções ativas (sem autenticação)
+GET {{baseUrl}}/promotions/active
+Content-Type: application/json
+
+### ==============================================
+### 🔐 ENDPOINTS ADMIN
+### ==============================================
+
+### POST - Criar nova promoção (admin only)
+POST {{baseUrl}}/promotions
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "title": "Desconto Especial de Verão",
+  "description": "Ganhe 20% em viagens selecionadas para destinos paradisíacos!",
+  "imageUrl": "https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=1200&h=600&fit=crop",
+  "ctaText": "Ver Viagens",
+  "ctaAction": "search",
+  "ctaValue": "Manaus-Parintins",
+  "backgroundColor": "#FF6B35",
+  "textColor": "#FFFFFF",
+  "isActive": true,
+  "priority": 10,
+  "startDate": "2026-02-01T00:00:00.000Z",
+  "endDate": "2026-02-28T23:59:59.000Z"
+}
+
+### GET - Listar todas promoções (admin only)
+GET {{baseUrl}}/promotions
+Authorization: Bearer {{adminToken}}
+
+### GET - Buscar promoção por ID (admin only)
+GET {{baseUrl}}/promotions/uuid-aqui
+Authorization: Bearer {{adminToken}}
+
+### PUT - Atualizar promoção (admin only)
+PUT {{baseUrl}}/promotions/uuid-aqui
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "title": "Título Atualizado",
+  "description": "Nova descrição da promoção",
+  "priority": 100
+}
+
+### PUT - Ativar/desativar promoção (admin only)
+PUT {{baseUrl}}/promotions/uuid-aqui/toggle
+Authorization: Bearer {{adminToken}}
+
+### DELETE - Deletar promoção (admin only)
+DELETE {{baseUrl}}/promotions/uuid-aqui
+Authorization: Bearer {{adminToken}}
+
+### ==============================================
+### EXEMPLOS DE PROMOÇÕES
+### ==============================================
+
+### Promoção com CTA de Busca
+POST {{baseUrl}}/promotions
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "title": "Carnaval 2026 🎭",
+  "description": "Aproveite descontos especiais para viajar no Carnaval!",
+  "imageUrl": "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=1200&h=600&fit=crop",
+  "ctaText": "Ver Viagens",
+  "ctaAction": "search",
+  "ctaValue": "Manaus-Parintins",
+  "backgroundColor": "#FF6B35",
+  "textColor": "#FFFFFF",
+  "priority": 100,
+  "startDate": "2026-02-01T00:00:00.000Z",
+  "endDate": "2026-03-01T23:59:59.000Z"
+}
+
+### Promoção com CTA de URL Externa
+POST {{baseUrl}}/promotions
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "title": "Programa de Fidelidade ⭐",
+  "description": "Acumule pontos e ganhe viagens grátis!",
+  "imageUrl": "https://images.unsplash.com/photo-1533750349088-cd871a92f312?w=1200&h=600&fit=crop",
+  "ctaText": "Saiba Mais",
+  "ctaAction": "url",
+  "ctaValue": "https://navegaja.com.br/fidelidade",
+  "backgroundColor": "#6A4C93",
+  "textColor": "#FFFFFF",
+  "priority": 80
+}
+
+### Promoção com Deeplink
+POST {{baseUrl}}/promotions
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "title": "Nova Rota Express",
+  "description": "Estreia da nossa linha Manaus-Santarém!",
+  "imageUrl": "https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=1200&h=600&fit=crop",
+  "ctaText": "Reserve Agora",
+  "ctaAction": "deeplink",
+  "ctaValue": "navegaja://trips/123e4567-e89b-12d3-a456-426614174000",
+  "backgroundColor": "#2E86AB",
+  "textColor": "#FFFFFF",
+  "priority": 90
+}
+
+### Promoção sem CTA (apenas informativa)
+POST {{baseUrl}}/promotions
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "title": "Viagens Noturnas 🌙",
+  "description": "Economize até 30% viajando à noite. Conforto garantido!",
+  "imageUrl": "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200&h=600&fit=crop",
+  "backgroundColor": "#1A535C",
+  "textColor": "#FFFFFF",
+  "priority": 70
+}
+
+### Promoção Temporária (com datas)
+POST {{baseUrl}}/promotions
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "title": "Festas Juninas 🎪",
+  "description": "Programe suas viagens para as festas de junho!",
+  "imageUrl": "https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=1200&h=600&fit=crop",
+  "ctaText": "Explorar Destinos",
+  "ctaAction": "search",
+  "ctaValue": "",
+  "backgroundColor": "#FF9F1C",
+  "textColor": "#000000",
+  "priority": 60,
+  "startDate": "2026-05-01T00:00:00.000Z",
+  "endDate": "2026-07-01T23:59:59.000Z"
+}

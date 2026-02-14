@@ -1,0 +1,270 @@
+// services/api.ts
+import axios from 'axios';
+
+// Configuração base da API
+export const api = axios.create({
+  baseURL: 'http://localhost:3000', // Altere para sua URL de produção
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Interceptor para adicionar token (se necessário)
+api.interceptors.request.use(
+  async (config) => {
+    // Para endpoints que precisam autenticação
+    // const token = await AsyncStorage.getItem('token');
+    // if (token) {
+    //   config.headers.Authorization = `Bearer ${token}`;
+    // }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// ============================================
+// PROMOÇÕES (NÃO PRECISA DE AUTENTICAÇÃO)
+// ============================================
+
+export interface Promotion {
+  id: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  ctaText?: string;
+  ctaAction?: 'search' | 'url' | 'deeplink';
+  ctaValue?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  priority: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface PromotionsResponse {
+  promotions: Promotion[];
+}
+
+/**
+ * Buscar promoções ativas
+ * Endpoint público - NÃO precisa de autenticação
+ */
+export const getActivePromotions = async (): Promise<Promotion[]> => {
+  try {
+    const response = await api.get<PromotionsResponse>('/promotions/active');
+    return response.data.promotions;
+  } catch (error) {
+    console.error('Erro ao buscar promoções:', error);
+    return []; // Retorna array vazio em caso de erro
+  }
+};
+
+// ============================================
+// CUPONS (PRECISA DE AUTENTICAÇÃO)
+// ============================================
+
+export interface Coupon {
+  id: string;
+  code: string;
+  type: 'percentage' | 'fixed';
+  value: number;
+  description: string;
+  minPurchase: number | null;
+  maxDiscount: number | null;
+  validUntil: string | null;
+  isActive: boolean;
+}
+
+/**
+ * Validar cupom pelo código
+ */
+export const validateCoupon = async (code: string, totalPrice: number) => {
+  try {
+    const response = await api.post('/coupons/validate', {
+      code,
+      totalPrice,
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao validar cupom:', error);
+    throw error;
+  }
+};
+
+/**
+ * Buscar cupom por código (endpoint público para visualização)
+ */
+export const getCouponByCode = async (code: string): Promise<Coupon> => {
+  try {
+    const response = await api.get<Coupon>(`/coupons/${code}`);
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao buscar cupom:', error);
+    throw error;
+  }
+};
+
+// ============================================
+// VIAGENS
+// ============================================
+
+export interface Trip {
+  id: string;
+  origin: string;
+  destination: string;
+  departureAt: string;
+  arrivalAt: string;
+  price: number;
+  discount: number; // 0-100 (porcentagem)
+  availableSeats: number;
+  status: string;
+  captain: {
+    id: string;
+    name: string;
+  };
+  boat: {
+    id: string;
+    name: string;
+    type: string;
+  };
+}
+
+export interface SearchTripsParams {
+  origin?: string;
+  destination?: string;
+  date?: string;
+  passengers?: number;
+}
+
+/**
+ * Buscar viagens (com filtros)
+ */
+export const searchTrips = async (params: SearchTripsParams): Promise<Trip[]> => {
+  try {
+    const response = await api.get<Trip[]>('/trips', { params });
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao buscar viagens:', error);
+    return [];
+  }
+};
+
+/**
+ * Buscar viagem por ID
+ */
+export const getTripById = async (id: string): Promise<Trip> => {
+  try {
+    const response = await api.get<Trip>(`/trips/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao buscar viagem:', error);
+    throw error;
+  }
+};
+
+// ============================================
+// RESERVAS/BOOKINGS
+// ============================================
+
+export interface CalculatePriceParams {
+  tripId: string;
+  passengerId: string;
+  quantity: number;
+  couponCode?: string;
+}
+
+export interface PriceCalculation {
+  basePrice: number;
+  tripDiscount: number;
+  couponDiscount: number;
+  loyaltyDiscount: number;
+  finalPrice: number;
+  discountsApplied: Array<{
+    type: 'trip' | 'coupon' | 'loyalty';
+    value: number;
+    code?: string;
+  }>;
+}
+
+/**
+ * Calcular preço com todos os descontos
+ */
+export const calculateBookingPrice = async (
+  params: CalculatePriceParams
+): Promise<PriceCalculation> => {
+  try {
+    const response = await api.post<PriceCalculation>(
+      '/bookings/calculate-price',
+      params
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao calcular preço:', error);
+    throw error;
+  }
+};
+
+/**
+ * Criar reserva
+ */
+export const createBooking = async (bookingData: any) => {
+  try {
+    const response = await api.post('/bookings', bookingData);
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao criar reserva:', error);
+    throw error;
+  }
+};
+
+// ============================================
+// EXEMPLO DE USO NO COMPONENTE
+// ============================================
+
+/*
+import { getActivePromotions, searchTrips } from './services/api';
+
+// 1. Buscar promoções na HomeScreen
+const [promotions, setPromotions] = useState<Promotion[]>([]);
+
+useEffect(() => {
+  const loadPromotions = async () => {
+    const data = await getActivePromotions();
+    setPromotions(data);
+  };
+  loadPromotions();
+}, []);
+
+// 2. Quando usuário clica em promoção de busca
+const handlePromotionClick = async (promotion: Promotion) => {
+  if (promotion.ctaAction === 'search') {
+    const [origin, destination] = promotion.ctaValue.split('-');
+
+    // Buscar viagens
+    const trips = await searchTrips({ origin, destination });
+
+    // Navegar para tela de resultados
+    navigation.navigate('SearchResults', {
+      origin,
+      destination,
+      trips,
+    });
+  }
+};
+
+// 3. Na tela de checkout, calcular preço com cupom
+const handleApplyCoupon = async () => {
+  const priceCalc = await calculateBookingPrice({
+    tripId: selectedTrip.id,
+    passengerId: user.id,
+    quantity: passengers,
+    couponCode: enteredCoupon,
+  });
+
+  setFinalPrice(priceCalc.finalPrice);
+  setDiscounts(priceCalc.discountsApplied);
+};
+*/

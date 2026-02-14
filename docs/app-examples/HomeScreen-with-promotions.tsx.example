@@ -1,0 +1,150 @@
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  Text,
+} from 'react-native';
+import { PromotionBanner } from './PromotionBanner';
+import { api } from '../services/api'; // seu arquivo de API
+
+interface Promotion {
+  id: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  ctaText?: string;
+  ctaAction?: 'search' | 'url' | 'deeplink';
+  ctaValue?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  priority: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+export const HomeScreen = () => {
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchPromotions();
+  }, []);
+
+  const fetchPromotions = async () => {
+    try {
+      // IMPORTANTE: Este endpoint NÃO precisa de autenticação!
+      const response = await api.get('/promotions/active');
+      setPromotions(response.data.promotions);
+    } catch (error) {
+      console.error('Erro ao buscar promoções:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePromotionPress = (promotion: Promotion) => {
+    // Analytics/tracking
+    console.log('Promoção clicada:', promotion.title);
+
+    // Enviar evento para analytics
+    // analytics.logEvent('promotion_clicked', {
+    //   promotion_id: promotion.id,
+    //   promotion_title: promotion.title,
+    //   cta_action: promotion.ctaAction,
+    // });
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#FF6B35" />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {/* Header da Home */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>NavegaJá</Text>
+        <Text style={styles.headerSubtitle}>
+          Encontre sua próxima viagem
+        </Text>
+      </View>
+
+      {/* Lista de Promoções */}
+      {promotions.length > 0 && (
+        <View style={styles.promotionsSection}>
+          <Text style={styles.sectionTitle}>Promoções</Text>
+
+          <FlatList
+            data={promotions}
+            keyExtractor={(item) => item.id}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            renderItem={({ item }) => (
+              <PromotionBanner
+                promotion={item}
+                onPress={handlePromotionPress}
+              />
+            )}
+            contentContainerStyle={styles.promotionsList}
+          />
+        </View>
+      )}
+
+      {/* Resto do conteúdo da Home */}
+      <View style={styles.content}>
+        {/* Busca de viagens */}
+        {/* Viagens populares */}
+        {/* Etc... */}
+      </View>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  header: {
+    padding: 20,
+    backgroundColor: '#FF6B35',
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    color: '#FFF',
+    opacity: 0.9,
+    marginTop: 4,
+  },
+  promotionsSection: {
+    marginTop: 16,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginLeft: 16,
+    marginBottom: 12,
+    color: '#333',
+  },
+  promotionsList: {
+    paddingBottom: 8,
+  },
+  content: {
+    flex: 1,
+    padding: 16,
+  },
+});
