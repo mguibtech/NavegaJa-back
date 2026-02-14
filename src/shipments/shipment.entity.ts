@@ -6,7 +6,7 @@ import { User } from '../users/user.entity';
 import { Trip } from '../trips/trip.entity';
 
 export enum ShipmentStatus {
-  POSTED = 'posted',
+  PENDING = 'pending',
   IN_TRANSIT = 'in_transit',
   DELIVERED = 'delivered',
   CANCELLED = 'cancelled',
@@ -37,19 +37,39 @@ export class Shipment {
   @Column({ name: 'weight_kg', type: 'decimal', precision: 6, scale: 2, nullable: true })
   weightKg: number;
 
-  @Column({ name: 'photo_url', type: 'text', nullable: true })
-  photoUrl: string;
+  // Dimensões em centímetros (para cálculo volumétrico)
+  @Column({ type: 'decimal', precision: 6, scale: 2, nullable: true })
+  length: number;
 
-  @Column({ name: 'receiver_name', length: 255 })
-  receiverName: string;
+  @Column({ type: 'decimal', precision: 6, scale: 2, nullable: true })
+  width: number;
 
-  @Column({ name: 'receiver_phone', length: 20 })
-  receiverPhone: string;
+  @Column({ type: 'decimal', precision: 6, scale: 2, nullable: true })
+  height: number;
+
+  // Array de URLs de fotos (máximo 5)
+  @Column({ type: 'text', array: true, nullable: true })
+  photos: string[];
+
+  @Column({ name: 'recipient_name', length: 255 })
+  recipientName: string;
+
+  @Column({ name: 'recipient_phone', length: 20 })
+  recipientPhone: string;
+
+  @Column({ name: 'recipient_address', type: 'text' })
+  recipientAddress: string;
 
   @Column({ name: 'total_price', type: 'decimal', precision: 10, scale: 2 })
   totalPrice: number;
 
-  @Column({ type: 'enum', enum: ShipmentStatus, default: ShipmentStatus.POSTED })
+  @Column({ name: 'payment_method', length: 20, default: 'pix' })
+  paymentMethod: string;
+
+  @Column({ name: 'qr_code', type: 'text', nullable: true })
+  qrCode: string;
+
+  @Column({ type: 'enum', enum: ShipmentStatus, default: ShipmentStatus.PENDING })
   status: ShipmentStatus;
 
   @Column({ name: 'delivery_photo_url', type: 'text', nullable: true })

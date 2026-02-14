@@ -1,15 +1,33 @@
 import { Controller, Post, Get, Patch, Param, Body, UseGuards, Request } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ShipmentsService } from './shipments.service';
 import { CreateShipmentDto } from './dto/create-shipment.dto';
+import { CalculatePriceDto, CalculatePriceResponseDto } from './dto/calculate-price.dto';
+import { CreateShipmentReviewDto } from './dto/create-review.dto';
 import { ShipmentStatus } from './shipment.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { ShipmentReview } from './shipment-review.entity';
 
 @ApiTags('Shipments')
 @Controller('shipments')
 export class ShipmentsController {
-  constructor(private shipmentsService: ShipmentsService) {}
+  constructor(
+    private shipmentsService: ShipmentsService,
+    @InjectRepository(ShipmentReview)
+    private reviewsRepo: Repository<ShipmentReview>,
+  ) {}
+
+  @Post('calculate-price')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Calcular preço da encomenda (com peso volumétrico e cupom)' })
+  @ApiResponse({ status: 200, description: 'Cálculo realizado com sucesso', type: CalculatePriceResponseDto })
+  calculatePrice(@Body() dto: CalculatePriceDto) {
+    return this.shipmentsService.calculatePrice(dto);
+  }
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -29,8 +47,38 @@ export class ShipmentsController {
 
   @Get('track/:code')
   @ApiOperation({ summary: 'Rastrear encomenda por código (público)' })
-  track(@Param('code') code: string) {
-    return this.shipmentsService.findByTrackingCode(code);
+  async track(@Param('code') code: string) {
+    const shipment = await this.shipmentsService.findByTrackingCode(code);
+    const timeline = await this.shipmentsService.getTimeline(shipment.id);
+    return { shipment, timeline };
+  }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Buscar encomenda por ID' })
+  findById(@Param('id') id: string) {
+    return this.shipmentsService.findById(id);
+  }
+
+  @Get(':id/timeline')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Timeline de eventos da encomenda' })
+  getTimeline(@Param('id') id: string) {
+    return this.shipmentsService.getTimeline(id);
+  }
+
+  @Post(':id/cancel')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cancelar encomenda' })
+  cancel(
+    @Param('id') id: string,
+    @Request() req: any,
+    @Body('reason') reason?: string,
+  ) {
+    return this.shipmentsService.cancel(id, req.user.sub, reason);
   }
 
   @Patch(':id/status')
@@ -38,8 +86,12 @@ export class ShipmentsController {
   @Roles('captain')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Atualizar status (captain)' })
-  updateStatus(@Param('id') id: string, @Body('status') status: ShipmentStatus) {
-    return this.shipmentsService.updateStatus(id, status);
+  updateStatus(
+    @Param('id') id: string,
+    @Body('status') status: ShipmentStatus,
+    @Request() req: any,
+  ) {
+    return this.shipmentsService.updateStatus(id, status, req.user.sub);
   }
 
   @Patch(':id/deliver')
@@ -49,5 +101,46 @@ export class ShipmentsController {
   @ApiOperation({ summary: 'Confirmar entrega + foto (captain)' })
   deliver(@Param('id') id: string, @Body('deliveryPhotoUrl') photoUrl?: string) {
     return this.shipmentsService.deliver(id, photoUrl);
+  }
+
+  // ========== REVIEWS ==========
+
+  @Post('reviews')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Criar avaliação da encomenda' })
+  async createReview(@Request() req: any, @Body() dto: CreateShipmentReviewDto) {
+    const shipment = await this.shipmentsService.findById(dto.shipmentId);
+
+    // Verifica se a encomenda foi entregue
+    if (shipment.status !== ShipmentStatus.DELIVERED) {
+      throw new Error('Só é possível avaliar encomendas entregues');
+    }
+
+    // Verifica se já existe avaliação
+    const existingReview = await this.reviewsRepo.findOne({
+      where: { shipmentId: dto.shipmentId },
+    });
+    if (existingReview) {
+      throw new Error('Esta encomenda já foi avaliada');
+    }
+
+    const review = this.reviewsRepo.create({
+      ...dto,
+      senderId: req.user.sub,
+    });
+
+    return this.reviewsRepo.save(review);
+  }
+
+  @Get(':id/review')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Buscar avaliação da encomenda' })
+  getReview(@Param('id') id: string) {
+    return this.reviewsRepo.findOne({
+      where: { shipmentId: id },
+      relations: ['sender'],
+    });
   }
 }
