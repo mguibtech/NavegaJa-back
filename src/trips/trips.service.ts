@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThanOrEqual, Between } from 'typeorm';
 import { Trip, TripStatus } from './trip.entity';
@@ -54,29 +54,78 @@ export class TripsService {
     });
   }
 
-  async search(origin?: string, destination?: string, date?: string): Promise<Trip[]> {
+  async search(
+    origin?: string,
+    destination?: string,
+    date?: string,
+    minPrice?: number,
+    maxPrice?: number,
+    departureTime?: 'morning' | 'afternoon' | 'night',
+    minRating?: number,
+  ): Promise<Trip[]> {
     const qb = this.tripsRepo
       .createQueryBuilder('trip')
       .leftJoinAndSelect('trip.captain', 'captain')
       .leftJoinAndSelect('trip.boat', 'boat')
       .where('trip.status = :status', { status: TripStatus.SCHEDULED });
 
+    // Filtro por origem
     if (origin) {
       qb.andWhere('LOWER(trip.origin) LIKE LOWER(:origin)', { origin: `%${origin}%` });
     }
 
+    // Filtro por destino
     if (destination) {
       qb.andWhere('LOWER(trip.destination) LIKE LOWER(:destination)', { destination: `%${destination}%` });
     }
 
+    // Filtro por data
     if (date) {
       const dayStart = new Date(date);
+
+      // Validar se a data é válida
+      if (isNaN(dayStart.getTime())) {
+        throw new BadRequestException(
+          `Data inválida: "${date}". Use o formato YYYY-MM-DD (ex: 2026-02-15)`
+        );
+      }
+
       dayStart.setHours(0, 0, 0, 0);
       const dayEnd = new Date(date);
       dayEnd.setHours(23, 59, 59, 999);
       qb.andWhere('trip.departure_at BETWEEN :dayStart AND :dayEnd', { dayStart, dayEnd });
     } else {
       qb.andWhere('trip.departure_at >= :now', { now: new Date() });
+    }
+
+    // Filtro por preço mínimo
+    if (minPrice !== undefined && minPrice !== null) {
+      qb.andWhere('trip.price >= :minPrice', { minPrice });
+    }
+
+    // Filtro por preço máximo
+    if (maxPrice !== undefined && maxPrice !== null) {
+      qb.andWhere('trip.price <= :maxPrice', { maxPrice });
+    }
+
+    // Filtro por período do dia
+    if (departureTime) {
+      switch (departureTime) {
+        case 'morning': // 06:00 - 11:59
+          qb.andWhere('EXTRACT(HOUR FROM trip.departure_at) >= 6 AND EXTRACT(HOUR FROM trip.departure_at) < 12');
+          break;
+        case 'afternoon': // 12:00 - 17:59
+          qb.andWhere('EXTRACT(HOUR FROM trip.departure_at) >= 12 AND EXTRACT(HOUR FROM trip.departure_at) < 18');
+          break;
+        case 'night': // 18:00 - 05:59
+          qb.andWhere('EXTRACT(HOUR FROM trip.departure_at) >= 18 OR EXTRACT(HOUR FROM trip.departure_at) < 6');
+          break;
+      }
+    }
+
+    // Filtro por avaliação mínima do capitão
+    if (minRating !== undefined && minRating !== null) {
+      qb.andWhere('CAST(captain.rating AS DECIMAL) >= :minRating', { minRating });
     }
 
     qb.orderBy('trip.departure_at', 'ASC');

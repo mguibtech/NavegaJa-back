@@ -3,12 +3,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Coupon, CouponType } from './coupon.entity';
 import { CreateCouponDto } from './dto/coupon.dto';
+import { Trip } from '../trips/trip.entity';
 
 @Injectable()
 export class CouponsService {
   constructor(
     @InjectRepository(Coupon)
     private couponsRepo: Repository<Coupon>,
+    @InjectRepository(Trip)
+    private tripsRepo: Repository<Trip>,
   ) {}
 
   async create(dto: CreateCouponDto): Promise<Coupon> {
@@ -69,7 +72,12 @@ export class CouponsService {
     return coupon;
   }
 
-  async validate(code: string, userId: string, totalPrice: number): Promise<{
+  async validate(
+    code: string,
+    userId: string,
+    totalPrice: number,
+    trip?: Trip
+  ): Promise<{
     valid: boolean;
     coupon?: Coupon;
     discount?: number;
@@ -100,24 +108,49 @@ export class CouponsService {
     }
 
     // Verificar valor mínimo
-    if (coupon.minPurchase && totalPrice < coupon.minPurchase) {
+    if (coupon.minPurchase && totalPrice < Number(coupon.minPurchase)) {
       return {
         valid: false,
-        message: `Valor mínimo de compra: R$ ${coupon.minPurchase}`
+        message: `Valor mínimo de compra: R$ ${Number(coupon.minPurchase).toFixed(2)}`
       };
+    }
+
+    // Verificar filtros de rota (se cupom tiver restrições de rota)
+    if (trip && (coupon.fromCity || coupon.toCity)) {
+      if (coupon.fromCity) {
+        const tripFrom = trip.origin.toLowerCase();
+        const couponFrom = coupon.fromCity.toLowerCase();
+        if (!tripFrom.includes(couponFrom) && !couponFrom.includes(tripFrom)) {
+          return {
+            valid: false,
+            message: `Este cupom só vale para viagens saindo de ${coupon.fromCity}`
+          };
+        }
+      }
+
+      if (coupon.toCity) {
+        const tripTo = trip.destination.toLowerCase();
+        const couponTo = coupon.toCity.toLowerCase();
+        if (!tripTo.includes(couponTo) && !couponTo.includes(tripTo)) {
+          return {
+            valid: false,
+            message: `Este cupom só vale para viagens indo para ${coupon.toCity}`
+          };
+        }
+      }
     }
 
     // Calcular desconto
     let discount = 0;
     if (coupon.type === CouponType.PERCENTAGE) {
-      discount = (totalPrice * coupon.value) / 100;
+      discount = (totalPrice * Number(coupon.value)) / 100;
     } else {
-      discount = coupon.value;
+      discount = Number(coupon.value);
     }
 
     // Aplicar desconto máximo
-    if (coupon.maxDiscount && discount > coupon.maxDiscount) {
-      discount = coupon.maxDiscount;
+    if (coupon.maxDiscount && discount > Number(coupon.maxDiscount)) {
+      discount = Number(coupon.maxDiscount);
     }
 
     return { valid: true, coupon, discount };

@@ -26,8 +26,20 @@ export class Boat {
   @Column()
   capacity: number;
 
+  @Column({ length: 100, nullable: true })
+  model: string;
+
+  @Column({ nullable: true })
+  year: number;
+
   @Column({ name: 'photo_url', type: 'text', nullable: true })
   photoUrl: string;
+
+  @Column({ type: 'jsonb', default: [] })
+  amenities: string[];
+
+  @Column({ type: 'jsonb', default: [] })
+  photos: string[];
 
   @Column({ name: 'registration_num', length: 100, nullable: true })
   registrationNum: string;

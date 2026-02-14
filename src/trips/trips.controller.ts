@@ -13,16 +13,32 @@ export class TripsController {
   constructor(private tripsService: TripsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Buscar viagens disponíveis (filtros: origin, destination, date)' })
+  @ApiOperation({ summary: 'Buscar viagens disponíveis com filtros avançados' })
   @ApiQuery({ name: 'origin', required: false, description: 'Nome da cidade de origem (ex: Manaus)' })
   @ApiQuery({ name: 'destination', required: false, description: 'Nome da cidade de destino (ex: Parintins)' })
   @ApiQuery({ name: 'date', required: false, description: 'Data no formato YYYY-MM-DD' })
+  @ApiQuery({ name: 'minPrice', required: false, description: 'Preço mínimo', type: Number })
+  @ApiQuery({ name: 'maxPrice', required: false, description: 'Preço máximo', type: Number })
+  @ApiQuery({ name: 'departureTime', required: false, description: 'Período do dia (morning, afternoon, night)', enum: ['morning', 'afternoon', 'night'] })
+  @ApiQuery({ name: 'minRating', required: false, description: 'Avaliação mínima do capitão', type: Number })
   search(
     @Query('origin') origin?: string,
     @Query('destination') destination?: string,
     @Query('date') date?: string,
+    @Query('minPrice') minPrice?: number,
+    @Query('maxPrice') maxPrice?: number,
+    @Query('departureTime') departureTime?: 'morning' | 'afternoon' | 'night',
+    @Query('minRating') minRating?: number,
   ) {
-    return this.tripsService.search(origin, destination, date);
+    return this.tripsService.search(
+      origin,
+      destination,
+      date,
+      minPrice,
+      maxPrice,
+      departureTime,
+      minRating,
+    );
   }
 
   @Get('popular')

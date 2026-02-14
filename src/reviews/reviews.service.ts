@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { Review } from './review.entity';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { User } from '../users/user.entity';
+import { GamificationService } from '../gamification/gamification.service';
+import { PointAction } from '../gamification/point-transaction.entity';
 
 @Injectable()
 export class ReviewsService {
@@ -12,6 +14,7 @@ export class ReviewsService {
     private reviewsRepo: Repository<Review>,
     @InjectRepository(User)
     private usersRepo: Repository<User>,
+    private gamificationService: GamificationService,
   ) {}
 
   async create(reviewerId: string, dto: CreateReviewDto): Promise<Review> {
@@ -33,6 +36,13 @@ export class ReviewsService {
     await this.usersRepo.update(dto.captainId, {
       rating: Math.round(avgRating * 10) / 10,
     });
+
+    // Credita NavegaCoins ao avaliador
+    await this.gamificationService.awardPoints(
+      reviewerId,
+      PointAction.REVIEW_CREATED,
+      saved.id,
+    );
 
     return saved;
   }

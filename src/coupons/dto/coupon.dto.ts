@@ -58,6 +58,16 @@ export class CreateCouponDto {
   @IsOptional()
   @IsBoolean()
   firstPurchaseOnly?: boolean;
+
+  @ApiProperty({ example: 'Manaus', required: false, description: 'Cidade de origem (null = todas)' })
+  @IsOptional()
+  @IsString()
+  fromCity?: string;
+
+  @ApiProperty({ example: 'Beruri', required: false, description: 'Cidade de destino (null = todas)' })
+  @IsOptional()
+  @IsString()
+  toCity?: string;
 }
 
 export class ValidateCouponDto {

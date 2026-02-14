@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { Shipment, ShipmentStatus } from './shipment.entity';
 import { Trip } from '../trips/trip.entity';
 import { CreateShipmentDto } from './dto/create-shipment.dto';
+import { GamificationService } from '../gamification/gamification.service';
+import { PointAction } from '../gamification/point-transaction.entity';
 
 @Injectable()
 export class ShipmentsService {
@@ -12,6 +14,7 @@ export class ShipmentsService {
     private shipmentsRepo: Repository<Shipment>,
     @InjectRepository(Trip)
     private tripsRepo: Repository<Trip>,
+    private gamificationService: GamificationService,
   ) {}
 
   private generateTrackingCode(): string {
@@ -78,6 +81,15 @@ export class ShipmentsService {
     shipment.status = ShipmentStatus.DELIVERED;
     shipment.deliveredAt = new Date();
     if (deliveryPhotoUrl) shipment.deliveryPhotoUrl = deliveryPhotoUrl;
-    return this.shipmentsRepo.save(shipment);
+    const saved = await this.shipmentsRepo.save(shipment);
+
+    // Credita NavegaCoins ao remetente
+    await this.gamificationService.awardPoints(
+      shipment.senderId,
+      PointAction.SHIPMENT_DELIVERED,
+      shipment.id,
+    );
+
+    return saved;
   }
 }

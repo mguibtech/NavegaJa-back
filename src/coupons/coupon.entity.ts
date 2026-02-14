@@ -48,6 +48,12 @@ export class Coupon {
   @Column({ name: 'first_purchase_only', type: 'boolean', default: false })
   firstPurchaseOnly: boolean;
 
+  @Column({ name: 'from_city', type: 'varchar', length: 100, nullable: true, comment: 'Filtro: cidade de origem (null = todas)' })
+  fromCity: string | null;
+
+  @Column({ name: 'to_city', type: 'varchar', length: 100, nullable: true, comment: 'Filtro: cidade de destino (null = todas)' })
+  toCity: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

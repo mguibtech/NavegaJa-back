@@ -221,7 +221,7 @@ export class SeedService implements OnModuleInit {
         departureAt: createDate(now, now.getHours() - 1, 0),
         estimatedArrivalAt: createDate(now, now.getHours() + 1, 30),
         price: 45, cargoPriceKg: 5, totalSeats: 25, availableSeats: 5,
-        status: TripStatus.SAILING,
+        status: TripStatus.IN_PROGRESS,
         currentLat: -3.1800, currentLng: -60.2500,
         notes: 'Viagem em andamento - navegando pelo Rio Negro',
       },

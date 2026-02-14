@@ -4,12 +4,15 @@ import { Repository } from 'typeorm';
 import { CargoShipment, CargoStatus, CargoType, CARGO_REFERENCE_PRICES } from './cargo.entity';
 import { Trip } from '../trips/trip.entity';
 import { CreateCargoDto, QuoteCargoDto } from './dto/cargo.dto';
+import { GamificationService } from '../gamification/gamification.service';
+import { PointAction } from '../gamification/point-transaction.entity';
 
 @Injectable()
 export class CargoService {
   constructor(
     @InjectRepository(CargoShipment) private cargoRepo: Repository<CargoShipment>,
     @InjectRepository(Trip) private tripsRepo: Repository<Trip>,
+    private gamificationService: GamificationService,
   ) {}
 
   async create(senderId: string, dto: CreateCargoDto) {
@@ -124,7 +127,16 @@ export class CargoService {
     cargo.status = CargoStatus.DELIVERED;
     cargo.deliveredAt = new Date();
     if (deliveryPhotoUrl) cargo.deliveryPhotoUrl = deliveryPhotoUrl;
-    return this.cargoRepo.save(cargo);
+    const saved = await this.cargoRepo.save(cargo);
+
+    // Credita NavegaCoins ao remetente
+    await this.gamificationService.awardPoints(
+      cargo.senderId,
+      PointAction.CARGO_DELIVERED,
+      cargo.id,
+    );
+
+    return saved;
   }
 
   async getCargoTypes() {
