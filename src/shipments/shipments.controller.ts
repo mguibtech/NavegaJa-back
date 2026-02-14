@@ -4,18 +4,21 @@ import { ShipmentsService } from './shipments.service';
 import { CreateShipmentDto } from './dto/create-shipment.dto';
 import { CalculatePriceDto, CalculatePriceResponseDto } from './dto/calculate-price.dto';
 import { CreateShipmentReviewDto } from './dto/create-review.dto';
+import { GeneratePresignedUrlsDto, GeneratePresignedUrlsResponseDto } from './dto/upload-photos.dto';
 import { ShipmentStatus } from './shipment.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ShipmentReview } from './shipment-review.entity';
+import { StorageService } from './storage.service';
 
 @ApiTags('Shipments')
 @Controller('shipments')
 export class ShipmentsController {
   constructor(
     private shipmentsService: ShipmentsService,
+    private storageService: StorageService,
     @InjectRepository(ShipmentReview)
     private reviewsRepo: Repository<ShipmentReview>,
   ) {}
@@ -27,6 +30,19 @@ export class ShipmentsController {
   @ApiResponse({ status: 200, description: 'Cálculo realizado com sucesso', type: CalculatePriceResponseDto })
   calculatePrice(@Body() dto: CalculatePriceDto) {
     return this.shipmentsService.calculatePrice(dto);
+  }
+
+  @Post('upload/presigned-urls')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Gerar presigned URLs para upload de fotos no S3' })
+  @ApiResponse({ status: 200, description: 'URLs geradas com sucesso', type: GeneratePresignedUrlsResponseDto })
+  async generatePresignedUrls(@Body() dto: GeneratePresignedUrlsDto): Promise<GeneratePresignedUrlsResponseDto> {
+    const urls = await this.storageService.generatePresignedUrls(dto.count);
+    return {
+      urls,
+      expiresIn: 300, // 5 minutos
+    };
   }
 
   @Post()
@@ -57,8 +73,8 @@ export class ShipmentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Buscar encomenda por ID' })
-  findById(@Param('id') id: string) {
-    return this.shipmentsService.findById(id);
+  findById(@Param('id') id: string, @Request() req: any) {
+    return this.shipmentsService.findById(id, req.user.sub);
   }
 
   @Get(':id/timeline')

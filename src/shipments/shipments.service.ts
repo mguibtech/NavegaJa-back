@@ -244,12 +244,18 @@ export class ShipmentsService {
     });
   }
 
-  async findById(id: string): Promise<Shipment> {
+  async findById(id: string, userId?: string): Promise<Shipment> {
     const shipment = await this.shipmentsRepo.findOne({
       where: { id },
       relations: ['trip', 'trip.route', 'trip.captain', 'trip.boat', 'sender'],
     });
     if (!shipment) throw new NotFoundException('Encomenda não encontrada');
+
+    // Verificação de segurança: só o remetente ou capitão da viagem podem ver
+    if (userId && shipment.senderId !== userId && shipment.trip.captainId !== userId) {
+      throw new BadRequestException('Você não tem permissão para ver esta encomenda');
+    }
+
     return shipment;
   }
 

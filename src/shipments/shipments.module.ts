@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ShipmentsController } from './shipments.controller';
 import { ShipmentsService } from './shipments.service';
+import { StorageService } from './storage.service';
 import { Shipment } from './shipment.entity';
 import { ShipmentTimeline } from './shipment-timeline.entity';
 import { ShipmentReview } from './shipment-review.entity';
@@ -21,7 +22,7 @@ import { GamificationModule } from '../gamification/gamification.module';
     GamificationModule,
   ],
   controllers: [ShipmentsController],
-  providers: [ShipmentsService],
+  providers: [ShipmentsService, StorageService],
   exports: [ShipmentsService],
 })
 export class ShipmentsModule {}
