@@ -107,11 +107,24 @@ export class ShipmentsService {
 
       if (coupon) {
         const now = new Date();
-        const isValid =
+
+        // Validação de datas
+        const isValidDate =
           (!coupon.validFrom || new Date(coupon.validFrom) <= now) &&
           (!coupon.validUntil || new Date(coupon.validUntil) >= now);
 
-        if (isValid) {
+        // Validação de rota (fromCity/toCity)
+        const isValidRoute =
+          (!coupon.fromCity || trip.origin === coupon.fromCity) &&
+          (!coupon.toCity || trip.destination === coupon.toCity);
+
+        // Validação de peso (minWeight/maxWeight)
+        const isValidWeight =
+          (!coupon.minWeight || dto.weightKg >= coupon.minWeight) &&
+          (!coupon.maxWeight || dto.weightKg <= coupon.maxWeight);
+
+        // Aplica desconto se todas as validações passarem
+        if (isValidDate && isValidRoute && isValidWeight) {
           if (coupon.type === 'percentage') {
             couponDiscount = (basePrice * coupon.value) / 100;
           } else {

@@ -54,6 +54,12 @@ export class Coupon {
   @Column({ name: 'to_city', type: 'varchar', length: 100, nullable: true, comment: 'Filtro: cidade de destino (null = todas)' })
   toCity: string | null;
 
+  @Column({ name: 'min_weight', type: 'decimal', precision: 6, scale: 2, nullable: true, comment: 'Peso mínimo em kg para encomendas (null = sem mínimo)' })
+  minWeight: number | null;
+
+  @Column({ name: 'max_weight', type: 'decimal', precision: 6, scale: 2, nullable: true, comment: 'Peso máximo em kg para encomendas (null = sem máximo)' })
+  maxWeight: number | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
