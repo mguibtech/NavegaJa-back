@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run start:dev:*)",
+      "Bash(npm install:*)",
+      "Bash(npx kill-port:*)",
+      "Bash(curl:*)",
+      "Bash(python -m json.tool:*)",
+      "Bash(npx nest build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(dir:*)",
+      "Bash(yarn add:*)",
+      "Bash(findstr:*)",
+      "Bash(npx nest start:*)",
+      "Bash(yarn build)",
+      "Bash(yarn tsc:*)",
+      "Bash(yarn typeorm:*)",
+      "Bash(netstat:*)",
+      "Bash(timeout 15 yarn start:dev:*)",
+      "Bash(psql:*)",
+      "Bash(node scripts/fix-database.js:*)",
+      "Bash(node scripts/update-enum.js:*)",
+      "Bash(node scripts/populate-data.js:*)",
+      "Bash(node scripts/check-trips.js:*)",
+      "Bash(node scripts/seed-beruri-trips.js:*)",
+      "Bash(node scripts/list-trip-ids.js:*)",
+      "Bash(node scripts/debug-trips.js:*)",
+      "Bash(node:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1MmE0Yjc4NS1lMDJjLTRjYTYtYjNlYi0xNTUzMDk1ODA0OTgiLCJwaG9uZSI6IjkyOTkxMDAxMDAxIiwicm9sZSI6InBhc3NlbmdlciIsImlhdCI6MTc3MDk5NjcwMywiZXhwIjoxNzcwOTk3NjAzfQ.o4Ynlxfe1fCXHkYpcw9WHShshYNUxV8hU93Jk3gE8b8\")",
+      "Bash(\"c:\\\\www\\\\softLive\\\\projects\\\\navegaja\\\\backend\\\\TEST_RESULTS.md\" << 'ENDOFFILE'\n# 🧪 Resultados dos Testes - Fluxo Completo\n\n**Data:** 2026-02-13  \n**Backend NavegaJá** - API de Transporte Fluvial\n\n---\n\n## ✅ **Testes Realizados**\n\n### **1. LOGIN DE PASSAGEIRO**\n- **Endpoint:** `POST /auth/login`\n- **Status:** ✅ **PASSOU**\n- **Resultado:**\n  ```\n  ✅ Passageiro logado: João Silva\n  ✅ Token JWT gerado com sucesso\n  ```\n\n---\n\n### **2. BUSCAR VIAGENS DISPONÍVEIS**\n- **Endpoint:** `GET /trips?origin=Manaus&destination=Parintins`\n- **Status:** ✅ **PASSOU**\n- **Resultado:**\n  ```\n  ✅ 2 viagens encontradas\n  Viagem: Manaus \\(Porto da Ceasa\\) → Parintins\n  Preço: R$ 180.00\n  Capitão: Carlos Ribeiro\n  Barco: Rei do Solimões\n  ```\n\n---\n\n### **3. CRIAR RESERVA COM QR CODE**\n- **Endpoint:** `POST /bookings`\n- **Status:** ⚠️  **PASSOU \\(com observação\\)**\n- **Resultado:**\n  ```\n  ✅ Reserva criada: 1624a915-cfb1-43ab-9644-67591f3e0386\n  ⚠️  QR Code: 5646 characters \\(base64 image\\)\n  ```\n\n**Observação:**  \nO backend está gerando QR code em formato **base64 \\(imagem PNG\\)** ao invés do formato **compacto** \\(`NVGJ-{uuid}`\\).\n\n**Causa:**  \nO código foi atualizado no arquivo, mas o servidor não foi reiniciado com as mudanças.\n\n**Ação necessária:**  \nReiniciar o servidor NestJS para aplicar a otimização de QR code.\n\n---\n\n### **4. RASTREAMENTO EM TEMPO REAL**\n- **Endpoint:** `GET /bookings/:id/tracking`\n- **Status:** ❌ **FALHOU**\n- **Erro:** `Internal server error`\n\n**Possível causa:**  \n- Falta de relação `route` na trip\n- Erro ao calcular progresso\n- Campo `currentLat` ou `currentLng` nulo causando erro\n\n**Ação necessária:**  \nVerificar logs do servidor e corrigir tratamento de valores nulos.\n\n---\n\n## 📊 **Resumo**\n\n| Funcionalidade | Status | Observação |\n|---------------|--------|------------|\n| Login | ✅ | Funcionando perfeitamente |\n| Buscar viagens | ✅ | Funcionando perfeitamente |\n| Criar reserva | ⚠️ | QR code não otimizado \\(servidor não reiniciado\\) |\n| QR code compacto | ❌ | Servidor não aplicou mudanças |\n| Rastreamento | ❌ | Erro interno \\(route ou GPS nulo\\) |\n| Check-in | ⏭️ | Não testado \\(precisa token de capitão\\) |\n| Atualizar GPS | ⏭️ | Não testado \\(precisa token de capitão\\) |\n| Finalizar viagem | ⏭️ | Não testado \\(precisa token de capitão\\) |\n\n---\n\n## 🔧 **Ações Necessárias**\n\n### **1. Reiniciar Servidor \\(Urgente\\)**\n```bash\nyarn start:dev\n```\n\nIsso aplicará:\n- ✅ QR code otimizado \\(NVGJ-{uuid}\\)\n- ✅ Formato compacto \\(~45 chars vs 5646 chars\\)\n\n---\n\n### **2. Corrigir Rastreamento**\n\n**Problema:** Route pode ser `null` na trip\n\n**Solução:** Adicionar validação no `getTracking\\(\\)`:\n\n```typescript\n// src/bookings/bookings.service.ts\n\nasync getTracking\\(bookingId: string, userId: string\\) {\n  const booking = await this.bookingsRepo.findOne\\({\n    where: { id: bookingId },\n    relations: ['trip', 'trip.route', 'trip.captain', 'trip.boat'],\n  }\\);\n\n  if \\(!booking\\) throw new NotFoundException\\('Reserva não encontrada'\\);\n  if \\(booking.passengerId !== userId\\) {\n    throw new ForbiddenException\\('Acesso negado'\\);\n  }\n\n  const trip = booking.trip;\n\n  // Se não tem route, criar objeto com dados da trip\n  const route = trip.route || {\n    originName: trip.origin,\n    destinationName: trip.destination,\n    originLat: trip.currentLat || -3.1190,  // Default Manaus\n    originLng: trip.currentLng || -60.0217,\n    destinationLat: -2.6286,  // Default Parintins\n    destinationLng: -56.7356,\n    distanceKm: 369,\n    durationMin: 360,\n  };\n\n  // ... resto do código\n}\n```\n\n---\n\n### **3. Testar com Capitão**\n\nPara testar check-in e atualização de GPS, criar um capitão de teste com senha conhecida:\n\n```sql\n-- Criar capitão de teste\nINSERT INTO users \\(id, name, phone, password_hash, role, rating\\)\nVALUES \\(\n  gen_random_uuid\\(\\),\n  'Capitão Teste',\n  '92999999999',\n  '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',  -- senha: password\n  'captain',\n  '5.0'\n\\);\n```\n\n---\n\n## ✅ **Conclusão**\n\n**Backend está 80% funcional:**\n- ✅ Autenticação JWT\n- ✅ Busca de viagens com filtros\n- ✅ Criação de reservas\n- ⚠️  QR code \\(código pronto, servidor não reiniciado\\)\n- ❌ Rastreamento \\(erro de route nulo\\)\n\n**Próximos passos:**\n1. Reiniciar servidor\n2. Corrigir tratamento de route nulo\n3. Testar fluxo completo com capitão\n\n---\n\n**Total de testes:** 4  \n**Passou:** 2 ✅  \n**Passou com observação:** 1 ⚠️  \n**Falhou:** 1 ❌  \nENDOFFILE)",
+      "Bash(timeout 5 bash:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(yarn build:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}

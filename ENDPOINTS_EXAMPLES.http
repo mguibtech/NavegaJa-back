@@ -1,0 +1,316 @@
+### ============================================
+### API NavegaJá - Exemplos de Requisições
+### ============================================
+### Use este arquivo com REST Client (VSCode Extension)
+### ou copie os exemplos para Postman/Insomnia
+
+@baseUrl = http://localhost:3000
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+### ============================================
+### 1. AUTENTICAÇÃO
+### ============================================
+
+### 1.1 Registrar novo usuário (Passageiro)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Maria Santos",
+  "phone": "92998765432",
+  "email": "maria@example.com",
+  "password": "senha123",
+  "role": "passenger",
+  "cpf": "123.456.789-00"
+}
+
+### 1.2 Login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "phone": "92998765432",
+  "password": "senha123"
+}
+
+### ============================================
+### 2. TRIPS - BUSCAR VIAGENS
+### ============================================
+
+### 2.1 Buscar todas as viagens disponíveis
+GET {{baseUrl}}/trips
+Authorization: Bearer {{token}}
+
+### 2.2 Buscar viagens por origem e destino
+GET {{baseUrl}}/trips?origin=Manaus&destination=Parintins
+Authorization: Bearer {{token}}
+
+### 2.3 Buscar viagens por data específica
+GET {{baseUrl}}/trips?origin=Manaus&destination=Parintins&date=2026-02-15
+Authorization: Bearer {{token}}
+
+### 2.4 Buscar viagem por ID
+GET {{baseUrl}}/trips/123e4567-e89b-12d3-a456-426614174000
+Authorization: Bearer {{token}}
+
+### ============================================
+### 3. TRIPS - CRIAR/EDITAR (CAPTAIN)
+### ============================================
+
+### 3.1 Criar nova viagem (Captain)
+POST {{baseUrl}}/trips
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "origin": "Manaus",
+  "destination": "Parintins",
+  "boatId": "123e4567-e89b-12d3-a456-426614174001",
+  "departureTime": "2026-02-15T08:00:00Z",
+  "arrivalTime": "2026-02-15T14:00:00Z",
+  "price": 45.00,
+  "totalSeats": 20
+}
+
+### 3.2 Atualizar viagem existente (Captain)
+PUT {{baseUrl}}/trips/123e4567-e89b-12d3-a456-426614174000
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "origin": "Manaus",
+  "destination": "Parintins",
+  "boatId": "123e4567-e89b-12d3-a456-426614174001",
+  "departureTime": "2026-02-15T09:00:00Z",
+  "arrivalTime": "2026-02-15T15:00:00Z",
+  "price": 50.00,
+  "totalSeats": 25
+}
+
+### 3.3 Deletar viagem (Captain)
+DELETE {{baseUrl}}/trips/123e4567-e89b-12d3-a456-426614174000
+Authorization: Bearer {{token}}
+
+### ============================================
+### 4. BOOKINGS - RESERVAS
+### ============================================
+
+### 4.1 Listar minhas reservas
+GET {{baseUrl}}/bookings/my-bookings
+Authorization: Bearer {{token}}
+
+### 4.2 Ver detalhes de uma reserva (com QR code)
+GET {{baseUrl}}/bookings/123e4567-e89b-12d3-a456-426614174002
+Authorization: Bearer {{token}}
+
+### 4.3 Criar nova reserva (gera QR code)
+POST {{baseUrl}}/bookings
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tripId": "123e4567-e89b-12d3-a456-426614174000",
+  "seatNumber": 5,
+  "quantity": 2,
+  "paymentMethod": "pix"
+}
+
+### 4.4 Criar reserva com PIX
+POST {{baseUrl}}/bookings
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tripId": "123e4567-e89b-12d3-a456-426614174000",
+  "quantity": 1,
+  "paymentMethod": "pix"
+}
+
+### 4.5 Criar reserva com cartão de crédito
+POST {{baseUrl}}/bookings
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tripId": "123e4567-e89b-12d3-a456-426614174000",
+  "seatNumber": 10,
+  "quantity": 3,
+  "paymentMethod": "credit_card"
+}
+
+### ============================================
+### 5. BOOKINGS - CANCELAMENTO
+### ============================================
+
+### 5.1 Cancelar reserva (sem motivo)
+POST {{baseUrl}}/bookings/123e4567-e89b-12d3-a456-426614174002/cancel
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{}
+
+### 5.2 Cancelar reserva (com motivo)
+POST {{baseUrl}}/bookings/123e4567-e89b-12d3-a456-426614174002/cancel
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "reason": "Imprevisto familiar"
+}
+
+### ============================================
+### 6. BOOKINGS - CHECK-IN (CAPTAIN)
+### ============================================
+
+### 6.1 Fazer check-in de passageiro
+POST {{baseUrl}}/bookings/123e4567-e89b-12d3-a456-426614174002/checkin
+Authorization: Bearer {{token}}
+
+### ============================================
+### 7. TRIPS - GERENCIAMENTO (CAPTAIN)
+### ============================================
+
+### 7.1 Minhas viagens (Captain)
+GET {{baseUrl}}/trips/captain/my-trips
+Authorization: Bearer {{token}}
+
+### 7.2 Atualizar status da viagem
+PATCH {{baseUrl}}/trips/123e4567-e89b-12d3-a456-426614174000/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "status": "in_progress"
+}
+
+### 7.3 Atualizar localização GPS da viagem
+PATCH {{baseUrl}}/trips/123e4567-e89b-12d3-a456-426614174000/location
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "lat": -3.1190,
+  "lng": -60.0217
+}
+
+### ============================================
+### 8. BOOKINGS - RASTREAMENTO
+### ============================================
+
+### 8.1 Rastreamento em tempo real
+GET {{baseUrl}}/bookings/123e4567-e89b-12d3-a456-426614174002/tracking
+Authorization: Bearer {{token}}
+
+### 8.2 Lista de passageiros de uma viagem (Captain)
+GET {{baseUrl}}/bookings/trip/123e4567-e89b-12d3-a456-426614174000
+Authorization: Bearer {{token}}
+
+### ============================================
+### 9. CENÁRIOS DE TESTE
+### ============================================
+
+### 9.1 Cenário: Passageiro buscando e reservando
+# Passo 1: Login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "phone": "92998765432",
+  "password": "senha123"
+}
+
+# Passo 2: Buscar viagens disponíveis
+GET {{baseUrl}}/trips?origin=Manaus&destination=Parintins&date=2026-02-15
+Authorization: Bearer {{token}}
+
+# Passo 3: Criar reserva
+POST {{baseUrl}}/bookings
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tripId": "COPIAR_ID_DA_STEP_2",
+  "quantity": 2,
+  "paymentMethod": "pix"
+}
+
+# Passo 4: Ver QR code da reserva
+GET {{baseUrl}}/bookings/COPIAR_ID_DA_STEP_3
+Authorization: Bearer {{token}}
+
+### 9.2 Cenário: Capitão criando e gerenciando viagem
+# Passo 1: Login como Captain
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "phone": "92991234567",
+  "password": "senha123"
+}
+
+# Passo 2: Criar viagem
+POST {{baseUrl}}/trips
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "origin": "Manaus",
+  "destination": "Itacoatiara",
+  "boatId": "SEU_BOAT_ID",
+  "departureTime": "2026-02-20T06:00:00Z",
+  "arrivalTime": "2026-02-20T10:00:00Z",
+  "price": 35.00,
+  "totalSeats": 15
+}
+
+# Passo 3: Atualizar status para em andamento
+PATCH {{baseUrl}}/trips/COPIAR_ID_DA_STEP_2/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "status": "in_progress"
+}
+
+# Passo 4: Ver lista de passageiros
+GET {{baseUrl}}/bookings/trip/COPIAR_ID_DA_STEP_2
+Authorization: Bearer {{token}}
+
+### ============================================
+### 10. TESTES DE VALIDAÇÃO
+### ============================================
+
+### 10.1 Tentar criar reserva sem assentos suficientes (deve falhar)
+POST {{baseUrl}}/bookings
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tripId": "123e4567-e89b-12d3-a456-426614174000",
+  "quantity": 999,
+  "paymentMethod": "pix"
+}
+
+### 10.2 Tentar criar trip sem autenticação (deve falhar)
+POST {{baseUrl}}/trips
+Content-Type: application/json
+
+{
+  "origin": "Manaus",
+  "destination": "Parintins"
+}
+
+### 10.3 Tentar criar trip como passageiro (deve falhar)
+POST {{baseUrl}}/trips
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "origin": "Manaus",
+  "destination": "Parintins",
+  "boatId": "123e4567-e89b-12d3-a456-426614174001",
+  "departureTime": "2026-02-15T08:00:00Z",
+  "arrivalTime": "2026-02-15T14:00:00Z",
+  "price": 45.00,
+  "totalSeats": 20
+}
