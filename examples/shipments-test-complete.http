@@ -1,0 +1,359 @@
+### ========================================
+### 🧪 TESTES COMPLETOS - Sistema de Encomendas
+### ========================================
+###
+### Execute em ordem para testar todo o fluxo!
+###
+### ========================================
+
+### Variáveis
+@baseUrl = http://localhost:3000
+@token = SEU_TOKEN_AQUI
+@tripId = UUID_DE_UMA_VIAGEM
+
+
+### ========================================
+### 0️⃣ PREPARAÇÃO - Login
+### ========================================
+
+### Fazer login para obter token
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "cpf": "12345678900",
+  "password": "senha123"
+}
+
+### Copie o accessToken da resposta e cole na variável @token acima
+
+
+### ========================================
+### 1️⃣ TESTE: Gerar Presigned URLs (S3)
+### ========================================
+
+### Gerar 3 URLs para upload
+POST {{baseUrl}}/shipments/upload/presigned-urls
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "count": 3
+}
+
+### ✅ Esperado:
+### - Status 200
+### - Response com 3 URLs (uploadUrl, publicUrl, key)
+### - expiresIn: 300
+
+
+### ========================================
+### 2️⃣ TESTE: Calcular Preço (com weight)
+### ========================================
+
+### Teste com "weight" (formato frontend)
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tripId": "{{tripId}}",
+  "weight": 2.5,
+  "dimensions": {
+    "length": 30,
+    "width": 20,
+    "height": 15
+  },
+  "couponCode": "FRETE10"
+}
+
+### ✅ Esperado:
+### - Status 200
+### - actualWeight: 2.5
+### - volumetricWeight: 1.5
+### - chargedWeight: 2.5 (maior entre os dois)
+### - couponDiscount > 0 (se cupom existir)
+### - finalPrice < basePrice
+
+
+### ========================================
+### 3️⃣ TESTE: Calcular Preço (com weightKg)
+### ========================================
+
+### Teste com "weightKg" (formato backend - deve funcionar!)
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tripId": "{{tripId}}",
+  "weightKg": 2.5,
+  "length": 30,
+  "width": 20,
+  "height": 15,
+  "couponCode": "FRETE10"
+}
+
+### ✅ Esperado:
+### - Mesmo resultado do teste anterior
+### - Backend aceita AMBOS os formatos!
+
+
+### ========================================
+### 4️⃣ TESTE: Criar Encomenda (JSON)
+### ========================================
+
+### Criar encomenda com JSON puro
+POST {{baseUrl}}/shipments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tripId": "{{tripId}}",
+  "description": "Teste de encomenda via JSON",
+  "weightKg": 2.5,
+  "length": 30,
+  "width": 20,
+  "height": 15,
+  "photos": [
+    "https://via.placeholder.com/300",
+    "https://via.placeholder.com/400"
+  ],
+  "recipientName": "João da Silva Teste",
+  "recipientPhone": "11987654321",
+  "recipientAddress": "Rua Teste, 123 - Centro, São Paulo-SP, CEP 01000-000",
+  "paymentMethod": "pix",
+  "couponCode": "FRETE10"
+}
+
+### ✅ Esperado:
+### - Status 201
+### - Response COM aliases:
+###   {
+###     "id": "uuid",
+###     "trackingCode": "NJ2026000001",
+###     "qrCode": "data:image/png;base64...",
+###     "weightKg": 2.5,
+###     "weight": 2.5,           ← Alias
+###     "totalPrice": X,
+###     "price": X,              ← Alias
+###     "length": 30,
+###     "width": 20,
+###     "height": 15,
+###     "dimensions": {          ← Alias
+###       "length": 30,
+###       "width": 20,
+###       "height": 15
+###     },
+###     "status": "pending",
+###     "photos": ["https://..."],
+###     "createdAt": "..."
+###   }
+
+### 📋 Copie o "id" da resposta para usar nos próximos testes
+@shipmentId = UUID_DA_ENCOMENDA_CRIADA
+@trackingCode = TRACKING_CODE_GERADO
+
+
+### ========================================
+### 5️⃣ TESTE: Listar Minhas Encomendas
+### ========================================
+
+### Listar todas as encomendas do usuário
+GET {{baseUrl}}/shipments/my-shipments
+Authorization: Bearer {{token}}
+
+### ✅ Esperado:
+### - Status 200
+### - Array com encomendas
+### - Cada item COM aliases (weight, price, dimensions)
+### - Ordenado por createdAt DESC (mais recente primeiro)
+
+
+### ========================================
+### 6️⃣ TESTE: Buscar Encomenda por ID
+### ========================================
+
+### Buscar detalhes completos
+GET {{baseUrl}}/shipments/{{shipmentId}}
+Authorization: Bearer {{token}}
+
+### ✅ Esperado:
+### - Status 200
+### - Encomenda completa COM aliases
+### - Relations populadas (trip, sender)
+### - QR Code presente
+
+
+### ========================================
+### 7️⃣ TESTE: Timeline de Eventos
+### ========================================
+
+### Buscar timeline da encomenda
+GET {{baseUrl}}/shipments/{{shipmentId}}/timeline
+Authorization: Bearer {{token}}
+
+### ✅ Esperado:
+### - Status 200
+### - Array com pelo menos 1 evento:
+###   {
+###     "id": "uuid",
+###     "status": "pending",
+###     "description": "Encomenda criada...",
+###     "createdAt": "...",
+###     "timestamp": "..."      ← Alias para createdAt
+###   }
+
+
+### ========================================
+### 8️⃣ TESTE: Rastreamento Público (sem auth)
+### ========================================
+
+### Rastrear por código (SEM Authorization!)
+GET {{baseUrl}}/shipments/track/{{trackingCode}}
+
+### ✅ Esperado:
+### - Status 200
+### - {
+###     "shipment": { ...com aliases },
+###     "timeline": [ ...com timestamp ]
+###   }
+
+
+### ========================================
+### 9️⃣ TESTE: Criar Avaliação
+### ========================================
+
+### ATENÇÃO: Só funciona se status = "delivered"
+### Você pode mudar o status manualmente no banco ou pular este teste
+
+### Criar avaliação
+# POST {{baseUrl}}/shipments/reviews
+# Authorization: Bearer {{token}}
+# Content-Type: application/json
+#
+# {
+#   "shipmentId": "{{shipmentId}}",
+#   "rating": 5,
+#   "deliveryQuality": 5,
+#   "timeliness": 4,
+#   "comment": "Teste de avaliação - entrega perfeita!"
+# }
+
+### ✅ Esperado (se status = delivered):
+### - Status 201
+### - Review criada
+
+### ❌ Esperado (se status != delivered):
+### - Status 400
+### - Error: "Só é possível avaliar encomendas entregues"
+
+
+### ========================================
+### 🔟 TESTE: Buscar Avaliação
+### ========================================
+
+### Buscar avaliação da encomenda
+GET {{baseUrl}}/shipments/{{shipmentId}}/review
+Authorization: Bearer {{token}}
+
+### ✅ Esperado (se avaliação existe):
+### - Status 200
+### - Review encontrada
+
+### ✅ Esperado (se não tem avaliação):
+### - Status 200
+### - null
+
+
+### ========================================
+### 1️⃣1️⃣ TESTE: Cancelar Encomenda
+### ========================================
+
+### Cancelar encomenda
+POST {{baseUrl}}/shipments/{{shipmentId}}/cancel
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "reason": "Teste de cancelamento"
+}
+
+### ✅ Esperado:
+### - Status 200
+### - Encomenda com status "cancelled"
+
+
+### ========================================
+### 📊 RESUMO DOS TESTES
+### ========================================
+###
+### Execute nesta ordem:
+###
+### 1. ✅ Login (obter token)
+### 2. ✅ Gerar presigned URLs
+### 3. ✅ Calcular preço (weight)
+### 4. ✅ Calcular preço (weightKg)
+### 5. ✅ Criar encomenda
+### 6. ✅ Listar encomendas
+### 7. ✅ Buscar por ID
+### 8. ✅ Timeline
+### 9. ✅ Rastreamento público
+### 10. ⏩ Criar avaliação (skip se não delivered)
+### 11. ✅ Buscar avaliação
+### 12. ✅ Cancelar encomenda
+###
+### ========================================
+
+
+### ========================================
+### 🔧 TESTES ADICIONAIS
+### ========================================
+
+### Teste: Erro ao criar encomenda sem recipientName
+POST {{baseUrl}}/shipments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tripId": "{{tripId}}",
+  "description": "Teste sem recipientName",
+  "weightKg": 2.5,
+  "recipientPhone": "11987654321",
+  "recipientAddress": "Rua Teste, 123",
+  "paymentMethod": "pix",
+  "photos": ["https://via.placeholder.com/300"]
+}
+
+### ✅ Esperado:
+### - Status 400
+### - Error: Validação falhou
+
+
+### Teste: Erro ao calcular preço com peso inválido
+POST {{baseUrl}}/shipments/calculate-price
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tripId": "{{tripId}}",
+  "weight": 100
+}
+
+### ✅ Esperado:
+### - Status 400
+### - Error: Peso deve estar entre 0.1kg e 50kg
+
+
+### Teste: Erro ao buscar encomenda inexistente
+GET {{baseUrl}}/shipments/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}
+
+### ✅ Esperado:
+### - Status 404
+### - Error: Encomenda não encontrada
+
+
+### ========================================
+### ✅ FIM DOS TESTES
+### ========================================

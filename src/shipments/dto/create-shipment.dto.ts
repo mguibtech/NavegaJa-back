@@ -1,6 +1,8 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, IsArray, Min, Max } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsOptional, IsArray, Min, Max, IsEnum, ValidateNested } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { DimensionsDto } from './dimensions.dto';
+import { PaymentMethod } from '../../common/enums/payment-method.enum';
 
 export class CreateShipmentDto {
   @ApiProperty({ description: 'ID da viagem' })
@@ -18,10 +20,22 @@ export class CreateShipmentDto {
   @Min(0.1)
   @Max(50)
   @Type(() => Number)
-  weightKg: number;
+  weight: number;
 
-  // Dimensões em centímetros (para cálculo volumétrico)
-  @ApiProperty({ example: 30, description: 'Comprimento em cm', required: false })
+  // Opção 1: Enviar dimensions como objeto (RECOMENDADO)
+  @ApiProperty({
+    type: DimensionsDto,
+    required: false,
+    description: 'Dimensões da encomenda (objeto)',
+    example: { length: 30, width: 20, height: 15 }
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DimensionsDto)
+  dimensions?: DimensionsDto;
+
+  // Opção 2: Enviar campos separados (BACKWARD COMPATIBILITY)
+  @ApiProperty({ example: 30, description: 'Comprimento em cm (usar dimensions ao invés)', required: false, deprecated: true })
   @IsNumber()
   @IsOptional()
   @Min(1)
@@ -29,7 +43,7 @@ export class CreateShipmentDto {
   @Type(() => Number)
   length?: number;
 
-  @ApiProperty({ example: 20, description: 'Largura em cm', required: false })
+  @ApiProperty({ example: 20, description: 'Largura em cm (usar dimensions ao invés)', required: false, deprecated: true })
   @IsNumber()
   @IsOptional()
   @Min(1)
@@ -37,7 +51,7 @@ export class CreateShipmentDto {
   @Type(() => Number)
   width?: number;
 
-  @ApiProperty({ example: 15, description: 'Altura em cm', required: false })
+  @ApiProperty({ example: 15, description: 'Altura em cm (usar dimensions ao invés)', required: false, deprecated: true })
   @IsNumber()
   @IsOptional()
   @Min(1)
@@ -71,10 +85,16 @@ export class CreateShipmentDto {
   @IsNotEmpty()
   recipientAddress: string;
 
-  @ApiProperty({ example: 'pix', default: 'pix', required: false })
-  @IsString()
+  @ApiProperty({
+    enum: PaymentMethod,
+    example: PaymentMethod.PIX,
+    default: PaymentMethod.PIX,
+    required: false,
+    description: 'Método de pagamento (pix, credit_card, debit_card, cash)'
+  })
+  @IsEnum(PaymentMethod)
   @IsOptional()
-  paymentMethod?: string;
+  paymentMethod?: PaymentMethod;
 
   @ApiProperty({ example: 'PROMO10', required: false, description: 'Código de cupom de desconto' })
   @IsString()

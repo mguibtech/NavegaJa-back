@@ -40,6 +40,18 @@ export class CreateTripDto {
   @ApiProperty({ example: 20 })
   @IsNumber()
   totalSeats: number;
+
+  @ApiProperty({ example: 15.00, description: 'Preço por kg de carga (R$/kg)', required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  cargoPriceKg?: number;
+
+  @ApiProperty({ example: 500, description: 'Capacidade total de carga em kg', required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  cargoCapacityKg?: number;
 }
 
 export class UpdateTripStatusDto {

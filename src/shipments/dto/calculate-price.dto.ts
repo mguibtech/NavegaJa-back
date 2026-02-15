@@ -1,6 +1,7 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, Min, Max } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsOptional, Min, Max, ValidateNested } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { DimensionsDto } from './dimensions.dto';
 
 export class CalculatePriceDto {
   @ApiProperty({ description: 'ID da viagem' })
@@ -13,9 +14,22 @@ export class CalculatePriceDto {
   @Min(0.1)
   @Max(50)
   @Type(() => Number)
-  weightKg: number;
+  weight: number;
 
-  @ApiProperty({ example: 30, description: 'Comprimento em cm', required: false })
+  // Opção 1: Enviar dimensions como objeto (RECOMENDADO)
+  @ApiProperty({
+    type: DimensionsDto,
+    required: false,
+    description: 'Dimensões da encomenda (objeto)',
+    example: { length: 30, width: 20, height: 15 }
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DimensionsDto)
+  dimensions?: DimensionsDto;
+
+  // Opção 2: Enviar campos separados (BACKWARD COMPATIBILITY)
+  @ApiProperty({ example: 30, description: 'Comprimento em cm (usar dimensions ao invés)', required: false, deprecated: true })
   @IsNumber()
   @IsOptional()
   @Min(1)
@@ -23,7 +37,7 @@ export class CalculatePriceDto {
   @Type(() => Number)
   length?: number;
 
-  @ApiProperty({ example: 20, description: 'Largura em cm', required: false })
+  @ApiProperty({ example: 20, description: 'Largura em cm (usar dimensions ao invés)', required: false, deprecated: true })
   @IsNumber()
   @IsOptional()
   @Min(1)
@@ -31,7 +45,7 @@ export class CalculatePriceDto {
   @Type(() => Number)
   width?: number;
 
-  @ApiProperty({ example: 15, description: 'Altura em cm', required: false })
+  @ApiProperty({ example: 15, description: 'Altura em cm (usar dimensions ao invés)', required: false, deprecated: true })
   @IsNumber()
   @IsOptional()
   @Min(1)

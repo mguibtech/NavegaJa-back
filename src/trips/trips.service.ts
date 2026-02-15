@@ -1,14 +1,18 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThanOrEqual, Between } from 'typeorm';
 import { Trip, TripStatus } from './trip.entity';
 import { CreateTripDto, UpdateTripStatusDto, UpdateLocationDto } from './dto/trip.dto';
+import { ShipmentsService } from '../shipments/shipments.service';
+import { ShipmentStatus } from '../shipments/shipment.entity';
 
 @Injectable()
 export class TripsService {
   constructor(
     @InjectRepository(Trip)
     private tripsRepo: Repository<Trip>,
+    @Inject(forwardRef(() => ShipmentsService))
+    private shipmentsService: ShipmentsService,
   ) {}
 
   async create(captainId: string, dto: CreateTripDto): Promise<Trip> {
@@ -25,6 +29,9 @@ export class TripsService {
       price: dto.price,
       totalSeats: dto.totalSeats,
       availableSeats: dto.totalSeats,
+      cargoPriceKg: dto.cargoPriceKg || 0,
+      cargoCapacityKg: dto.cargoCapacityKg || null,
+      availableCargoKg: dto.cargoCapacityKg || null, // Inicializa com capacidade total
     } as Partial<Trip>);
 
     return this.tripsRepo.save(trip);
@@ -200,8 +207,21 @@ export class TripsService {
     if (trip.captainId !== captainId) {
       throw new ForbiddenException('Apenas o capitão pode atualizar esta viagem');
     }
+
+    const oldStatus = trip.status;
     trip.status = dto.status;
-    return this.tripsRepo.save(trip);
+    const saved = await this.tripsRepo.save(trip);
+
+    // Auto-atualizar encomendas quando viagem muda de status
+    if (dto.status === TripStatus.IN_PROGRESS && oldStatus !== TripStatus.IN_PROGRESS) {
+      // Viagem partiu - atualizar encomendas COLLECTED para IN_TRANSIT
+      await this.shipmentsService.updateShipmentsByTrip(tripId, ShipmentStatus.IN_TRANSIT);
+    } else if (dto.status === TripStatus.COMPLETED && oldStatus !== TripStatus.COMPLETED) {
+      // Viagem chegou - atualizar encomendas IN_TRANSIT para ARRIVED
+      await this.shipmentsService.updateShipmentsByTrip(tripId, ShipmentStatus.ARRIVED);
+    }
+
+    return saved;
   }
 
   async updateLocation(tripId: string, captainId: string, dto: UpdateLocationDto): Promise<Trip> {

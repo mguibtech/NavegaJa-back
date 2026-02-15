@@ -8,6 +8,7 @@ import { GeneratePresignedUrlsDto, GeneratePresignedUrlsResponseDto } from './dt
 import { ShipmentStatus } from './shipment.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
+import { Public } from '../common/decorators/public.decorator';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ShipmentReview } from './shipment-review.entity';
@@ -28,18 +29,8 @@ export class ShipmentsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Calcular preço da encomenda (com peso volumétrico e cupom)' })
   @ApiResponse({ status: 200, description: 'Cálculo realizado com sucesso', type: CalculatePriceResponseDto })
-  async calculatePrice(@Body() dto: any) {
-    // Normalizar (aceitar 'weight' ou 'weightKg', 'dimensions' ou campos separados)
-    const normalizedDto: CalculatePriceDto = {
-      tripId: dto.tripId,
-      weightKg: dto.weight || dto.weightKg,
-      length: dto.dimensions?.length || dto.length,
-      width: dto.dimensions?.width || dto.width,
-      height: dto.dimensions?.height || dto.height,
-      couponCode: dto.couponCode,
-    };
-
-    return this.shipmentsService.calculatePrice(normalizedDto);
+  async calculatePrice(@Body() dto: CalculatePriceDto) {
+    return this.shipmentsService.calculatePrice(dto);
   }
 
   @Post('upload/presigned-urls')
@@ -114,6 +105,57 @@ export class ShipmentsController {
       ...event,
       timestamp: event.createdAt,
     }));
+  }
+
+  @Post(':id/confirm-payment')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Confirmar pagamento da encomenda' })
+  confirmPayment(@Param('id') id: string) {
+    return this.shipmentsService.confirmPayment(id);
+  }
+
+  @Post(':id/collect')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('captain')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Coletar encomenda do remetente (captain + validação QR/PIN)' })
+  collectShipment(
+    @Param('id') id: string,
+    @Request() req: any,
+    @Body('validationCode') validationCode: string,
+    @Body('collectionPhotoUrl') collectionPhotoUrl?: string,
+  ) {
+    return this.shipmentsService.collectShipment(
+      id,
+      req.user.sub,
+      validationCode,
+      collectionPhotoUrl,
+    );
+  }
+
+  @Post(':id/out-for-delivery')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('captain')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Marcar como saiu para entrega (captain)' })
+  outForDelivery(@Param('id') id: string, @Request() req: any) {
+    return this.shipmentsService.outForDelivery(id, req.user.sub);
+  }
+
+  @Post('validate-delivery')
+  @Public() // Endpoint público - destinatário não precisa estar autenticado
+  @ApiOperation({ summary: 'Validar entrega final (público - destinatário com QR/PIN)' })
+  validateDelivery(
+    @Body('trackingCode') trackingCode: string,
+    @Body('validationCode') validationCode: string,
+    @Body('deliveryPhotoUrl') deliveryPhotoUrl?: string,
+  ) {
+    return this.shipmentsService.validateDelivery(
+      trackingCode,
+      validationCode,
+      deliveryPhotoUrl,
+    );
   }
 
   @Post(':id/cancel')

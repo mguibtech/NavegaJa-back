@@ -64,6 +64,12 @@ export class Trip {
   @Column({ name: 'cargo_price_kg', type: 'decimal', precision: 10, scale: 2, default: 0 })
   cargoPriceKg: number;
 
+  @Column({ name: 'cargo_capacity_kg', type: 'decimal', precision: 10, scale: 2, nullable: true, comment: 'Capacidade total de carga em kg' })
+  cargoCapacityKg: number;
+
+  @Column({ name: 'available_cargo_kg', type: 'decimal', precision: 10, scale: 2, nullable: true, comment: 'Carga disponível em kg (atualizada conforme reservas)' })
+  availableCargoKg: number;
+
   @Column({ name: 'total_seats' })
   totalSeats: number;
 

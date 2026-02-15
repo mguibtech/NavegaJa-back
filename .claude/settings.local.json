@@ -33,7 +33,8 @@
       "Bash(npx ts-node:*)",
       "Bash(yarn build:*)",
       "Bash(ls:*)",
-      "Bash(node scripts/fix-shipments-db.js:*)"
+      "Bash(node scripts/fix-shipments-db.js:*)",
+      "Bash(PGPASSWORD=1234 psql:*)"
     ]
   }
 }
