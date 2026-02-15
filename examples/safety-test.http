@@ -1,0 +1,215 @@
+### TESTES DO MÓDULO DE SEGURANÇA ###
+
+# ==================== AUTH ====================
+
+### Login como Admin (para criar contatos de emergência)
+POST http://localhost:3000/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@navegaja.com",
+  "password": "admin123"
+}
+
+### Copiar token do response acima
+@adminToken = SEU_TOKEN_AQUI
+
+### Login como Capitão (para checklist)
+POST http://localhost:3000/auth/login
+Content-Type: application/json
+
+{
+  "email": "captain@navegaja.com",
+  "password": "captain123"
+}
+
+@captainToken = SEU_TOKEN_AQUI
+
+### Login como Passageiro (para SOS)
+POST http://localhost:3000/auth/login
+Content-Type: application/json
+
+{
+  "email": "passenger@navegaja.com",
+  "password": "pass123"
+}
+
+@passengerToken = SEU_TOKEN_AQUI
+
+# ==================== CONTATOS DE EMERGÊNCIA ====================
+
+### 1. Seed - Popular contatos de emergência padrão (Admin only)
+POST http://localhost:3000/safety/emergency-contacts/seed
+Authorization: Bearer {{adminToken}}
+
+### 2. Listar todos os contatos de emergência (Público - não precisa auth)
+GET http://localhost:3000/safety/emergency-contacts
+
+### 3. Listar contatos de emergência por região
+GET http://localhost:3000/safety/emergency-contacts?region=Manaus
+
+### 4. Criar novo contato de emergência (Admin only)
+POST http://localhost:3000/safety/emergency-contacts
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "type": "outros",
+  "name": "Posto Náutico da Polícia Militar",
+  "phoneNumber": "(92) 3215-4000",
+  "description": "Policiamento fluvial e resgate",
+  "region": "Manaus",
+  "priority": 7
+}
+
+### 5. Atualizar contato de emergência (Admin only)
+# Substituir {id} pelo ID real retornado no GET
+PUT http://localhost:3000/safety/emergency-contacts/{id}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "isActive": true,
+  "priority": 5
+}
+
+# ==================== CHECKLIST DE SEGURANÇA ====================
+
+### 6. Criar checklist para uma viagem (Capitão/Admin)
+# Substituir {tripId} por um ID real de viagem
+POST http://localhost:3000/safety/checklists
+Authorization: Bearer {{captainToken}}
+Content-Type: application/json
+
+{
+  "tripId": "trip-uuid-aqui"
+}
+
+### 7. Atualizar checklist (marcar itens como verificados)
+# Substituir {checklistId} pelo ID retornado no POST acima
+PATCH http://localhost:3000/safety/checklists/{checklistId}
+Authorization: Bearer {{captainToken}}
+Content-Type: application/json
+
+{
+  "lifeJacketsAvailable": true,
+  "lifeJacketsCount": 50,
+  "fireExtinguisherCheck": true,
+  "weatherConditionsOk": true,
+  "weatherCondition": "Ensolarado",
+  "boatConditionGood": true,
+  "emergencyEquipmentCheck": true,
+  "navigationLightsWorking": true,
+  "maxCapacityRespected": true,
+  "passengersOnBoard": 40,
+  "maxCapacity": 50,
+  "observations": "Todos os itens verificados. Embarcação em perfeitas condições."
+}
+
+### 8. Buscar checklist de uma viagem
+GET http://localhost:3000/safety/checklists/trip/{tripId}
+Authorization: Bearer {{captainToken}}
+
+### 9. Verificar status do checklist (se está completo)
+GET http://localhost:3000/safety/checklists/trip/{tripId}/status
+Authorization: Bearer {{captainToken}}
+
+# ==================== ALERTAS SOS ====================
+
+### 10. Criar alerta SOS (qualquer usuário autenticado)
+POST http://localhost:3000/safety/sos
+Authorization: Bearer {{passengerToken}}
+Content-Type: application/json
+
+{
+  "tripId": "trip-uuid-aqui",
+  "type": "emergency",
+  "description": "Motor parou de funcionar e embarcação está à deriva",
+  "latitude": -3.1190,
+  "longitude": -60.0217,
+  "location": "Próximo ao Encontro das Águas"
+}
+
+### 11. Criar alerta SOS - Emergência Médica
+POST http://localhost:3000/safety/sos
+Authorization: Bearer {{passengerToken}}
+Content-Type: application/json
+
+{
+  "tripId": "trip-uuid-aqui",
+  "type": "medical",
+  "description": "Passageiro com suspeita de infarto, precisa de atendimento urgente",
+  "latitude": -3.1000,
+  "longitude": -60.0250
+}
+
+### 12. Criar alerta SOS - Condições Climáticas Perigosas
+POST http://localhost:3000/safety/sos
+Authorization: Bearer {{captainToken}}
+Content-Type: application/json
+
+{
+  "tripId": "trip-uuid-aqui",
+  "type": "weather",
+  "description": "Tempestade forte com ondas altas, banzeiro intenso",
+  "location": "Rio Negro - altura da Ponta Negra"
+}
+
+### 13. Listar alertas SOS ativos (Admin/Capitão)
+GET http://localhost:3000/safety/sos/active
+Authorization: Bearer {{adminToken}}
+
+### 14. Resolver alerta SOS (Admin/Capitão)
+# Substituir {sosId} pelo ID do alerta
+PATCH http://localhost:3000/safety/sos/{sosId}/resolve
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": "resolved",
+  "notes": "Embarcação rebocada até porto seguro. Passageiros resgatados sem ferimentos."
+}
+
+### 15. Marcar alerta como falso alarme
+PATCH http://localhost:3000/safety/sos/{sosId}/resolve
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": "false_alarm",
+  "notes": "Usuário acionou por engano"
+}
+
+### 16. Cancelar alerta SOS (pelo próprio usuário)
+PATCH http://localhost:3000/safety/sos/{sosId}/cancel
+Authorization: Bearer {{passengerToken}}
+
+### 17. Listar meus alertas SOS
+GET http://localhost:3000/safety/sos/my-alerts
+Authorization: Bearer {{passengerToken}}
+
+# ==================== TESTES DE VALIDAÇÃO ====================
+
+### Teste: Tentar criar contato de emergência sem ser admin (deve falhar)
+POST http://localhost:3000/safety/emergency-contacts
+Authorization: Bearer {{passengerToken}}
+Content-Type: application/json
+
+{
+  "type": "bombeiros",
+  "name": "Teste",
+  "phoneNumber": "999"
+}
+
+### Teste: Tentar resolver SOS sem ser admin/capitão (deve falhar)
+PATCH http://localhost:3000/safety/sos/{sosId}/resolve
+Authorization: Bearer {{passengerToken}}
+Content-Type: application/json
+
+{
+  "status": "resolved"
+}
+
+### Teste: Cancelar SOS de outro usuário (deve falhar)
+PATCH http://localhost:3000/safety/sos/{sosId-de-outro-usuario}/cancel
+Authorization: Bearer {{passengerToken}}

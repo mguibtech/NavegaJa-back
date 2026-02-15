@@ -16,6 +16,7 @@ import { SeedModule } from './database/seed.module';
 import { GamificationModule } from './gamification/gamification.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { CouponsModule } from './coupons/coupons.module';
+import { SafetyModule } from './safety/safety.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { CouponsModule } from './coupons/coupons.module';
     GamificationModule,
     FavoritesModule,
     CouponsModule,
+    SafetyModule,
     SeedModule,
   ],
 })
