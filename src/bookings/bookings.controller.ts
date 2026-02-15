@@ -56,6 +56,26 @@ export class BookingsController {
     return this.bookingsService.findByTrip(tripId);
   }
 
+  @Post(':id/confirm-payment')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'captain')
+  @ApiOperation({
+    summary: 'Confirmar pagamento PIX manualmente',
+    description: 'Admin ou capitão confirma que recebeu o pagamento PIX',
+  })
+  confirmPayment(@Param('id') id: string, @Request() req: any) {
+    return this.bookingsService.confirmPayment(id, req.user.sub);
+  }
+
+  @Get(':id/payment-status')
+  @ApiOperation({
+    summary: 'Consultar status de pagamento',
+    description: 'Para polling do frontend verificar se pagamento foi confirmado',
+  })
+  getPaymentStatus(@Param('id') id: string) {
+    return this.bookingsService.getPaymentStatus(id);
+  }
+
   @Post(':id/cancel')
   @ApiOperation({ summary: 'Cancelar reserva' })
   cancel(@Param('id') id: string, @Request() req: any, @Body() dto: CancelBookingDto) {

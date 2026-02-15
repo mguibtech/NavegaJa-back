@@ -1,13 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
-import { Booking, BookingStatus, PaymentStatus } from './booking.entity';
+import { Repository, In, LessThan } from 'typeorm';
+import { Booking, BookingStatus, PaymentStatus, PaymentMethod } from './booking.entity';
 import { Trip, TripStatus } from '../trips/trip.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { GamificationService } from '../gamification/gamification.service';
 import { PointAction } from '../gamification/point-transaction.entity';
 import { CouponsService } from '../coupons/coupons.service';
 import { User } from '../users/user.entity';
+import { PixService } from '../payments/pix.service';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Injectable()
 export class BookingsService {
@@ -20,6 +22,7 @@ export class BookingsService {
     private usersRepo: Repository<User>,
     private gamificationService: GamificationService,
     private couponsService: CouponsService,
+    private pixService: PixService,
   ) {}
 
   async calculatePrice(passengerId: string, tripId: string, quantity: number, couponCode?: string) {
@@ -94,30 +97,64 @@ export class BookingsService {
     const priceBreakdown = await this.calculatePrice(passengerId, dto.tripId, quantity, dto.couponCode);
     const totalPrice = priceBreakdown.finalPrice;
 
+    // Determinar status inicial baseado no método de pagamento
+    let initialStatus = BookingStatus.PENDING;
+    let initialPaymentStatus = PaymentStatus.PENDING;
+
+    // Pagamento em dinheiro: confirma direto (paga a bordo)
+    if (dto.paymentMethod === PaymentMethod.CASH) {
+      initialStatus = BookingStatus.CONFIRMED;
+      initialPaymentStatus = PaymentStatus.PENDING; // Paga a bordo
+    }
+
+    // Pagamento com cartão: confirma direto (simulado - gateway futuro)
+    if (dto.paymentMethod === PaymentMethod.CREDIT_CARD || dto.paymentMethod === PaymentMethod.DEBIT_CARD) {
+      initialStatus = BookingStatus.CONFIRMED;
+      initialPaymentStatus = PaymentStatus.PAID; // Simulado
+    }
+
     const booking = this.bookingsRepo.create({
       passengerId,
       tripId: dto.tripId,
       seatNumber: dto.seatNumber,
       seats: quantity,
       totalPrice,
-      qrCode: null, // Será gerado após ter o ID
+      qrCodeCheckin: null, // Será gerado após confirmação
       paymentMethod: dto.paymentMethod,
-      status: BookingStatus.CONFIRMED,
-      paymentStatus: PaymentStatus.PAID, // Simulado
+      status: initialStatus,
+      paymentStatus: initialPaymentStatus,
     });
 
     // Salva o booking primeiro para gerar o ID
     let saved = await this.bookingsRepo.save(booking);
 
-    // Gera QR code compacto (apenas o ID do booking para validação)
-    // O app irá gerar a imagem QR a partir deste dado
-    const qrCodeData = `NVGJ-${saved.id}`;
-    saved.qrCode = qrCodeData;
-    saved = await this.bookingsRepo.save(saved);
+    // Se método for PIX: gerar dados PIX
+    if (dto.paymentMethod === PaymentMethod.PIX) {
+      const pixData = await this.pixService.generatePixPayment(
+        saved.id,
+        totalPrice,
+        `Reserva ${trip.origin} → ${trip.destination} - ${quantity} assento(s)`,
+      );
 
-    // Atualiza assentos disponíveis
-    trip.availableSeats -= quantity;
-    await this.tripsRepo.save(trip);
+      saved.pixQrCode = pixData.pixQrCode;
+      saved.pixQrCodeImage = pixData.pixQrCodeImage;
+      saved.pixTxid = pixData.pixTxid;
+      saved.pixExpiresAt = pixData.pixExpiresAt;
+      saved.pixKey = pixData.pixKey;
+
+      saved = await this.bookingsRepo.save(saved);
+    }
+
+    // Se já está confirmado (CASH ou CARD): gerar QR code de check-in e reduzir assentos
+    if (saved.status === BookingStatus.CONFIRMED) {
+      const qrCodeData = `NVGJ-${saved.id}`;
+      saved.qrCodeCheckin = qrCodeData;
+      saved = await this.bookingsRepo.save(saved);
+
+      // Reduzir assentos disponíveis
+      trip.availableSeats -= quantity;
+      await this.tripsRepo.save(trip);
+    }
 
     // Incrementar uso do cupom se foi aplicado
     if (dto.couponCode && priceBreakdown.couponDiscount > 0) {
@@ -238,7 +275,7 @@ export class BookingsService {
     return {
       bookingId: booking.id,
       bookingStatus: booking.status,
-      qrCode: booking.qrCode,
+      qrCode: booking.qrCodeCheckin,
       trip: {
         id: trip.id,
         status: trip.status,
@@ -294,15 +331,22 @@ export class BookingsService {
       throw new BadRequestException('Reserva já cancelada');
     }
 
-    // Devolve assentos
-    const trip = await this.tripsRepo.findOne({ where: { id: booking.tripId } });
-    if (trip) {
-      trip.availableSeats += booking.seats;
-      await this.tripsRepo.save(trip);
+    // Só devolve assentos se estava CONFIRMED (pagamento confirmado)
+    if (booking.status === BookingStatus.CONFIRMED || booking.status === BookingStatus.CHECKED_IN) {
+      const trip = await this.tripsRepo.findOne({ where: { id: booking.tripId } });
+      if (trip) {
+        trip.availableSeats += booking.seats;
+        await this.tripsRepo.save(trip);
+      }
     }
 
     booking.status = BookingStatus.CANCELLED;
-    booking.paymentStatus = PaymentStatus.REFUNDED;
+
+    // Se estava pago, marca como reembolsado (processo manual de reembolso)
+    if (booking.paymentStatus === PaymentStatus.PAID) {
+      booking.paymentStatus = PaymentStatus.REFUNDED;
+    }
+
     return this.bookingsRepo.save(booking);
   }
 
@@ -329,5 +373,89 @@ export class BookingsService {
     );
 
     return saved;
+  }
+
+  /**
+   * Confirma pagamento PIX manualmente (admin/capitão)
+   * Similar ao padrão do Shipments (shipments.service.ts:388-406)
+   */
+  async confirmPayment(bookingId: string, confirmedBy?: string): Promise<Booking> {
+    const booking = await this.findById(bookingId);
+
+    // Validações
+    if (booking.paymentStatus === PaymentStatus.PAID) {
+      throw new BadRequestException('Pagamento já confirmado');
+    }
+
+    if (booking.status === BookingStatus.CANCELLED) {
+      throw new BadRequestException('Reserva cancelada');
+    }
+
+    // Verificar se PIX expirou
+    if (booking.pixExpiresAt && this.pixService.isExpired(booking.pixExpiresAt)) {
+      throw new BadRequestException('PIX expirado. Gere uma nova reserva.');
+    }
+
+    // Atualizar status
+    booking.paymentStatus = PaymentStatus.PAID;
+    booking.status = BookingStatus.CONFIRMED;
+    booking.pixPaidAt = new Date();
+
+    const saved = await this.bookingsRepo.save(booking);
+
+    // Gerar QR Code de check-in
+    const qrCodeData = `NVGJ-${saved.id}`;
+    saved.qrCodeCheckin = qrCodeData;
+    await this.bookingsRepo.save(saved);
+
+    // Reduzir assentos disponíveis AGORA
+    const trip = await this.tripsRepo.findOne({ where: { id: booking.tripId } });
+    if (trip) {
+      trip.availableSeats -= booking.seats;
+      await this.tripsRepo.save(trip);
+    }
+
+    return saved;
+  }
+
+  /**
+   * Retorna status de pagamento para polling do frontend
+   */
+  async getPaymentStatus(bookingId: string) {
+    const booking = await this.findById(bookingId);
+
+    return {
+      bookingId: booking.id,
+      paymentStatus: booking.paymentStatus,
+      status: booking.status,
+      paymentMethod: booking.paymentMethod,
+      totalPrice: booking.totalPrice,
+      pixPaidAt: booking.pixPaidAt,
+      pixExpiresAt: booking.pixExpiresAt,
+      isExpired: booking.pixExpiresAt ? this.pixService.isExpired(booking.pixExpiresAt) : false,
+    };
+  }
+
+  /**
+   * Cancela bookings com PIX expirado (roda a cada 5 minutos)
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async cancelExpiredPixPayments() {
+    const expiredBookings = await this.bookingsRepo.find({
+      where: {
+        paymentStatus: PaymentStatus.PENDING,
+        paymentMethod: PaymentMethod.PIX,
+        pixExpiresAt: LessThan(new Date()),
+      },
+    });
+
+    for (const booking of expiredBookings) {
+      booking.status = BookingStatus.CANCELLED;
+      await this.bookingsRepo.save(booking);
+
+      console.log(`Booking ${booking.id} cancelado por PIX expirado`);
+    }
+
+    return { cancelled: expiredBookings.length };
   }
 }

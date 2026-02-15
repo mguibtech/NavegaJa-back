@@ -57,8 +57,28 @@ export class Booking {
   @Column({ type: 'enum', enum: BookingStatus, default: BookingStatus.PENDING })
   status: BookingStatus;
 
-  @Column({ name: 'qr_code', type: 'text', nullable: true })
-  qrCode: string | null;
+  // QR Code de check-in (separado do QR Code de pagamento PIX)
+  @Column({ name: 'qr_code_checkin', type: 'text', nullable: true })
+  qrCodeCheckin: string | null;
+
+  // Dados do PIX
+  @Column({ name: 'pix_qr_code', type: 'text', nullable: true })
+  pixQrCode: string | null;
+
+  @Column({ name: 'pix_qr_code_image', type: 'text', nullable: true })
+  pixQrCodeImage: string | null;
+
+  @Column({ name: 'pix_expires_at', type: 'timestamp', nullable: true })
+  pixExpiresAt: Date | null;
+
+  @Column({ name: 'pix_txid', type: 'varchar', length: 50, nullable: true })
+  pixTxid: string | null;
+
+  @Column({ name: 'pix_key', type: 'varchar', length: 100, nullable: true })
+  pixKey: string | null;
+
+  @Column({ name: 'pix_paid_at', type: 'timestamp', nullable: true })
+  pixPaidAt: Date | null;
 
   @Column({ name: 'payment_method', type: 'enum', enum: PaymentMethod, default: PaymentMethod.PIX })
   paymentMethod: PaymentMethod;

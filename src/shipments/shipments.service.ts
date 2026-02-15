@@ -30,9 +30,13 @@ export class ShipmentsService {
   }
 
   private async initializeSequence() {
-    const lastShipment = await this.shipmentsRepo.findOne({
+    // Buscar último shipment (TypeORM requer where, então usamos find com limit)
+    const shipments = await this.shipmentsRepo.find({
       order: { createdAt: 'DESC' },
+      take: 1,
     });
+
+    const lastShipment = shipments[0];
     if (lastShipment?.trackingCode) {
       const match = lastShipment.trackingCode.match(/NJ\d{4}(\d{6})/);
       if (match) {

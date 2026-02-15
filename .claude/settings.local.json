@@ -32,7 +32,8 @@
       "Bash(timeout 5 bash:*)",
       "Bash(npx ts-node:*)",
       "Bash(yarn build:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(node scripts/fix-shipments-db.js:*)"
     ]
   }
 }
