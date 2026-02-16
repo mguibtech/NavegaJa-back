@@ -1,7 +1,7 @@
 import { Controller, Post, Get, Body, UseGuards, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto, RefreshTokenDto, ForgotPasswordDto, ResetPasswordDto } from './dto/auth.dto';
+import { RegisterDto, LoginDto, LoginWebDto, RefreshTokenDto, ForgotPasswordDto, ResetPasswordDto } from './dto/auth.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 @ApiTags('Auth')
@@ -16,9 +16,18 @@ export class AuthController {
   }
 
   @Post('login')
-  @ApiOperation({ summary: 'Login com telefone e senha' })
+  @ApiOperation({ summary: 'Login com telefone e senha (App Mobile)' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Post('login-web')
+  @ApiOperation({
+    summary: 'Login com e-mail e senha (Dashboard Web)',
+    description: 'Endpoint exclusivo para administradores. APENAS usuários com role admin podem acessar o dashboard web.'
+  })
+  loginWeb(@Body() dto: LoginWebDto) {
+    return this.authService.loginWeb(dto);
   }
 
   @Post('refresh')

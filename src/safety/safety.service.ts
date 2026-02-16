@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { EmergencyContact, EmergencyServiceType } from './emergency-contact.entity';
 import { SafetyChecklist } from './safety-checklist.entity';
 import { SosAlert, SosAlertStatus, SosAlertType } from './sos-alert.entity';
+import { WeatherService } from '../weather/weather.service';
 
 @Injectable()
 export class SafetyService {
@@ -14,6 +15,7 @@ export class SafetyService {
     private checklistsRepo: Repository<SafetyChecklist>,
     @InjectRepository(SosAlert)
     private sosAlertsRepo: Repository<SosAlert>,
+    private weatherService: WeatherService,
   ) {}
 
   // ==================== CONTATOS DE EMERGÊNCIA ====================
@@ -311,5 +313,55 @@ export class SafetyService {
     }
 
     return { seeded: contacts.length };
+  }
+
+  // ==================== INTEGRAÇÃO COM CLIMA ====================
+
+  /**
+   * Sugere condição climática para checklist baseado em coordenadas
+   * Usado quando capitão cria checklist - preenche automaticamente o clima
+   */
+  async suggestWeatherCondition(latitude: number, longitude: number) {
+    try {
+      const weather = await this.weatherService.getCurrentWeather(latitude, longitude);
+
+      return {
+        weatherCondition: weather.condition,
+        weatherConditionsOk: weather.isSafeForNavigation,
+        weatherDetails: {
+          temperature: weather.temperature,
+          windSpeed: weather.windSpeed,
+          rain: weather.rain,
+          visibility: weather.visibility,
+          warnings: weather.safetyWarnings,
+        },
+      };
+    } catch (error) {
+      // Se falhar (sem API key, sem internet, etc), retorna null
+      return {
+        weatherCondition: null,
+        weatherConditionsOk: null,
+        weatherDetails: null,
+      };
+    }
+  }
+
+  /**
+   * Avalia se clima está seguro para navegação
+   * Usado antes de iniciar viagem
+   */
+  async checkWeatherSafety(latitude: number, longitude: number) {
+    try {
+      return await this.weatherService.evaluateNavigationSafety(latitude, longitude);
+    } catch (error) {
+      // Se falhar, retorna seguro por padrão (não bloqueia navegação)
+      return {
+        isSafe: true,
+        score: 100,
+        warnings: ['Não foi possível verificar clima'],
+        recommendations: ['Verifique condições manualmente'],
+        weather: null,
+      };
+    }
   }
 }

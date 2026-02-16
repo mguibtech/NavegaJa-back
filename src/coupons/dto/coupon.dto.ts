@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsEnum, IsNumber, IsOptional, IsBoolean, IsDateString, Min, Max } from 'class-validator';
-import { CouponType } from '../coupon.entity';
+import { CouponType, CouponApplicability } from '../coupon.entity';
 
 export class CreateCouponDto {
   @ApiProperty({ example: 'NATAL2026', description: 'Código do cupom' })
@@ -68,6 +68,28 @@ export class CreateCouponDto {
   @IsOptional()
   @IsString()
   toCity?: string;
+
+  @ApiProperty({ example: 1.5, required: false, description: 'Peso mínimo em kg (para encomendas)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  minWeight?: number;
+
+  @ApiProperty({ example: 50, required: false, description: 'Peso máximo em kg (para encomendas)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  maxWeight?: number;
+
+  @ApiProperty({
+    enum: CouponApplicability,
+    example: CouponApplicability.BOTH,
+    required: false,
+    description: 'Define se vale para viagens, encomendas ou ambos'
+  })
+  @IsOptional()
+  @IsEnum(CouponApplicability)
+  applicableTo?: CouponApplicability;
 }
 
 export class ValidateCouponDto {

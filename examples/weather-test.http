@@ -1,0 +1,157 @@
+### TESTES DO MÓDULO DE CLIMA (WEATHER) ###
+
+# ==================== REGIÕES DISPONÍVEIS ====================
+
+### 1. Listar regiões disponíveis (Público - não precisa auth)
+GET http://localhost:3000/weather/regions
+
+# ==================== CLIMA ATUAL ====================
+
+### 2. Clima atual de Manaus (região predefinida)
+GET http://localhost:3000/weather/region/manaus
+
+### 3. Clima atual de Parintins
+GET http://localhost:3000/weather/region/parintins
+
+### 4. Clima atual de Santarém
+GET http://localhost:3000/weather/region/santarem
+
+### 5. Clima atual de Itacoatiara
+GET http://localhost:3000/weather/region/itacoatiara
+
+### 6. Clima atual de Manacapuru
+GET http://localhost:3000/weather/region/manacapuru
+
+### 7. Clima atual por coordenadas (Porto de Manaus)
+GET http://localhost:3000/weather/current?lat=-3.119&lng=-60.0217&region=Porto de Manaus
+
+### 8. Clima atual por coordenadas (Encontro das Águas)
+GET http://localhost:3000/weather/current?lat=-3.1311&lng=-59.9097&region=Encontro das Águas
+
+# ==================== PREVISÃO DO TEMPO ====================
+
+### 9. Previsão de 5 dias - Manaus
+GET http://localhost:3000/weather/forecast?lat=-3.119&lng=-60.0217&region=Manaus
+
+### 10. Previsão de 5 dias - Parintins
+GET http://localhost:3000/weather/forecast?lat=-2.6287&lng=-56.7358&region=Parintins
+
+# ==================== AVALIAÇÃO DE SEGURANÇA ====================
+
+### 11. Avaliar segurança para navegação - Manaus
+GET http://localhost:3000/weather/navigation-safety?lat=-3.119&lng=-60.0217
+
+### 12. Avaliar segurança para navegação - Porto Velho
+GET http://localhost:3000/weather/navigation-safety?lat=-8.7619&lng=-63.9039
+
+### 13. Avaliar segurança para navegação - Belém
+GET http://localhost:3000/weather/navigation-safety?lat=-1.4558&lng=-48.4902
+
+# ==================== TESTES DE CACHE ====================
+
+### 14. Primeira chamada (faz request à API - ~1s)
+GET http://localhost:3000/weather/region/manaus
+
+### 15. Segunda chamada (retorna do cache - ~50ms)
+GET http://localhost:3000/weather/region/manaus
+
+# ==================== CASOS DE USO REAIS ====================
+
+### 16. Capitão verifica clima antes de criar checklist
+# 1. Buscar clima
+GET http://localhost:3000/weather/navigation-safety?lat=-3.119&lng=-60.0217
+
+# 2. Se isSafe = true, criar checklist com clima sugerido
+# POST /safety/checklists
+# {
+#   "tripId": "uuid",
+#   "weatherCondition": "Ensolarado" // <- vem da API
+# }
+
+### 17. Dashboard Admin - Clima de todas as regiões
+GET http://localhost:3000/weather/regions
+
+# Depois fazer requisições paralelas:
+# GET /weather/region/manaus
+# GET /weather/region/parintins
+# GET /weather/region/santarem
+
+### 18. App Mobile - Tela de Viagem mostra clima da rota
+# Origem: Manaus (-3.119, -60.0217)
+# Destino: Parintins (-2.6287, -56.7358)
+GET http://localhost:3000/weather/current?lat=-3.119&lng=-60.0217&region=Manaus
+###
+GET http://localhost:3000/weather/current?lat=-2.6287&lng=-56.7358&region=Parintins
+
+# ==================== ESPERADO NAS RESPOSTAS ====================
+
+### Response exemplo de /weather/current:
+# {
+#   "region": "Manaus",
+#   "latitude": -3.119,
+#   "longitude": -60.0217,
+#   "temperature": 28.5,
+#   "feelsLike": 32.1,
+#   "humidity": 78,
+#   "windSpeed": 3.2,
+#   "windGust": null,
+#   "windDirection": 180,
+#   "condition": "Nublado",
+#   "description": "nuvens dispersas",
+#   "icon": "02d",
+#   "cloudiness": 40,
+#   "visibility": 10000,
+#   "rain": null,
+#   "pressure": 1013,
+#   "isSafeForNavigation": true,
+#   "safetyWarnings": [],
+#   "alerts": [],
+#   "recordedAt": "2024-01-15T14:30:00Z"
+# }
+
+### Response exemplo de /weather/navigation-safety:
+# {
+#   "isSafe": true,
+#   "score": 100,
+#   "warnings": [],
+#   "recommendations": ["Condições favoráveis para navegação"],
+#   "weather": { ... } // Objeto completo do clima
+# }
+
+### Response exemplo de /weather/forecast:
+# {
+#   "region": "Manaus",
+#   "forecast": [
+#     {
+#       "date": "2024-01-16",
+#       "tempMin": 23.5,
+#       "tempMax": 32.1,
+#       "condition": "Rain",
+#       "description": "chuva moderada",
+#       "icon": "10d",
+#       "humidity": 82,
+#       "windSpeed": 4.5,
+#       "rain": 8.2,
+#       "chanceOfRain": 75
+#     },
+#     // ... mais 4 dias
+#   ]
+# }
+
+# ==================== NOTAS IMPORTANTES ====================
+
+# ✅ TODOS os endpoints são públicos (não precisam de autenticação)
+# ✅ Cache de 30 minutos - economiza chamadas à API
+# ✅ Histórico salvo automaticamente no banco (tabela weather_data)
+# ✅ Limite FREE: 1.000 chamadas/dia
+# ✅ Com cache: suporta ~20.000 usuários/dia
+
+# 🔑 OBTER API KEY GRÁTIS:
+# 1. Acesse: https://openweathermap.org/api
+# 2. Clique em "Sign Up" (gratuito)
+# 3. Confirme e-mail
+# 4. Vá em "API keys"
+# 5. Copie a chave e cole no .env:
+#    OPENWEATHER_API_KEY=sua-chave-aqui
+
+# ⚠️ ATENÇÃO: A API key demora ~10 minutos para ativar após cadastro!

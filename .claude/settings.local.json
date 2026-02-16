@@ -34,7 +34,9 @@
       "Bash(yarn build:*)",
       "Bash(ls:*)",
       "Bash(node scripts/fix-shipments-db.js:*)",
-      "Bash(PGPASSWORD=1234 psql:*)"
+      "Bash(PGPASSWORD=1234 psql:*)",
+      "Bash(taskkill:*)",
+      "Bash(yarn start:dev)"
     ]
   }
 }

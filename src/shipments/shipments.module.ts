@@ -9,6 +9,7 @@ import { ShipmentReview } from './shipment-review.entity';
 import { Trip } from '../trips/trip.entity';
 import { Coupon } from '../coupons/coupon.entity';
 import { GamificationModule } from '../gamification/gamification.module';
+import { CouponsModule } from '../coupons/coupons.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { GamificationModule } from '../gamification/gamification.module';
       Coupon,
     ]),
     GamificationModule,
+    CouponsModule,
   ],
   controllers: [ShipmentsController],
   providers: [ShipmentsService, StorageService],

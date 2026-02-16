@@ -13,6 +13,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ShipmentReview } from './shipment-review.entity';
 import { StorageService } from './storage.service';
+import { CouponsService } from '../coupons/coupons.service';
 
 @ApiTags('Shipments')
 @Controller('shipments')
@@ -20,6 +21,7 @@ export class ShipmentsController {
   constructor(
     private shipmentsService: ShipmentsService,
     private storageService: StorageService,
+    private couponsService: CouponsService,
     @InjectRepository(ShipmentReview)
     private reviewsRepo: Repository<ShipmentReview>,
   ) {}
@@ -31,6 +33,54 @@ export class ShipmentsController {
   @ApiResponse({ status: 200, description: 'Cálculo realizado com sucesso', type: CalculatePriceResponseDto })
   async calculatePrice(@Body() dto: CalculatePriceDto) {
     return this.shipmentsService.calculatePrice(dto);
+  }
+
+  @Post('validate-coupon')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Validar cupom para encomenda e calcular desconto' })
+  async validateCoupon(
+    @Request() req: any,
+    @Body('code') code: string,
+    @Body('shipmentId') shipmentId: string,
+  ) {
+    const result = await this.couponsService.validateForShipment(
+      code,
+      req.user.sub,
+      shipmentId,
+    );
+
+    if (!result.valid) {
+      return {
+        valid: false,
+        message: result.message,
+      };
+    }
+
+    // TypeScript narrowing - garantir que coupon e discount existem
+    if (!result.coupon || result.discount === undefined) {
+      return {
+        valid: false,
+        message: 'Erro ao validar cupom',
+      };
+    }
+
+    // Buscar encomenda para calcular valores
+    const shipment = await this.shipmentsService.findById(shipmentId, req.user.sub);
+    const originalPrice = Number(shipment.totalPrice);
+
+    return {
+      valid: true,
+      coupon: {
+        code: result.coupon.code,
+        type: result.coupon.type,
+        value: Number(result.coupon.value),
+      },
+      originalPrice,
+      discount: result.discount,
+      finalPrice: originalPrice - result.discount,
+      savedAmount: result.discount,
+    };
   }
 
   @Post('upload/presigned-urls')

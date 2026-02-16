@@ -1,0 +1,94 @@
+### 🔐 1. LOGIN WEB ADMIN
+POST http://localhost:3000/auth/login-web
+Content-Type: application/json
+
+{
+  "email": "admin@navegaja.com",
+  "password": "admin123"
+}
+
+### ✅ Salve o accessToken da resposta acima e use nos próximos requests
+
+###
+
+### 👤 2. OBTER DADOS DO USUÁRIO LOGADO
+GET http://localhost:3000/auth/me
+Authorization: Bearer SEU_ACCESS_TOKEN_AQUI
+
+###
+
+### 🔄 3. RENOVAR TOKEN
+POST http://localhost:3000/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "SEU_REFRESH_TOKEN_AQUI"
+}
+
+###
+
+### 🔑 4. ESQUECI MINHA SENHA
+POST http://localhost:3000/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "admin@navegaja.com"
+}
+
+###
+
+### 🔓 5. REDEFINIR SENHA (use o código recebido no email)
+POST http://localhost:3000/auth/reset-password
+Content-Type: application/json
+
+{
+  "email": "admin@navegaja.com",
+  "code": "123456",
+  "newPassword": "novaSenha123"
+}
+
+###
+
+### 📋 OUTROS USUÁRIOS ADMIN DISPONÍVEIS
+
+### Admin Suporte
+POST http://localhost:3000/auth/login-web
+Content-Type: application/json
+
+{
+  "email": "suporte@navegaja.com",
+  "password": "admin123"
+}
+
+###
+
+### Admin Operação
+POST http://localhost:3000/auth/login-web
+Content-Type: application/json
+
+{
+  "email": "operacao@navegaja.com",
+  "password": "admin123"
+}
+
+###
+
+### Admin Financeiro
+POST http://localhost:3000/auth/login-web
+Content-Type: application/json
+
+{
+  "email": "financeiro@navegaja.com",
+  "password": "admin123"
+}
+
+###
+
+### Admin Teste
+POST http://localhost:3000/auth/login-web
+Content-Type: application/json
+
+{
+  "email": "teste@navegaja.com",
+  "password": "admin123"
+}

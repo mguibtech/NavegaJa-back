@@ -5,19 +5,99 @@ import { Trip, TripStatus } from './trip.entity';
 import { CreateTripDto, UpdateTripStatusDto, UpdateLocationDto } from './dto/trip.dto';
 import { ShipmentsService } from '../shipments/shipments.service';
 import { ShipmentStatus } from '../shipments/shipment.entity';
+import { SafetyService } from '../safety/safety.service';
+import { WeatherService } from '../weather/weather.service';
+import { Boat } from '../boats/boat.entity';
 
 @Injectable()
 export class TripsService {
   constructor(
     @InjectRepository(Trip)
     private tripsRepo: Repository<Trip>,
+    @InjectRepository(Boat)
+    private boatsRepo: Repository<Boat>,
     @Inject(forwardRef(() => ShipmentsService))
     private shipmentsService: ShipmentsService,
+    @Inject(forwardRef(() => SafetyService))
+    private safetyService: SafetyService,
+    private weatherService: WeatherService,
   ) {}
 
   async create(captainId: string, dto: CreateTripDto): Promise<Trip> {
     const departureAt = new Date(dto.departureTime);
     const estimatedArrivalAt = new Date(dto.arrivalTime);
+
+    // ========== VALIDAÇÕES CRÍTICAS ==========
+
+    // 1. Validar datas
+    const now = new Date();
+    if (departureAt < now) {
+      throw new BadRequestException(
+        'Data de partida deve ser futura. Não é possível criar viagens no passado.',
+      );
+    }
+
+    if (estimatedArrivalAt <= departureAt) {
+      throw new BadRequestException(
+        'Data de chegada deve ser posterior à data de partida.',
+      );
+    }
+
+    // 2. Validar embarcação (deve existir e pertencer ao capitão)
+    const boat = await this.boatsRepo.findOne({
+      where: { id: dto.boatId, ownerId: captainId },
+    });
+
+    if (!boat) {
+      throw new NotFoundException(
+        'Embarcação não encontrada ou você não é o proprietário desta embarcação.',
+      );
+    }
+
+    // 3. Validar capacidade (totalSeats não pode exceder capacidade da embarcação)
+    if (dto.totalSeats > boat.capacity) {
+      throw new BadRequestException(
+        `Total de assentos (${dto.totalSeats}) excede a capacidade da embarcação (${boat.capacity} assentos).`,
+      );
+    }
+
+    // 4. Verificar conflitos de horário (embarcação não pode estar em duas viagens ao mesmo tempo)
+    const conflictingTrips = await this.tripsRepo
+      .createQueryBuilder('trip')
+      .where('trip.boatId = :boatId', { boatId: dto.boatId })
+      .andWhere('trip.status IN (:...statuses)', {
+        statuses: [TripStatus.SCHEDULED, TripStatus.IN_PROGRESS],
+      })
+      .andWhere(
+        '(trip.departure_at BETWEEN :departureStart AND :departureEnd) OR ' +
+        '(trip.estimated_arrival_at BETWEEN :arrivalStart AND :arrivalEnd) OR ' +
+        '(:departureStart BETWEEN trip.departure_at AND trip.estimated_arrival_at)',
+        {
+          departureStart: departureAt,
+          departureEnd: estimatedArrivalAt,
+          arrivalStart: departureAt,
+          arrivalEnd: estimatedArrivalAt,
+        },
+      )
+      .getCount();
+
+    if (conflictingTrips > 0) {
+      throw new BadRequestException(
+        'Esta embarcação já possui viagem agendada neste horário. ' +
+        'Verifique o calendário de viagens e escolha outro horário.',
+      );
+    }
+
+    // 5. Validar preços (devem ser positivos)
+    if (dto.price <= 0) {
+      throw new BadRequestException('Preço deve ser maior que zero.');
+    }
+
+    if (dto.cargoPriceKg && dto.cargoPriceKg < 0) {
+      throw new BadRequestException('Preço de carga não pode ser negativo.');
+    }
+
+    // ========== CRIAR VIAGEM ==========
 
     const trip = this.tripsRepo.create({
       captainId,
@@ -209,6 +289,55 @@ export class TripsService {
     }
 
     const oldStatus = trip.status;
+
+    // ========== VALIDAÇÕES DE SEGURANÇA ANTES DE INICIAR VIAGEM ==========
+    if (dto.status === TripStatus.IN_PROGRESS && oldStatus !== TripStatus.IN_PROGRESS) {
+      // 1. Verificar checklist de segurança completo
+      const checklistComplete = await this.safetyService.isChecklistComplete(tripId);
+      if (!checklistComplete) {
+        throw new BadRequestException(
+          '⚠️ Checklist de segurança não está completo. Complete o checklist antes de iniciar a viagem.',
+        );
+      }
+
+      // 2. Verificar condições climáticas
+      // Usar coordenadas da origem da viagem (assumindo que existam campos lat/lng ou usar defaults)
+      // TODO: Adicionar campos originLat, originLng na entidade Trip
+      // Por enquanto, vamos usar Manaus como padrão (-3.119, -60.0217)
+      const lat = trip.currentLat || -3.119;
+      const lng = trip.currentLng || -60.0217;
+
+      try {
+        const weatherSafety = await this.weatherService.evaluateNavigationSafety(lat, lng);
+
+        // Score < 50: PERIGOSO - bloquear viagem
+        if (weatherSafety.score < 50) {
+          throw new BadRequestException(
+            `❌ Condições climáticas PERIGOSAS (Score: ${weatherSafety.score}/100). ` +
+            `NÃO é seguro navegar. Avisos: ${weatherSafety.warnings.join(', ')}. ` +
+            `Recomendações: ${weatherSafety.recommendations.join(', ')}`,
+          );
+        }
+
+        // Score 50-70: ALERTA - avisar mas permitir (decisão do capitão)
+        if (weatherSafety.score < 70) {
+          console.warn(
+            `⚠️ ALERTA: Condições climáticas moderadas (Score: ${weatherSafety.score}/100). ` +
+            `Navegue com cautela. Recomendações: ${weatherSafety.recommendations.join(', ')}`,
+          );
+          // Poderia enviar notificação para passageiros aqui
+        }
+
+        // Score >= 70: OK para navegar
+        console.log(`✅ Condições climáticas favoráveis (Score: ${weatherSafety.score}/100)`);
+
+      } catch (error) {
+        // Se API de clima falhar, logar erro mas não bloquear viagem (fallback)
+        console.error('❌ Erro ao verificar clima:', error.message);
+        console.warn('⚠️ Não foi possível verificar clima. Proceda com cautela.');
+      }
+    }
+
     trip.status = dto.status;
     const saved = await this.tripsRepo.save(trip);
 

@@ -7,6 +7,12 @@ export enum CouponType {
   FIXED = 'fixed',
 }
 
+export enum CouponApplicability {
+  TRIPS = 'trips',
+  SHIPMENTS = 'shipments',
+  BOTH = 'both',
+}
+
 @Entity('coupons')
 export class Coupon {
   @PrimaryGeneratedColumn('uuid')
@@ -23,6 +29,15 @@ export class Coupon {
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   value: number;
+
+  @Column({
+    name: 'applicable_to',
+    type: 'enum',
+    enum: CouponApplicability,
+    default: CouponApplicability.BOTH,
+    comment: 'Define se o cupom vale para viagens, encomendas ou ambos'
+  })
+  applicableTo: CouponApplicability;
 
   @Column({ name: 'min_purchase', type: 'decimal', precision: 10, scale: 2, nullable: true })
   minPurchase: number | null;

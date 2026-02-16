@@ -215,4 +215,30 @@ export class SafetyController {
   getUserSosAlerts(@Request() req: any) {
     return this.safetyService.getUserSosAlerts(req.user.sub);
   }
+
+  // ==================== INTEGRAÇÃO COM CLIMA ====================
+
+  @Get('weather-suggestion')
+  @Roles('captain', 'admin')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Sugerir condição climática para checklist',
+    description: 'Capitão consulta clima antes de criar checklist',
+  })
+  async suggestWeather(@Query('lat') lat: string, @Query('lng') lng: string) {
+    return this.safetyService.suggestWeatherCondition(parseFloat(lat), parseFloat(lng));
+  }
+
+  @Get('weather-safety')
+  @Roles('captain', 'admin')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Avaliar segurança do clima para navegação',
+    description: 'Verifica se condições climáticas permitem navegação segura',
+  })
+  async checkWeatherSafety(@Query('lat') lat: string, @Query('lng') lng: string) {
+    return this.safetyService.checkWeatherSafety(parseFloat(lat), parseFloat(lng));
+  }
 }

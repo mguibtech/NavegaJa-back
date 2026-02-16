@@ -1,0 +1,39 @@
+### Login Web Admin - CORRETO ✅
+POST http://localhost:3000/auth/login-web
+Content-Type: application/json
+
+{
+  "email": "admin@navegaja.com",
+  "password": "admin123"
+}
+
+###
+
+### Outros usuários admin disponíveis
+POST http://localhost:3000/auth/login-web
+Content-Type: application/json
+
+{
+  "email": "suporte@navegaja.com",
+  "password": "admin123"
+}
+
+###
+
+POST http://localhost:3000/auth/login-web
+Content-Type: application/json
+
+{
+  "email": "operacao@navegaja.com",
+  "password": "admin123"
+}
+
+###
+
+POST http://localhost:3000/auth/login-web
+Content-Type: application/json
+
+{
+  "email": "teste@navegaja.com",
+  "password": "admin123"
+}

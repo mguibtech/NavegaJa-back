@@ -79,6 +79,33 @@ export class AuthService {
     };
   }
 
+  /**
+   * Login Web (Dashboard Admin) - Por EMAIL
+   * APENAS ADMIN tem acesso ao dashboard web
+   */
+  async loginWeb(dto: { email: string; password: string }) {
+    const user = await this.usersRepo.findOne({ where: { email: dto.email } });
+    if (!user) {
+      throw new UnauthorizedException('E-mail ou senha incorretos');
+    }
+
+    const isValid = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!isValid) {
+      throw new UnauthorizedException('E-mail ou senha incorretos');
+    }
+
+    // ✅ APENAS ADMIN pode acessar dashboard web
+    if (user.role !== 'admin') {
+      throw new UnauthorizedException('Acesso restrito a administradores');
+    }
+
+    const tokens = this.generateTokens(user);
+    return {
+      user: this.sanitizeUser(user),
+      ...tokens,
+    };
+  }
+
   async refresh(refreshToken: string) {
     try {
       const payload = this.jwtService.verify(refreshToken, {

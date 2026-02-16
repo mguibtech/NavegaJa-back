@@ -51,6 +51,18 @@ export class LoginDto {
   password: string;
 }
 
+export class LoginWebDto {
+  @ApiProperty({ example: 'admin@navegaja.com' })
+  @IsEmail({}, { message: 'E-mail inválido' })
+  @IsNotEmpty({ message: 'O e-mail é obrigatório' })
+  email: string;
+
+  @ApiProperty({ example: 'admin123' })
+  @IsString({ message: 'A senha deve ser um texto' })
+  @IsNotEmpty({ message: 'A senha é obrigatória' })
+  password: string;
+}
+
 export class RefreshTokenDto {
   @ApiProperty({ example: 'eyJhbGciOiJIUzI1NiIs...' })
   @IsString({ message: 'O token deve ser um texto' })

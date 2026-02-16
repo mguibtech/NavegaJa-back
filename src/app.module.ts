@@ -17,6 +17,8 @@ import { GamificationModule } from './gamification/gamification.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { SafetyModule } from './safety/safety.module';
+import { WeatherModule } from './weather/weather.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -50,6 +52,8 @@ import { SafetyModule } from './safety/safety.module';
     FavoritesModule,
     CouponsModule,
     SafetyModule,
+    WeatherModule,
+    AdminModule,
     SeedModule,
   ],
 })
