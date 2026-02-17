@@ -8,6 +8,7 @@ import { Shipment } from '../shipments/shipment.entity';
 import { SosAlert } from '../safety/sos-alert.entity';
 import { SafetyChecklist } from '../safety/safety-checklist.entity';
 import { Booking } from '../bookings/booking.entity';
+import { Coupon } from '../coupons/coupon.entity';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { Booking } from '../bookings/booking.entity';
       SosAlert,
       SafetyChecklist,
       Booking,
+      Coupon,
     ]),
   ],
   controllers: [AdminController],

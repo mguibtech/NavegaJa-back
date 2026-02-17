@@ -36,7 +36,12 @@
       "Bash(node scripts/fix-shipments-db.js:*)",
       "Bash(PGPASSWORD=1234 psql:*)",
       "Bash(taskkill:*)",
-      "Bash(yarn start:dev)"
+      "Bash(yarn start:dev)",
+      "Bash(yarn typeorm query:*)",
+      "Bash(npm run build:*)",
+      "Bash(node -e:*)",
+      "Bash(node scripts/create-admin-navegaja.js:*)",
+      "Bash(node test-admin-shipments.js:*)"
     ]
   }
 }
