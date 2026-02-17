@@ -8,6 +8,9 @@ const AppDataSource = new DataSource({
   username: 'postgres',
   password: '1234',
   database: 'navegaja',
+  extra: {
+    client_encoding: 'UTF8',
+  },
 });
 
 async function populate() {
@@ -119,10 +122,10 @@ async function populate() {
 
   const tripIds = [];
   const now = new Date();
-  const statuses = ['scheduled', 'in_progress', 'completed'];
 
   for (let i = 0; i < 10; i++) {
-    const departureTime = new Date(now.getTime() + (i * 3600000)); // +1h cada
+    // Viagens sempre no futuro (próximos dias) para não conflitar com status
+    const departureTime = new Date(now.getTime() + ((i + 1) * 24 * 3600000)); // +1 dia cada
     const arrivalTime = new Date(departureTime.getTime() + (routes[i % 3].durationMin * 60000));
 
     const result = await AppDataSource.query(`
@@ -141,7 +144,7 @@ async function populate() {
       20 + (i % 3) * 10,
       15 + (i % 3) * 5,
       50 + (i * 5),
-      statuses[i % 3]
+      'scheduled'
     ]);
 
     tripIds.push(result[0].id);

@@ -36,6 +36,9 @@ import { AdminModule } from './admin/admin.module';
         autoLoadEntities: true,
         synchronize: true, // DEV only - cria tabelas automaticamente
         logging: false,
+        extra: {
+          client_encoding: 'UTF8',
+        },
       }),
     }),
     AuthModule,
