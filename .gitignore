@@ -3,6 +3,11 @@
 /node_modules
 /build
 
+# Yarn
+/.yarn
+.yarnrc.yml
+yarn.lock
+
 # Logs
 logs
 *.log
