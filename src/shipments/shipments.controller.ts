@@ -1,5 +1,9 @@
-import { Controller, Post, Get, Patch, Param, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Param, Body, UseGuards, Request, UseInterceptors, UploadedFiles } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
+import { v4 as uuidv4 } from 'uuid';
 import { ShipmentsService } from './shipments.service';
 import { CreateShipmentDto } from './dto/create-shipment.dto';
 import { CalculatePriceDto, CalculatePriceResponseDto } from './dto/calculate-price.dto';
@@ -14,6 +18,7 @@ import { Repository } from 'typeorm';
 import { ShipmentReview } from './shipment-review.entity';
 import { StorageService } from './storage.service';
 import { CouponsService } from '../coupons/coupons.service';
+import { ConfigService } from '@nestjs/config';
 
 @ApiTags('Shipments')
 @Controller('shipments')
@@ -22,6 +27,7 @@ export class ShipmentsController {
     private shipmentsService: ShipmentsService,
     private storageService: StorageService,
     private couponsService: CouponsService,
+    private configService: ConfigService,
     @InjectRepository(ShipmentReview)
     private reviewsRepo: Repository<ShipmentReview>,
   ) {}
@@ -99,13 +105,46 @@ export class ShipmentsController {
   @Post()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Criar encomenda' })
-  async create(@Request() req: any, @Body() dto: any) {
+  @ApiOperation({ summary: 'Criar encomenda (aceita fotos como multipart/form-data)' })
+  @UseInterceptors(
+    FilesInterceptor('photos', 5, {
+      storage: diskStorage({
+        destination: './uploads/shipments',
+        filename: (_req: any, file: any, cb: any) => {
+          cb(null, `${uuidv4()}${extname(file.originalname)}`);
+        },
+      }),
+      fileFilter: (_req: any, file: any, cb: any) => {
+        if (!file.mimetype.match(/\/(jpg|jpeg|png|gif|webp)$/)) {
+          cb(null, false); // rejeita silenciosamente arquivos não-imagem
+        } else {
+          cb(null, true);
+        }
+      },
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB por foto
+    }),
+  )
+  async create(
+    @Request() req: any,
+    @Body() dto: any,
+    @UploadedFiles() files?: Express.Multer.File[],
+  ) {
+    const baseUrl = this.configService.get('BASE_URL') || `http://localhost:3000`;
+
+    // Converter arquivos recebidos em URLs públicas
+    const uploadedPhotoUrls = (files || []).map(
+      f => `${baseUrl}/uploads/shipments/${f.filename}`,
+    );
+
+    console.log(`[Shipment Create] files recebidos: ${(files || []).length}, URLs: ${JSON.stringify(uploadedPhotoUrls)}`);
+
     // Normalizar dados (aceitar tanto JSON quanto FormData)
     const normalizedDto = this.normalizeCreateShipmentDto(dto);
-    const shipment = await this.shipmentsService.create(req.user.sub, normalizedDto);
 
-    // Serializar response com aliases para frontend
+    // Mesclar fotos: URLs enviadas no body (string) + arquivos recebidos
+    normalizedDto.photos = [...(normalizedDto.photos || []), ...uploadedPhotoUrls];
+
+    const shipment = await this.shipmentsService.create(req.user.sub, normalizedDto);
     return this.serializeShipment(shipment);
   }
 
@@ -296,8 +335,8 @@ export class ShipmentsController {
       return isNaN(parsed) ? undefined : parsed;
     };
 
-    // Aceitar tanto 'weight' quanto 'weightKg'
-    const weightKg = parseNumber(dto.weight || dto.weightKg);
+    // Aceitar tanto 'weight' quanto 'weightKg' e garantir número
+    const weight = parseNumber(dto.weight || dto.weightKg);
 
     // Aceitar tanto 'dimensions' (objeto) quanto campos separados
     const dimensions = dto.dimensions
@@ -315,7 +354,7 @@ export class ShipmentsController {
 
     return {
       ...dto,
-      weightKg,
+      weight,
       length,
       width,
       height,
@@ -327,11 +366,21 @@ export class ShipmentsController {
    * Serializa encomenda para frontend (adiciona aliases)
    */
   private serializeShipment(shipment: any) {
+    const trip = shipment.trip;
+
+    // Resolve origin/destination: campo direto > route.originName (fallback para dados sem origin preenchido)
+    if (trip) {
+      trip.origin = trip.origin || trip.route?.originName || '';
+      trip.destination = trip.destination || trip.route?.destinationName || '';
+    }
+
     return {
       ...shipment,
+      trip,
       // Aliases para compatibilidade com frontend
-      weight: shipment.weightKg,
+      weight: shipment.weightKg ?? shipment.weight,
       price: shipment.totalPrice,
+      photos: shipment.photos || [],
       dimensions: shipment.length || shipment.width || shipment.height ? {
         length: shipment.length,
         width: shipment.width,

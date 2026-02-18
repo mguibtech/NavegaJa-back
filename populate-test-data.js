@@ -35,6 +35,15 @@ async function populate() {
     passengerIds.push(result[0].id);
   }
 
+  // Admin
+  const adminResult = await AppDataSource.query(`
+    INSERT INTO users (name, phone, email, password_hash, role, rating, total_trips)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role
+    RETURNING id
+  `, ['Admin NavegaJá', '92900000000', 'admin@navegaja.com', passwordHash, 'admin', 5.0, 0]);
+  const adminId = adminResult[0].id;
+
   // Capitães
   const captainIds = [];
   for (let i = 1; i <= 4; i++) {
@@ -48,7 +57,7 @@ async function populate() {
     captainIds.push(result[0].id);
   }
 
-  console.log(`  ✓ ${passengerIds.length + captainIds.length} usuários criados`);
+  console.log(`  ✓ ${1 + passengerIds.length + captainIds.length} usuários criados (1 admin + ${passengerIds.length} passageiros + ${captainIds.length} capitães)`);
 
   // ====== BOATS ======
   console.log('2. Criando embarcações...');
@@ -128,23 +137,32 @@ async function populate() {
     const departureTime = new Date(now.getTime() + ((i + 1) * 24 * 3600000)); // +1 dia cada
     const arrivalTime = new Date(departureTime.getTime() + (routes[i % 3].durationMin * 60000));
 
+    const route = routes[i % 3];
+
     const result = await AppDataSource.query(`
       INSERT INTO trips (
-        captain_id, boat_id, route_id, departure_at, estimated_arrival_at,
-        total_seats, available_seats, price, status
+        captain_id, boat_id, route_id, origin, destination,
+        departure_at, estimated_arrival_at,
+        total_seats, available_seats, price, status,
+        cargo_price_kg, cargo_capacity_kg, available_cargo_kg
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING id
     `, [
       captainIds[i % captainIds.length],
       boatIds[i % boatIds.length],
       routeIds[i % routeIds.length],
+      route.originName,
+      route.destinationName,
       departureTime,
       arrivalTime,
       20 + (i % 3) * 10,
       15 + (i % 3) * 5,
       50 + (i * 5),
-      'scheduled'
+      'scheduled',
+      5 + (i % 3) * 2,
+      500 + (i % 3) * 100,
+      500 + (i % 3) * 100,
     ]);
 
     tripIds.push(result[0].id);
@@ -207,6 +225,7 @@ async function populate() {
         validation_code, status, payment_method
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      ON CONFLICT (tracking_code) DO NOTHING
     `, [
       shipment.senderId,
       shipment.tripId,

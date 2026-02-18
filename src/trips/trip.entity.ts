@@ -61,8 +61,8 @@ export class Trip {
   @Column({ type: 'int', default: 0, comment: 'Desconto em porcentagem (0-100)' })
   discount: number;
 
-  @Column({ name: 'cargo_price_kg', type: 'decimal', precision: 10, scale: 2, default: 0 })
-  cargoPriceKg: number;
+  @Column({ name: 'cargo_price_kg', type: 'decimal', precision: 10, scale: 2, nullable: true, default: null })
+  cargoPriceKg: number | null;
 
   @Column({ name: 'cargo_capacity_kg', type: 'decimal', precision: 10, scale: 2, nullable: true, comment: 'Capacidade total de carga em kg' })
   cargoCapacityKg: number;

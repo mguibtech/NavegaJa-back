@@ -86,10 +86,10 @@ export class ShipmentsService {
     const trip = await this.tripsRepo.findOne({ where: { id: dto.tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
 
-    const pricePerKg = Number(trip.cargoPriceKg);
-    if (pricePerKg <= 0) {
-      throw new BadRequestException('Esta viagem não aceita encomendas (preço de carga não definido)');
+    if (trip.cargoPriceKg === null || trip.cargoPriceKg === undefined) {
+      throw new BadRequestException('Esta viagem não aceita encomendas (preço de carga não definido pelo capitão)');
     }
+    const pricePerKg = Number(trip.cargoPriceKg);
 
     // Processar dimensions: aceita objeto OU campos separados (backward compatibility)
     let length = dto.length;
