@@ -11,6 +11,7 @@ import { StorageService } from './storage.service';
 // Tipos de ficheiro permitidos por categoria
 const ALLOWED_IMAGES = /\/(jpg|jpeg|png|gif|webp)$/;
 const ALLOWED_VIDEOS = /\/(mp4|mov|avi|webm|quicktime)$/;
+const ALLOWED_DOCUMENTS = /\/(jpg|jpeg|png|webp|pdf)$/;
 
 @ApiTags('Upload')
 @Controller('upload')
@@ -68,6 +69,57 @@ export class UploadController {
     );
 
     return { url, filename: url.split('/').pop(), size: file.size };
+  }
+
+  @Post('document')
+  @ApiOperation({
+    summary: 'Upload de documento (capitão)',
+    description: 'Aceita JPG, PNG, WEBP e PDF (máx. 10MB). Usar para licença, certificado, documentação de embarcação.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiQuery({
+    name: 'folder',
+    required: false,
+    description: 'Pasta no Storage: documents | boats (default: documents)',
+    example: 'documents',
+  })
+  @ApiResponse({
+    status: 201,
+    schema: {
+      example: {
+        url: 'https://storage.googleapis.com/navegaja.appspot.com/documents/uuid.pdf',
+        filename: 'uuid.pdf',
+        size: 204800,
+        mimeType: 'application/pdf',
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      fileFilter: (_req: any, file: any, cb: any) => {
+        if (!file.mimetype.match(ALLOWED_DOCUMENTS)) {
+          return cb(new BadRequestException('Apenas imagens (JPG, PNG, WEBP) ou PDF são permitidos'), false);
+        }
+        cb(null, true);
+      },
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+    }),
+  )
+  async uploadDocument(
+    @UploadedFile() file: any,
+    @Query('folder') folder = 'documents',
+  ) {
+    if (!file) throw new BadRequestException('Nenhum arquivo enviado');
+
+    const url = await this.storageService.upload(
+      file.buffer,
+      file.originalname,
+      file.mimetype,
+      folder,
+    );
+
+    return { url, filename: url.split('/').pop(), size: file.size, mimeType: file.mimetype };
   }
 
   @Post('video')

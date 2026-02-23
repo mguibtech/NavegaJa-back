@@ -167,6 +167,7 @@ export class TripsService {
     maxPrice?: number,
     departureTime?: 'morning' | 'afternoon' | 'night',
     minRating?: number,
+    routeId?: string,
   ): Promise<Trip[]> {
     // ValidationPipe({ transform:true }) converte strings não numéricas para NaN — validar aqui
     if (minPrice !== undefined && !Number.isFinite(minPrice)) {
@@ -184,16 +185,28 @@ export class TripsService {
       .leftJoin('trip.captain', 'captain')
       .addSelect(TripsService.CAPTAIN_SAFE_FIELDS)
       .leftJoinAndSelect('trip.boat', 'boat')
+      .leftJoin('trip.route', 'route')
       .where('trip.status = :status', { status: TripStatus.SCHEDULED });
 
-    // Filtro por origem
-    if (origin) {
-      qb.andWhere('LOWER(trip.origin) LIKE LOWER(:origin)', { origin: `%${origin}%` });
+    // Filtro por routeId (filtro exacto — preferido quando o app conhece o routeId)
+    if (routeId) {
+      qb.andWhere('trip.route_id = :routeId', { routeId });
     }
 
-    // Filtro por destino
+    // Filtro por origem — usa COALESCE para suportar trips antigos com origin=''
+    if (origin) {
+      qb.andWhere(
+        `LOWER(COALESCE(NULLIF(trip.origin, ''), route.origin_name)) LIKE LOWER(:origin)`,
+        { origin: `%${origin}%` },
+      );
+    }
+
+    // Filtro por destino — usa COALESCE para suportar trips antigos com destination=''
     if (destination) {
-      qb.andWhere('LOWER(trip.destination) LIKE LOWER(:destination)', { destination: `%${destination}%` });
+      qb.andWhere(
+        `LOWER(COALESCE(NULLIF(trip.destination, ''), route.destination_name)) LIKE LOWER(:destination)`,
+        { destination: `%${destination}%` },
+      );
     }
 
     // Filtro por data
@@ -457,11 +470,12 @@ export class TripsService {
       .leftJoin('trip.route', 'route')
       .select(`COALESCE(NULLIF(trip.origin, ''), route.origin_name)`, 'origin')
       .addSelect(`COALESCE(NULLIF(trip.destination, ''), route.destination_name)`, 'destination')
+      .addSelect('route.id', 'routeId')
       .addSelect('COUNT(*)', 'count')
       .addSelect('MIN(trip.price)', 'minPrice')
       .addSelect('AVG(trip.price)', 'avgPrice')
       .where('trip.status = :status', { status: TripStatus.SCHEDULED })
-      .groupBy(`COALESCE(NULLIF(trip.origin, ''), route.origin_name), COALESCE(NULLIF(trip.destination, ''), route.destination_name)`)
+      .groupBy(`COALESCE(NULLIF(trip.origin, ''), route.origin_name), COALESCE(NULLIF(trip.destination, ''), route.destination_name), route.id`)
       .orderBy('count', 'DESC')
       .limit(10)
       .getRawMany();
@@ -476,6 +490,7 @@ export class TripsService {
         tripsCount: parseInt(item.count),
       })),
       routes: popularRoutes.map(item => ({
+        routeId: item.routeId ?? null,
         origin: item.origin,
         destination: item.destination,
         tripsCount: parseInt(item.count),

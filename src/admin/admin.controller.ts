@@ -509,6 +509,26 @@ export class AdminController {
 
   // ==================== NOTIFICAÇÕES ====================
 
+  @Get('notifications')
+  @ApiOperation({
+    summary: 'Notificações pendentes para o admin (badge do header)',
+    description: 'Retorna SOS activos, verificações pendentes e viagens novas nas últimas 24h. Usar para popular o badge de notificações no painel.',
+  })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        totalUnread: 5,
+        sos: { count: 1, items: [{ id: 'uuid', type: 'emergency', userName: 'João', createdAt: '2026-02-23T10:00:00Z', link: '/admin/safety/sos/uuid' }] },
+        pendingVerifications: { count: 3, boats: [], captains: [] },
+        newTrips: { count: 1, items: [{ id: 'uuid', origin: 'Manaus', destination: 'Iranduba', captainName: 'Carlos', createdAt: '2026-02-23T09:00:00Z' }] },
+      },
+    },
+  })
+  getNotifications() {
+    return this.adminService.getAdminNotifications();
+  }
+
   @Post('notifications/broadcast')
   @ApiOperation({
     summary: 'Enviar notificação broadcast (Admin)',
@@ -587,18 +607,20 @@ export class AdminController {
 
   @Patch('users/:id/verify')
   @ApiOperation({
-    summary: 'Verificar/des-verificar capitão (Admin)',
-    description: 'Marca o capitão como verificado (documentos validados) ou revoga a verificação.',
+    summary: 'Aprovar ou rejeitar documentação de capitão (Admin)',
+    description: 'Aprovação: { "verified": true } — Rejeição: { "verified": false, "rejectionReason": "Motivo..." }',
   })
   @ApiResponse({
     status: 200,
-    description: 'Estado de verificação actualizado',
-    schema: { example: { message: 'Capitão verificado com sucesso', userId: 'uuid', isVerified: true } },
+    schema: {
+      example: { message: 'Capitão aprovado com sucesso', userId: 'uuid', isVerified: true },
+    },
   })
   verifyCapt(
     @Param('id') id: string,
     @Body('verified') verified: boolean,
+    @Body('rejectionReason') rejectionReason?: string,
   ) {
-    return this.adminService.verifyCapt(id, verified);
+    return this.adminService.verifyCapt(id, verified, rejectionReason);
   }
 }

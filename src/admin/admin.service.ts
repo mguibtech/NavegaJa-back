@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, Between } from 'typeorm';
+import { NotificationsService } from '../notifications/notifications.service';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from '../users/user.entity';
 import { Trip, TripStatus } from '../trips/trip.entity';
@@ -33,6 +34,7 @@ export class AdminService {
     private reviewsRepo: Repository<Review>,
     @InjectRepository(Boat)
     private boatsRepo: Repository<Boat>,
+    private notificationsService: NotificationsService,
   ) {}
 
   // ==================== USUÁRIOS ====================
@@ -1280,14 +1282,33 @@ export class AdminService {
   }
 
   async verifyBoat(id: string, approved: boolean, rejectionReason?: string) {
-    const boat = await this.boatsRepo.findOne({ where: { id } });
+    const boat = await this.boatsRepo.findOne({ where: { id }, relations: ['owner'] });
     if (!boat) throw new NotFoundException('Embarcação não encontrada');
+
+    const reason = rejectionReason ?? 'Documentação inválida ou incompleta';
 
     await this.boatsRepo.update(id, {
       isVerified: approved,
-      rejectionReason: approved ? null : (rejectionReason ?? 'Documentação inválida ou incompleta'),
+      rejectionReason: approved ? null : reason,
       verifiedAt: approved ? new Date() : null,
     });
+
+    // Notificação push ao capitão dono do barco
+    if (boat.ownerId) {
+      if (approved) {
+        await this.notificationsService.sendToUser(boat.ownerId, {
+          title: '✅ Embarcação aprovada!',
+          body: `Sua embarcação "${boat.name}" foi verificada. Já pode criar viagens com ela.`,
+          data: { type: 'boat_verified', boatId: id },
+        });
+      } else {
+        await this.notificationsService.sendToUser(boat.ownerId, {
+          title: '❌ Embarcação rejeitada',
+          body: `"${boat.name}" — Motivo: ${reason}. Acesse o app para reenviar os documentos.`,
+          data: { type: 'boat_rejected', boatId: id, reason },
+        });
+      }
+    }
 
     const action = approved ? 'aprovada' : 'rejeitada';
     return { message: `Embarcação ${action} com sucesso`, boatId: id, isVerified: approved };
@@ -1295,16 +1316,36 @@ export class AdminService {
 
   // ==================== VERIFICAÇÃO DE CAPITÃO ====================
 
-  async verifyCapt(id: string, verified: boolean) {
+  async verifyCapt(id: string, verified: boolean, rejectionReason?: string) {
     const user = await this.usersRepo.findOne({ where: { id } });
     if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    if (!verified && !rejectionReason) {
+      throw new BadRequestException('Informe o motivo da rejeição');
+    }
 
     await this.usersRepo.update(id, {
       isVerified: verified,
       verifiedAt: verified ? new Date() : null,
+      rejectionReason: verified ? null : rejectionReason,
     });
 
-    const action = verified ? 'verificado' : 'desverificado';
+    // Notificação push ao capitão
+    if (verified) {
+      await this.notificationsService.sendToUser(id, {
+        title: '✅ Documentação aprovada!',
+        body: 'Seus documentos foram verificados. Já pode cadastrar sua embarcação e criar viagens.',
+        data: { type: 'captain_verified' },
+      });
+    } else {
+      await this.notificationsService.sendToUser(id, {
+        title: '❌ Documentação rejeitada',
+        body: `Motivo: ${rejectionReason}. Acesse o app para reenviar seus documentos.`,
+        data: { type: 'captain_rejected', reason: rejectionReason! },
+      });
+    }
+
+    const action = verified ? 'aprovado' : 'rejeitado';
     return { message: `Capitão ${action} com sucesso`, userId: id, isVerified: verified };
   }
 
@@ -1348,6 +1389,100 @@ export class AdminService {
         createdAt: u.createdAt,
       })),
       totalPending: pendingBoats.length + pendingCaptains.length,
+    };
+  }
+
+  // ==================== NOTIFICAÇÕES ADMIN (badge do header) ====================
+
+  /**
+   * Retorna os alertas pendentes de acção para o badge do header do painel admin.
+   * Inclui: SOS activos, verificações pendentes (barcos + capitães), viagens novas (últimas 24h).
+   */
+  async getAdminNotifications() {
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const [
+      sosAlerts,
+      pendingBoats,
+      pendingCaptains,
+      newTrips,
+    ] = await Promise.all([
+      // SOS activos — mais urgente
+      this.sosRepo.find({
+        where: { status: SosAlertStatus.ACTIVE },
+        relations: ['user'],
+        order: { createdAt: 'DESC' },
+        take: 5,
+      }),
+      // Barcos não verificados
+      this.boatsRepo.find({
+        where: { isVerified: false },
+        relations: ['owner'],
+        order: { createdAt: 'DESC' },
+        take: 5,
+      }),
+      // Capitães não verificados e activos
+      this.usersRepo.find({
+        where: { role: UserRole.CAPTAIN, isVerified: false, isActive: true },
+        order: { createdAt: 'DESC' },
+        take: 5,
+      }),
+      // Viagens criadas nas últimas 24h
+      this.tripsRepo.find({
+        where: { createdAt: MoreThan(since24h) },
+        relations: ['captain'],
+        order: { createdAt: 'DESC' },
+        take: 5,
+      }),
+    ]);
+
+    const totalUnread = sosAlerts.length + pendingBoats.length + pendingCaptains.length + newTrips.length;
+
+    return {
+      totalUnread,
+      sos: {
+        count: sosAlerts.length,
+        items: sosAlerts.map(a => ({
+          id: a.id,
+          type: a.type,
+          description: a.description,
+          location: a.location,
+          userName: a.user?.name ?? 'Desconhecido',
+          createdAt: a.createdAt,
+          link: `/admin/safety/sos/${a.id}`,
+        })),
+      },
+      pendingVerifications: {
+        count: pendingBoats.length + pendingCaptains.length,
+        boats: pendingBoats.map(b => ({
+          id: b.id,
+          name: b.name,
+          type: b.type,
+          ownerName: b.owner?.name ?? 'Desconhecido',
+          createdAt: b.createdAt,
+          link: `/admin/boats/${b.id}`,
+        })),
+        captains: pendingCaptains.map(u => ({
+          id: u.id,
+          name: u.name,
+          phone: u.phone,
+          city: u.city,
+          createdAt: u.createdAt,
+          link: `/admin/users/${u.id}`,
+        })),
+      },
+      newTrips: {
+        count: newTrips.length,
+        items: newTrips.map(t => ({
+          id: t.id,
+          origin: t.origin,
+          destination: t.destination,
+          captainName: (t.captain as any)?.name ?? 'Desconhecido',
+          departureAt: t.departureAt,
+          createdAt: t.createdAt,
+          link: `/admin/trips/${t.id}`,
+        })),
+      },
     };
   }
 

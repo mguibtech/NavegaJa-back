@@ -13,7 +13,8 @@ async function bootstrap() {
   app.enableCors({ origin: '*' });
 
   // Servir arquivos de upload estáticos em /uploads/*
-  app.useStaticAssets(join(__dirname, '..', 'uploads'), { prefix: '/uploads' });
+  // process.cwd() = raiz do projecto onde os ficheiros são realmente guardados
+  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
 
   // Logger de requisições
   app.use((req: Request, res: Response, next: NextFunction) => {

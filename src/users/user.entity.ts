@@ -87,6 +87,9 @@ export class User {
   @Column({ name: 'verified_at', type: 'timestamp', nullable: true })
   verifiedAt: Date | null;
 
+  @Column({ name: 'rejection_reason', type: 'text', nullable: true })
+  rejectionReason: string | null; // motivo de rejeição de documentos pelo admin
+
   @Column({ name: 'fcm_token', type: 'text', nullable: true })
   fcmToken: string | null;
 

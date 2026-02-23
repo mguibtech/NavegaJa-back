@@ -100,6 +100,9 @@ export class StorageService implements OnModuleInit {
     const filepath = path.join(dir, filename);
     fs.writeFileSync(filepath, buffer);
 
-    return `/uploads/${filename}`;
+    // Retorna URL completa para que web e app consigam carregar o ficheiro
+    // APP_URL deve ser o endereço público do servidor (ex: http://192.168.1.100:3000)
+    const appUrl = this.configService.get<string>('APP_URL') || `http://localhost:${process.env.PORT || 3000}`;
+    return `${appUrl}/uploads/${filename}`;
   }
 }

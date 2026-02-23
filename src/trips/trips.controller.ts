@@ -21,6 +21,7 @@ export class TripsController {
   @ApiQuery({ name: 'maxPrice', required: false, description: 'Preço máximo', type: Number })
   @ApiQuery({ name: 'departureTime', required: false, description: 'Período do dia (morning, afternoon, night)', enum: ['morning', 'afternoon', 'night'] })
   @ApiQuery({ name: 'minRating', required: false, description: 'Avaliação mínima do capitão', type: Number })
+  @ApiQuery({ name: 'routeId', required: false, description: 'UUID da rota (filtro exacto — preferido ao origin/destination)' })
   search(
     @Query('origin') origin?: string,
     @Query('destination') destination?: string,
@@ -29,6 +30,7 @@ export class TripsController {
     @Query('maxPrice', new ParseIntPipe({ optional: true })) maxPrice?: number,
     @Query('departureTime') departureTime?: 'morning' | 'afternoon' | 'night',
     @Query('minRating', new ParseIntPipe({ optional: true })) minRating?: number,
+    @Query('routeId') routeId?: string,
   ) {
     return this.tripsService.search(
       origin,
@@ -38,6 +40,7 @@ export class TripsController {
       maxPrice,
       departureTime,
       minRating,
+      routeId,
     );
   }
 

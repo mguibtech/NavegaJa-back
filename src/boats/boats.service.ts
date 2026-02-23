@@ -6,6 +6,7 @@ import { CreateBoatDto } from './dto/create-boat.dto';
 import { UpdateBoatDto } from './dto/update-boat.dto';
 import { Review, ReviewType } from '../reviews/review.entity';
 import { Trip } from '../trips/trip.entity';
+import { User } from '../users/user.entity';
 
 @Injectable()
 export class BoatsService {
@@ -16,9 +17,19 @@ export class BoatsService {
     private reviewsRepo: Repository<Review>,
     @InjectRepository(Trip)
     private tripsRepo: Repository<Trip>,
+    @InjectRepository(User)
+    private usersRepo: Repository<User>,
   ) {}
 
   async create(ownerId: string, dto: CreateBoatDto): Promise<Boat> {
+    // Capitão precisa ter documentação aprovada pelo admin antes de cadastrar embarcação
+    const captain = await this.usersRepo.findOne({ where: { id: ownerId } });
+    if (!captain?.isVerified) {
+      throw new ForbiddenException(
+        'Sua documentação ainda não foi aprovada pelo administrador. Aguarde a verificação antes de cadastrar uma embarcação.',
+      );
+    }
+
     const boat = this.boatsRepo.create({ ...dto, ownerId });
     return this.boatsRepo.save(boat);
   }

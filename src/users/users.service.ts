@@ -38,6 +38,17 @@ export class UsersService {
 
   async updateProfile(id: string, data: Partial<User>): Promise<any> {
     const { passwordHash, role, isActive, ...safeData } = data as any;
+
+    // Se o capitão actualizou documentos, marcar como não verificado
+    // para forçar nova revisão pelo admin
+    const docFields = ['licensePhotoUrl', 'certificatePhotoUrl'];
+    const updatingDocs = docFields.some(f => safeData[f] !== undefined);
+    if (updatingDocs) {
+      safeData.isVerified = false;
+      safeData.verifiedAt = null;
+      safeData.rejectionReason = null; // limpa rejeição anterior ao reenviar docs
+    }
+
     await this.usersRepo.update(id, safeData);
     return this.findById(id);
   }
