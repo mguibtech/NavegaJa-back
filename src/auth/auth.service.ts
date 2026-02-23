@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -26,10 +26,6 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto) {
-    if (dto.role === UserRole.CAPTAIN || dto.role === UserRole.ADMIN) {
-      throw new ForbiddenException('Capitães devem ser cadastrados pelo administrador do NavegaJá');
-    }
-
     const exists = await this.usersRepo.findOne({ where: { phone: dto.phone } });
     if (exists) {
       throw new ConflictException('Telefone já cadastrado');
@@ -42,7 +38,7 @@ export class AuthService {
       email: dto.email,
       cpf: dto.cpf,
       passwordHash,
-      role: dto.role ?? UserRole.PASSENGER,
+      role: UserRole.PASSENGER, // app mobile cria sempre passageiro
       city: dto.city,
       state: dto.state ?? 'AM',
     });

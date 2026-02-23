@@ -5,8 +5,34 @@ import { RolesGuard, Roles } from '../common/roles.guard';
 import { AdminService } from './admin.service';
 import { UserRole } from '../users/user.entity';
 import { NotificationsService, BroadcastFilters } from '../notifications/notifications.service';
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsArray, IsEnum, IsEmail, MinLength, Length } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+class CreateCaptainDto {
+  @ApiProperty({ example: 'Carlos Navegador', description: 'Nome completo do capitão' })
+  @IsString() @IsNotEmpty()
+  name: string;
+
+  @ApiProperty({ example: '92992001099', description: 'Número de telefone (login mobile)' })
+  @IsString() @IsNotEmpty()
+  phone: string;
+
+  @ApiProperty({ example: 'carlos@email.com', required: false })
+  @IsEmail() @IsOptional()
+  email?: string;
+
+  @ApiProperty({ example: '123456', description: 'Senha provisória (mínimo 6 caracteres)' })
+  @IsString() @MinLength(6)
+  password: string;
+
+  @ApiProperty({ example: 'Manaus' })
+  @IsString() @IsNotEmpty()
+  city: string;
+
+  @ApiPropertyOptional({ example: 'AM' })
+  @IsString() @Length(2, 2) @IsOptional()
+  state?: string;
+}
 
 class BroadcastNotificationDto {
   @ApiProperty({ example: '🎉 Festa de Parintins', description: 'Título da notificação' })
@@ -60,6 +86,15 @@ export class AdminController {
     @Query('search') search?: string,
   ) {
     return this.adminService.getAllUsers(page, limit, role, search);
+  }
+
+  @Post('captains')
+  @ApiOperation({
+    summary: 'Criar conta de capitão (Admin)',
+    description: 'Apenas admins podem criar contas de capitão. O capitão receberá login por telefone e senha provisória.',
+  })
+  async createCaptain(@Body() dto: CreateCaptainDto) {
+    return this.adminService.createCaptain(dto);
   }
 
   @Get('users/stats')

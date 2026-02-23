@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, Between } from 'typeorm';
+import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from '../users/user.entity';
 import { Trip, TripStatus } from '../trips/trip.entity';
 import { Shipment, ShipmentStatus } from '../shipments/shipment.entity';
@@ -35,6 +36,32 @@ export class AdminService {
   ) {}
 
   // ==================== USUÁRIOS ====================
+
+  async createCaptain(dto: { name: string; phone: string; email?: string; password: string; city: string; state?: string }) {
+    const phoneExists = await this.usersRepo.findOne({ where: { phone: dto.phone } });
+    if (phoneExists) throw new ConflictException('Telefone já cadastrado');
+
+    if (dto.email) {
+      const emailExists = await this.usersRepo.findOne({ where: { email: dto.email } });
+      if (emailExists) throw new ConflictException('E-mail já cadastrado');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+    const captain = await this.usersRepo.save({
+      name: dto.name,
+      phone: dto.phone,
+      email: dto.email,
+      passwordHash,
+      role: UserRole.CAPTAIN,
+      city: dto.city,
+      state: dto.state ?? 'AM',
+      isActive: true,
+      isVerified: false, // aguarda verificação de documentos
+    });
+
+    const { passwordHash: _, ...safe } = captain as any;
+    return safe;
+  }
 
   async getAllUsers(page: number, limit: number, role?: UserRole, search?: string) {
     const skip = (page - 1) * limit;

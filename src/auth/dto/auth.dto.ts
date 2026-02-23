@@ -1,8 +1,8 @@
-import { IsString, IsNotEmpty, MinLength, IsEnum, IsOptional, IsEmail, Length } from 'class-validator';
+import { IsString, IsNotEmpty, MinLength, IsOptional, IsEmail, Length } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { UserRole } from '../../users/user.entity';
 import { IsCpfValid } from '../../common/validators/is-cpf-valid.validator';
 
+/** Registo público via app mobile — cria sempre PASSAGEIRO */
 export class RegisterDto {
   @ApiProperty({ example: 'João Silva' })
   @IsString({ message: 'O nome deve ser um texto' })
@@ -24,30 +24,25 @@ export class RegisterDto {
   @MinLength(6, { message: 'A senha deve ter no mínimo 6 caracteres' })
   password: string;
 
-  @ApiProperty({ enum: UserRole, example: UserRole.PASSENGER })
-  @IsEnum(UserRole, { message: 'Perfil inválido' })
-  @IsOptional()
-  role?: UserRole;
-
-  @ApiProperty({ example: '123.456.789-00', required: false, description: 'CPF do usuário (validado automaticamente)' })
+  @ApiProperty({ example: '123.456.789-00', required: false })
   @IsOptional()
   @IsString({ message: 'O CPF deve ser um texto' })
   @IsCpfValid()
   cpf?: string;
 
-  @ApiProperty({ example: 'Manaus', description: 'Cidade do usuário (usado para notificações segmentadas)' })
+  @ApiProperty({ example: 'Manaus' })
   @IsString({ message: 'A cidade deve ser um texto' })
   @IsNotEmpty({ message: 'A cidade é obrigatória' })
   city: string;
 
-  @ApiProperty({ example: 'AM', required: false, description: 'Estado (UF) — padrão: AM' })
-  @IsString({ message: 'O estado deve ser um texto' })
+  @ApiProperty({ example: 'AM', required: false })
+  @IsString()
   @Length(2, 2, { message: 'O estado deve ter 2 letras (UF)' })
   @IsOptional()
   state?: string;
 
-  @ApiProperty({ example: 'NVJ-A1B2C3', required: false, description: 'Código de indicação de um amigo' })
-  @IsString({ message: 'O código de indicação deve ser um texto' })
+  @ApiProperty({ example: 'NVJ-A1B2C3', required: false })
+  @IsString()
   @IsOptional()
   referralCode?: string;
 }

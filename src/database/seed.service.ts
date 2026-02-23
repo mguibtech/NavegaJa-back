@@ -27,15 +27,64 @@ export class SeedService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    // Admins criados SEMPRE (independente do DB ter dados ou não)
+    await this.seedAdmins();
+
     const userCount = await this.usersRepo.count();
-    if (userCount > 0) {
-      this.logger.log('Banco já possui dados, pulando seed');
+    if (userCount > 1) {
+      this.logger.log('Banco já possui dados, pulando seed de demonstração');
       return;
     }
 
     this.logger.log('🌱 Iniciando seed com dados reais de Manaus...');
     await this.seed();
     this.logger.log('✅ Seed concluído com sucesso!');
+  }
+
+  /**
+   * Cria os utilizadores admin se ainda não existirem.
+   * Corre sempre ao iniciar — seguro para re-execução (upsert por email).
+   */
+  private async seedAdmins() {
+    const adminPasswordHash = await bcrypt.hash('admin123', 10);
+
+    const admins = [
+      { name: 'Admin Principal', email: 'admin@navegaja.com', phone: '92900000001' },
+      { name: 'Admin Suporte',   email: 'suporte@navegaja.com', phone: '92900000002' },
+      { name: 'Admin Operação',  email: 'operacao@navegaja.com', phone: '92900000003' },
+      { name: 'Admin Financeiro',email: 'financeiro@navegaja.com', phone: '92900000004' },
+      { name: 'Admin Teste',     email: 'teste@navegaja.com', phone: '92900000005' },
+    ];
+
+    let created = 0;
+    let updated = 0;
+    for (const a of admins) {
+      const exists = await this.usersRepo.findOne({ where: { email: a.email } });
+      if (!exists) {
+        await this.usersRepo.save({
+          name: a.name,
+          email: a.email,
+          phone: a.phone,
+          passwordHash: adminPasswordHash,
+          role: UserRole.ADMIN,
+          isActive: true,
+          isVerified: true,
+          state: 'AM',
+        });
+        created++;
+      } else {
+        // Actualiza sempre a senha para garantir que admin123 funciona
+        await this.usersRepo.update(exists.id, {
+          passwordHash: adminPasswordHash,
+          role: UserRole.ADMIN,
+          isActive: true,
+        });
+        updated++;
+      }
+    }
+
+    if (created > 0) this.logger.log(`👤 ${created} admin(s) criados (senha: admin123)`);
+    if (updated > 0) this.logger.log(`👤 ${updated} admin(s) actualizados (senha: admin123)`);
   }
 
   private async seed() {
