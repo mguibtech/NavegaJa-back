@@ -1,5 +1,6 @@
 import { Controller, Post, Get, Body, UseGuards, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto, LoginWebDto, RefreshTokenDto, ForgotPasswordDto, ResetPasswordDto } from './dto/auth.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -10,18 +11,21 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('register')
+  @Throttle({ strict: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Cadastrar novo usuário' })
   register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
   @Post('login')
+  @Throttle({ strict: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Login com telefone e senha (App Mobile)' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
 
   @Post('login-web')
+  @Throttle({ strict: { limit: 5, ttl: 60000 } })
   @ApiOperation({
     summary: 'Login com e-mail e senha (Dashboard Web)',
     description: 'Endpoint exclusivo para administradores. APENAS usuários com role admin podem acessar o dashboard web.'
@@ -31,24 +35,28 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Throttle({ strict: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: 'Renovar tokens usando refresh token' })
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refresh(dto.refreshToken);
   }
 
   @Post('forgot-password')
+  @Throttle({ strict: { limit: 3, ttl: 60000 } })
   @ApiOperation({ summary: 'Solicitar código de recuperação de senha por e-mail' })
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
   }
 
   @Post('reset-password')
+  @Throttle({ strict: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Redefinir senha com código recebido por e-mail' })
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
   }
 
   @Get('me')
+  @SkipThrottle()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Dados do usuário logado' })

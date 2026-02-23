@@ -9,6 +9,9 @@ import { SosAlert } from '../safety/sos-alert.entity';
 import { SafetyChecklist } from '../safety/safety-checklist.entity';
 import { Booking } from '../bookings/booking.entity';
 import { Coupon } from '../coupons/coupon.entity';
+import { Review } from '../reviews/review.entity';
+import { Boat } from '../boats/boat.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -20,7 +23,10 @@ import { Coupon } from '../coupons/coupon.entity';
       SafetyChecklist,
       Booking,
       Coupon,
+      Review,
+      Boat,
     ]),
+    NotificationsModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as QRCode from 'qrcode';
@@ -6,10 +6,12 @@ import { Shipment, ShipmentStatus } from './shipment.entity';
 import { ShipmentTimeline } from './shipment-timeline.entity';
 import { Trip } from '../trips/trip.entity';
 import { Coupon } from '../coupons/coupon.entity';
+import { User } from '../users/user.entity';
 import { CreateShipmentDto } from './dto/create-shipment.dto';
 import { CalculatePriceDto, CalculatePriceResponseDto } from './dto/calculate-price.dto';
 import { GamificationService } from '../gamification/gamification.service';
 import { PointAction } from '../gamification/point-transaction.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ShipmentsService {
@@ -24,7 +26,10 @@ export class ShipmentsService {
     private tripsRepo: Repository<Trip>,
     @InjectRepository(Coupon)
     private couponsRepo: Repository<Coupon>,
+    @InjectRepository(User)
+    private usersRepo: Repository<User>,
     private gamificationService: GamificationService,
+    private notificationsService: NotificationsService,
   ) {
     this.initializeSequence();
   }
@@ -414,6 +419,17 @@ export class ShipmentsService {
     validationCode: string,
     collectionPhotoUrl?: string,
   ): Promise<Shipment> {
+    // Capitão não verificado não pode recolher encomendas
+    const captain = await this.usersRepo.findOne({
+      where: { id: captainId },
+      select: ['id', 'isVerified'],
+    });
+    if (!captain?.isVerified) {
+      throw new ForbiddenException(
+        'Conta não verificada. Aguarde a aprovação do NavegaJá.',
+      );
+    }
+
     const shipment = await this.shipmentsRepo.findOne({
       where: { id },
       relations: ['trip'],
@@ -449,6 +465,13 @@ export class ShipmentsService {
       captainId,
     );
 
+    // Notificar remetente
+    await this.notificationsService.sendToUser(saved.senderId, {
+      title: '📦 Encomenda coletada!',
+      body: `Sua encomenda ${saved.trackingCode} foi coletada pelo capitão.`,
+      data: { type: 'shipment_collected', shipmentId: saved.id, trackingCode: saved.trackingCode },
+    });
+
     return saved;
   }
 
@@ -480,6 +503,13 @@ export class ShipmentsService {
       undefined,
       captainId,
     );
+
+    // Notificar remetente
+    await this.notificationsService.sendToUser(saved.senderId, {
+      title: '🚚 Saiu para entrega!',
+      body: `Sua encomenda ${saved.trackingCode} está a caminho do destinatário.`,
+      data: { type: 'shipment_out_for_delivery', shipmentId: saved.id, trackingCode: saved.trackingCode },
+    });
 
     return saved;
   }
@@ -530,6 +560,13 @@ export class ShipmentsService {
 
     const navegaCoinsEarned = coinTransaction.points;
 
+    // Notificar remetente: entregue!
+    await this.notificationsService.sendToUser(saved.senderId, {
+      title: '✅ Encomenda entregue!',
+      body: `Sua encomenda ${saved.trackingCode} foi entregue com sucesso!`,
+      data: { type: 'shipment_delivered', shipmentId: saved.id, trackingCode: saved.trackingCode },
+    });
+
     return {
       shipment: saved,
       message: 'Entrega confirmada com sucesso!',
@@ -568,6 +605,21 @@ export class ShipmentsService {
         newStatus,
         descriptions[newStatus],
       );
+
+      // Notificar remetente para status relevantes
+      if (newStatus === ShipmentStatus.IN_TRANSIT) {
+        await this.notificationsService.sendToUser(shipment.senderId, {
+          title: '🚢 Encomenda em trânsito!',
+          body: `Sua encomenda ${shipment.trackingCode} está a caminho do destino.`,
+          data: { type: 'shipment_in_transit', shipmentId: shipment.id, trackingCode: shipment.trackingCode },
+        });
+      } else if (newStatus === ShipmentStatus.ARRIVED) {
+        await this.notificationsService.sendToUser(shipment.senderId, {
+          title: '📍 Encomenda chegou ao destino!',
+          body: `Sua encomenda ${shipment.trackingCode} chegou. Em breve será entregue.`,
+          data: { type: 'shipment_arrived', shipmentId: shipment.id, trackingCode: shipment.trackingCode },
+        });
+      }
     }
   }
 

@@ -1,5 +1,5 @@
 import { Controller, Post, Get, Patch, Param, Body, UseGuards, Request, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto, CancelBookingDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -15,8 +15,9 @@ export class BookingsController {
 
   @Get('my-bookings')
   @ApiOperation({ summary: 'Minhas reservas (passageiro logado)' })
-  myBookings(@Request() req: any) {
-    return this.bookingsService.findByPassenger(req.user.sub);
+  @ApiQuery({ name: 'status', required: false, description: 'Filtrar por status', enum: ['pending', 'confirmed', 'checked_in', 'completed', 'cancelled', 'expired'] })
+  myBookings(@Request() req: any, @Query('status') status?: string) {
+    return this.bookingsService.findByPassenger(req.user.sub, status);
   }
 
   @Get(':id')
@@ -64,7 +65,7 @@ export class BookingsController {
     description: 'Admin ou capitão confirma que recebeu o pagamento PIX',
   })
   confirmPayment(@Param('id') id: string, @Request() req: any) {
-    return this.bookingsService.confirmPayment(id, req.user.sub);
+    return this.bookingsService.confirmPayment(id, req.user.sub, req.user.role);
   }
 
   @Get(':id/payment-status')

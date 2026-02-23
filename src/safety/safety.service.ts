@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { EmergencyContact, EmergencyServiceType } from './emergency-contact.entity';
 import { SafetyChecklist } from './safety-checklist.entity';
 import { SosAlert, SosAlertStatus, SosAlertType } from './sos-alert.entity';
+import { Trip } from '../trips/trip.entity';
 import { WeatherService } from '../weather/weather.service';
 
 @Injectable()
@@ -15,6 +16,8 @@ export class SafetyService {
     private checklistsRepo: Repository<SafetyChecklist>,
     @InjectRepository(SosAlert)
     private sosAlertsRepo: Repository<SosAlert>,
+    @InjectRepository(Trip)
+    private tripsRepo: Repository<Trip>,
     private weatherService: WeatherService,
   ) {}
 
@@ -172,9 +175,16 @@ export class SafetyService {
     longitude?: number;
     location?: string;
   }) {
+    // Valida tripId — se não existir na BD, ignora (SOS pode ocorrer sem viagem ativa)
+    let validTripId: string | null = null;
+    if (data.tripId) {
+      const tripExists = await this.tripsRepo.findOne({ where: { id: data.tripId } });
+      validTripId = tripExists ? data.tripId : null;
+    }
+
     const alert = this.sosAlertsRepo.create({
       userId: data.userId,
-      tripId: data.tripId || null,
+      tripId: validTripId,
       type: data.type,
       description: data.description || null,
       latitude: data.latitude || null,

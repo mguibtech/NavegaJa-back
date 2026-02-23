@@ -7,7 +7,10 @@ import { ShipmentsService } from '../shipments/shipments.service';
 import { ShipmentStatus } from '../shipments/shipment.entity';
 import { SafetyService } from '../safety/safety.service';
 import { WeatherService } from '../weather/weather.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { BookingsService } from '../bookings/bookings.service';
 import { Boat } from '../boats/boat.entity';
+import { User } from '../users/user.entity';
 
 @Injectable()
 export class TripsService {
@@ -16,11 +19,15 @@ export class TripsService {
     private tripsRepo: Repository<Trip>,
     @InjectRepository(Boat)
     private boatsRepo: Repository<Boat>,
+    @InjectRepository(User)
+    private usersRepo: Repository<User>,
     @Inject(forwardRef(() => ShipmentsService))
     private shipmentsService: ShipmentsService,
     @Inject(forwardRef(() => SafetyService))
     private safetyService: SafetyService,
     private weatherService: WeatherService,
+    private notificationsService: NotificationsService,
+    private bookingsService: BookingsService,
   ) {}
 
   async create(captainId: string, dto: CreateTripDto): Promise<Trip> {
@@ -28,6 +35,17 @@ export class TripsService {
     const estimatedArrivalAt = new Date(dto.arrivalTime);
 
     // ========== VALIDAÇÕES CRÍTICAS ==========
+
+    // 0. Capitão deve ter documentação verificada pelo admin
+    const captain = await this.usersRepo.findOne({
+      where: { id: captainId },
+      select: ['id', 'isVerified'],
+    });
+    if (!captain?.isVerified) {
+      throw new ForbiddenException(
+        'Conta não verificada. Envie sua habilitação náutica e aguarde a aprovação do NavegaJá.',
+      );
+    }
 
     // 1. Validar datas
     const now = new Date();
@@ -150,9 +168,21 @@ export class TripsService {
     departureTime?: 'morning' | 'afternoon' | 'night',
     minRating?: number,
   ): Promise<Trip[]> {
+    // ValidationPipe({ transform:true }) converte strings não numéricas para NaN — validar aqui
+    if (minPrice !== undefined && !Number.isFinite(minPrice)) {
+      throw new BadRequestException('minPrice deve ser um número inteiro válido');
+    }
+    if (maxPrice !== undefined && !Number.isFinite(maxPrice)) {
+      throw new BadRequestException('maxPrice deve ser um número inteiro válido');
+    }
+    if (minRating !== undefined && !Number.isFinite(minRating)) {
+      throw new BadRequestException('minRating deve ser um número inteiro válido');
+    }
+
     const qb = this.tripsRepo
       .createQueryBuilder('trip')
-      .leftJoinAndSelect('trip.captain', 'captain')
+      .leftJoin('trip.captain', 'captain')
+      .addSelect(TripsService.CAPTAIN_SAFE_FIELDS)
       .leftJoinAndSelect('trip.boat', 'boat')
       .where('trip.status = :status', { status: TripStatus.SCHEDULED });
 
@@ -220,19 +250,30 @@ export class TripsService {
     return qb.getMany();
   }
 
-  async findById(id: string): Promise<Trip> {
-    const trip = await this.tripsRepo.findOne({
-      where: { id },
-      relations: [
-        'captain',
-        'boat',
-        'bookings',
-        'bookings.passenger',
-      ],
-    });
+  async findById(id: string): Promise<any> {
+    const qb = this.tripsRepo
+      .createQueryBuilder('trip')
+      .leftJoin('trip.captain', 'captain')
+      .addSelect(TripsService.CAPTAIN_SAFE_FIELDS)
+      .leftJoinAndSelect('trip.boat', 'boat')
+      .leftJoinAndSelect('trip.bookings', 'bookings')
+      .leftJoin('bookings.passenger', 'passenger')
+      .addSelect(TripsService.CAPTAIN_SAFE_FIELDS.map(f => f.replace('captain.', 'passenger.')))
+      .where('trip.id = :id', { id });
+
+    const trip = await qb.getOne();
     if (!trip) throw new NotFoundException('Viagem não encontrada');
     return trip;
   }
+
+  // Campos seguros do capitão/passageiro — excluem passwordHash, resetCode, fcmToken
+  private static readonly CAPTAIN_SAFE_FIELDS = [
+    'captain.id', 'captain.name', 'captain.phone', 'captain.role', 'captain.email',
+    'captain.avatarUrl', 'captain.rating', 'captain.totalTrips', 'captain.totalPoints',
+    'captain.level', 'captain.referralCode', 'captain.isActive', 'captain.passengerRating',
+    'captain.city', 'captain.state', 'captain.isVerified', 'captain.licensePhotoUrl',
+    'captain.certificatePhotoUrl', 'captain.verifiedAt', 'captain.createdAt', 'captain.updatedAt',
+  ];
 
   async findByCaptain(captainId: string): Promise<Trip[]> {
     return this.tripsRepo.find({
@@ -341,13 +382,35 @@ export class TripsService {
     trip.status = dto.status;
     const saved = await this.tripsRepo.save(trip);
 
+    const route = `${trip.origin} → ${trip.destination}`;
+
     // Auto-atualizar encomendas quando viagem muda de status
     if (dto.status === TripStatus.IN_PROGRESS && oldStatus !== TripStatus.IN_PROGRESS) {
       // Viagem partiu - atualizar encomendas COLLECTED para IN_TRANSIT
       await this.shipmentsService.updateShipmentsByTrip(tripId, ShipmentStatus.IN_TRANSIT);
+      // Notificar passageiros
+      await this.notificationsService.sendToTripPassengers(tripId, {
+        title: '⛵ Sua viagem começou!',
+        body: `A viagem ${route} partiu. Boa viagem!`,
+        data: { type: 'trip_started', tripId },
+      });
     } else if (dto.status === TripStatus.COMPLETED && oldStatus !== TripStatus.COMPLETED) {
-      // Viagem chegou - atualizar encomendas IN_TRANSIT para ARRIVED
+      // Notificar ANTES de completar as reservas (sendToTripPassengers filtra por CONFIRMED/CHECKED_IN)
+      await this.notificationsService.sendToTripPassengers(tripId, {
+        title: '🏁 Viagem concluída!',
+        body: `Chegou em ${trip.destination}. Não esqueça de avaliar o capitão!`,
+        data: { type: 'trip_completed', tripId },
+      });
+      // Completar reservas abertas e atualizar encomendas
+      await this.bookingsService.autoCompleteByTrip(tripId);
       await this.shipmentsService.updateShipmentsByTrip(tripId, ShipmentStatus.ARRIVED);
+    } else if (dto.status === TripStatus.CANCELLED && oldStatus !== TripStatus.CANCELLED) {
+      // Viagem cancelada - notificar passageiros
+      await this.notificationsService.sendToTripPassengers(tripId, {
+        title: '❌ Viagem cancelada',
+        body: `A viagem ${route} foi cancelada.`,
+        data: { type: 'trip_cancelled', tripId },
+      });
     }
 
     return saved;
@@ -364,35 +427,41 @@ export class TripsService {
   }
 
   async getPopularDestinations() {
+    // COALESCE: se trip.origin for vazio (seed antigo), usa route.origin_name como fallback
     const popularOrigins = await this.tripsRepo
       .createQueryBuilder('trip')
-      .select('trip.origin', 'city')
+      .leftJoin('trip.route', 'route')
+      .select(`COALESCE(NULLIF(trip.origin, ''), route.origin_name)`, 'city')
       .addSelect('COUNT(*)', 'count')
       .where('trip.status = :status', { status: TripStatus.SCHEDULED })
-      .groupBy('trip.origin')
+      .andWhere(`COALESCE(NULLIF(trip.origin, ''), route.origin_name) IS NOT NULL`)
+      .groupBy(`COALESCE(NULLIF(trip.origin, ''), route.origin_name)`)
       .orderBy('count', 'DESC')
       .limit(10)
       .getRawMany();
 
     const popularDestinations = await this.tripsRepo
       .createQueryBuilder('trip')
-      .select('trip.destination', 'city')
+      .leftJoin('trip.route', 'route')
+      .select(`COALESCE(NULLIF(trip.destination, ''), route.destination_name)`, 'city')
       .addSelect('COUNT(*)', 'count')
       .where('trip.status = :status', { status: TripStatus.SCHEDULED })
-      .groupBy('trip.destination')
+      .andWhere(`COALESCE(NULLIF(trip.destination, ''), route.destination_name) IS NOT NULL`)
+      .groupBy(`COALESCE(NULLIF(trip.destination, ''), route.destination_name)`)
       .orderBy('count', 'DESC')
       .limit(10)
       .getRawMany();
 
     const popularRoutes = await this.tripsRepo
       .createQueryBuilder('trip')
-      .select('trip.origin', 'origin')
-      .addSelect('trip.destination', 'destination')
+      .leftJoin('trip.route', 'route')
+      .select(`COALESCE(NULLIF(trip.origin, ''), route.origin_name)`, 'origin')
+      .addSelect(`COALESCE(NULLIF(trip.destination, ''), route.destination_name)`, 'destination')
       .addSelect('COUNT(*)', 'count')
       .addSelect('MIN(trip.price)', 'minPrice')
       .addSelect('AVG(trip.price)', 'avgPrice')
       .where('trip.status = :status', { status: TripStatus.SCHEDULED })
-      .groupBy('trip.origin, trip.destination')
+      .groupBy(`COALESCE(NULLIF(trip.origin, ''), route.origin_name), COALESCE(NULLIF(trip.destination, ''), route.destination_name)`)
       .orderBy('count', 'DESC')
       .limit(10)
       .getRawMany();

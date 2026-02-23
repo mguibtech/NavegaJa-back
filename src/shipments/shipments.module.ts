@@ -8,8 +8,10 @@ import { ShipmentTimeline } from './shipment-timeline.entity';
 import { ShipmentReview } from './shipment-review.entity';
 import { Trip } from '../trips/trip.entity';
 import { Coupon } from '../coupons/coupon.entity';
+import { User } from '../users/user.entity';
 import { GamificationModule } from '../gamification/gamification.module';
 import { CouponsModule } from '../coupons/coupons.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -19,9 +21,11 @@ import { CouponsModule } from '../coupons/coupons.module';
       ShipmentReview,
       Trip,
       Coupon,
+      User,
     ]),
     GamificationModule,
     CouponsModule,
+    NotificationsModule,
   ],
   controllers: [ShipmentsController],
   providers: [ShipmentsService, StorageService],

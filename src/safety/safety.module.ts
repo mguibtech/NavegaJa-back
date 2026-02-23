@@ -5,6 +5,7 @@ import { SafetyController } from './safety.controller';
 import { EmergencyContact } from './emergency-contact.entity';
 import { SafetyChecklist } from './safety-checklist.entity';
 import { SosAlert } from './sos-alert.entity';
+import { Trip } from '../trips/trip.entity';
 import { WeatherModule } from '../weather/weather.module';
 
 @Module({
@@ -13,6 +14,7 @@ import { WeatherModule } from '../weather/weather.module';
       EmergencyContact,
       SafetyChecklist,
       SosAlert,
+      Trip,
     ]),
     WeatherModule,
   ],

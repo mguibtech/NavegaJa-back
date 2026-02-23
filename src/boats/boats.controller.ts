@@ -1,7 +1,8 @@
-import { Controller, Post, Get, Param, Body, UseGuards, Request } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Post, Get, Patch, Param, Body, UseGuards, Request } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { BoatsService } from './boats.service';
 import { CreateBoatDto } from './dto/create-boat.dto';
+import { UpdateBoatDto } from './dto/update-boat.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
 
@@ -18,6 +19,30 @@ export class BoatsController {
   @ApiOperation({ summary: 'Cadastrar embarcação (captain only)' })
   create(@Request() req: any, @Body() dto: CreateBoatDto) {
     return this.boatsService.create(req.user.sub, dto);
+  }
+
+  @Patch(':id')
+  @UseGuards(RolesGuard)
+  @Roles('captain')
+  @ApiOperation({
+    summary: 'Atualizar embarcação (captain only)',
+    description: 'Atualiza fotos, documentos, comodidades e dados gerais da embarcação. Se documentPhotos for enviado, o barco volta ao estado pendente de verificação.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Embarcação atualizada',
+    schema: {
+      example: {
+        id: 'uuid',
+        name: 'Estrela do Rio',
+        isVerified: false,
+        photos: ['https://storage.googleapis.com/...'],
+        documentPhotos: ['https://storage.googleapis.com/.../licenca.jpg'],
+      },
+    },
+  })
+  update(@Request() req: any, @Param('id') id: string, @Body() dto: UpdateBoatDto) {
+    return this.boatsService.update(id, req.user.sub, dto);
   }
 
   @Get('my-boats')

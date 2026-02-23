@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Put, Delete, Patch, Param, Body, Query, UseGuards, Request, ParseUUIDPipe, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Get, Put, Delete, Patch, Param, Body, Query, UseGuards, Request, ParseUUIDPipe, ParseIntPipe, BadRequestException } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiParam, ApiOkResponse } from '@nestjs/swagger';
 import { TripsService } from './trips.service';
 import { CreateTripDto, UpdateTripStatusDto, UpdateLocationDto, PopularDestinationsResponseDto } from './dto/trip.dto';
@@ -25,10 +25,10 @@ export class TripsController {
     @Query('origin') origin?: string,
     @Query('destination') destination?: string,
     @Query('date') date?: string,
-    @Query('minPrice') minPrice?: number,
-    @Query('maxPrice') maxPrice?: number,
+    @Query('minPrice', new ParseIntPipe({ optional: true })) minPrice?: number,
+    @Query('maxPrice', new ParseIntPipe({ optional: true })) maxPrice?: number,
     @Query('departureTime') departureTime?: 'morning' | 'afternoon' | 'night',
-    @Query('minRating') minRating?: number,
+    @Query('minRating', new ParseIntPipe({ optional: true })) minRating?: number,
   ) {
     return this.tripsService.search(
       origin,

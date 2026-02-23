@@ -8,6 +8,8 @@ import { SosAlert, SosAlertStatus } from '../safety/sos-alert.entity';
 import { SafetyChecklist } from '../safety/safety-checklist.entity';
 import { Booking, BookingStatus, PaymentStatus } from '../bookings/booking.entity';
 import { Coupon } from '../coupons/coupon.entity';
+import { Review, ReviewType } from '../reviews/review.entity';
+import { Boat } from '../boats/boat.entity';
 
 @Injectable()
 export class AdminService {
@@ -26,6 +28,10 @@ export class AdminService {
     private bookingsRepo: Repository<Booking>,
     @InjectRepository(Coupon)
     private couponsRepo: Repository<Coupon>,
+    @InjectRepository(Review)
+    private reviewsRepo: Repository<Review>,
+    @InjectRepository(Boat)
+    private boatsRepo: Repository<Boat>,
   ) {}
 
   // ==================== USUÁRIOS ====================
@@ -97,13 +103,16 @@ export class AdminService {
       where: { createdAt: MoreThan(monthAgo) },
     });
 
+    const activeUsers = await this.usersRepo.count({ where: { isActive: true } });
+
     return {
       total,
       byRole,
       newToday,
       newThisWeek,
       newThisMonth,
-      activeUsers: total, // TODO: implementar lógica de usuários ativos (último acesso)
+      activeUsers,
+      blockedUsers: total - activeUsers,
     };
   }
 
@@ -162,12 +171,13 @@ export class AdminService {
       throw new NotFoundException('Usuário não encontrado');
     }
 
-    // TODO: adicionar campo 'active' na entidade User
-    // Por enquanto, retornar mensagem
+    user.isActive = active;
+    await this.usersRepo.save(user);
+
+    const { passwordHash, ...sanitizedUser } = user;
     return {
       message: `Usuário ${active ? 'ativado' : 'desativado'} com sucesso`,
-      userId: id,
-      active,
+      user: sanitizedUser,
     };
   }
 
@@ -234,47 +244,37 @@ export class AdminService {
   }
 
   async getTripStats() {
-    const total = await this.tripsRepo.count();
-
-    // Por status
-    const byStatus = {
-      scheduled: await this.tripsRepo.count({ where: { status: TripStatus.SCHEDULED } }),
-      in_progress: await this.tripsRepo.count({ where: { status: TripStatus.IN_PROGRESS } }),
-      completed: await this.tripsRepo.count({ where: { status: TripStatus.COMPLETED } }),
-      cancelled: await this.tripsRepo.count({ where: { status: TripStatus.CANCELLED } }),
-    };
-
-    // Viagens por período
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const weekAgo = new Date(today);
+    const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const monthAgo = new Date(today);
+    const monthAgo = new Date();
     monthAgo.setMonth(monthAgo.getMonth() - 1);
 
-    const todayTrips = await this.tripsRepo.count({
-      where: { departureAt: MoreThan(today) },
-    });
+    const [total, scheduled, inProgress, completed, cancelled, todayTrips, thisWeekTrips, thisMonthTrips, revenueRow] =
+      await Promise.all([
+        this.tripsRepo.count(),
+        this.tripsRepo.count({ where: { status: TripStatus.SCHEDULED } }),
+        this.tripsRepo.count({ where: { status: TripStatus.IN_PROGRESS } }),
+        this.tripsRepo.count({ where: { status: TripStatus.COMPLETED } }),
+        this.tripsRepo.count({ where: { status: TripStatus.CANCELLED } }),
+        this.tripsRepo.count({ where: { departureAt: MoreThan(today) } }),
+        this.tripsRepo.count({ where: { departureAt: MoreThan(weekAgo) } }),
+        this.tripsRepo.count({ where: { departureAt: MoreThan(monthAgo) } }),
+        this.bookingsRepo
+          .createQueryBuilder('b')
+          .select('COALESCE(SUM(b.total_price), 0)', 'totalRevenue')
+          .getRawOne(),
+      ]);
 
-    const thisWeekTrips = await this.tripsRepo.count({
-      where: { departureAt: MoreThan(weekAgo) },
-    });
-
-    const thisMonthTrips = await this.tripsRepo.count({
-      where: { departureAt: MoreThan(monthAgo) },
-    });
-
-    // Receita (baseado em reservas)
-    const bookings = await this.bookingsRepo.find();
-    const totalRevenue = bookings.reduce((sum, b) => sum + Number(b.totalPrice || 0), 0);
-
+    const totalRevenue = Number(revenueRow?.totalRevenue || 0);
     const avgPrice = total > 0 ? totalRevenue / total : 0;
 
     return {
       total,
-      byStatus,
+      byStatus: { scheduled, in_progress: inProgress, completed, cancelled },
       todayTrips,
       thisWeekTrips,
       thisMonthTrips,
@@ -356,57 +356,40 @@ export class AdminService {
   }
 
   async getShipmentStats() {
-    const total = await this.shipmentsRepo.count();
-
-    // Por status
-    const byStatus = {
-      pending: await this.shipmentsRepo.count({
-        where: { status: ShipmentStatus.PENDING },
-      }),
-      collected: await this.shipmentsRepo.count({
-        where: { status: ShipmentStatus.COLLECTED },
-      }),
-      in_transit: await this.shipmentsRepo.count({
-        where: { status: ShipmentStatus.IN_TRANSIT },
-      }),
-      delivered: await this.shipmentsRepo.count({
-        where: { status: ShipmentStatus.DELIVERED },
-      }),
-      cancelled: await this.shipmentsRepo.count({
-        where: { status: ShipmentStatus.CANCELLED },
-      }),
-    };
-
-    // Por período
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const weekAgo = new Date(today);
+    const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const monthAgo = new Date(today);
+    const monthAgo = new Date();
     monthAgo.setMonth(monthAgo.getMonth() - 1);
 
-    const todayShipments = await this.shipmentsRepo.count({
-      where: { createdAt: MoreThan(today) },
-    });
+    const [
+      total, pending, collected, inTransit, delivered, cancelled,
+      todayShipments, thisWeekShipments, thisMonthShipments, revenueRow,
+    ] = await Promise.all([
+      this.shipmentsRepo.count(),
+      this.shipmentsRepo.count({ where: { status: ShipmentStatus.PENDING } }),
+      this.shipmentsRepo.count({ where: { status: ShipmentStatus.COLLECTED } }),
+      this.shipmentsRepo.count({ where: { status: ShipmentStatus.IN_TRANSIT } }),
+      this.shipmentsRepo.count({ where: { status: ShipmentStatus.DELIVERED } }),
+      this.shipmentsRepo.count({ where: { status: ShipmentStatus.CANCELLED } }),
+      this.shipmentsRepo.count({ where: { createdAt: MoreThan(today) } }),
+      this.shipmentsRepo.count({ where: { createdAt: MoreThan(weekAgo) } }),
+      this.shipmentsRepo.count({ where: { createdAt: MoreThan(monthAgo) } }),
+      this.shipmentsRepo
+        .createQueryBuilder('s')
+        .select('COALESCE(SUM(s.total_price), 0)', 'totalRevenue')
+        .getRawOne(),
+    ]);
 
-    const thisWeekShipments = await this.shipmentsRepo.count({
-      where: { createdAt: MoreThan(weekAgo) },
-    });
-
-    const thisMonthShipments = await this.shipmentsRepo.count({
-      where: { createdAt: MoreThan(monthAgo) },
-    });
-
-    // Receita
-    const shipments = await this.shipmentsRepo.find();
-    const totalRevenue = shipments.reduce((sum, s) => sum + Number(s.totalPrice || 0), 0);
+    const totalRevenue = Number(revenueRow?.totalRevenue || 0);
     const avgPrice = total > 0 ? totalRevenue / total : 0;
 
     return {
       total,
-      byStatus,
+      byStatus: { pending, collected, in_transit: inTransit, delivered, cancelled },
       todayShipments,
       thisWeekShipments,
       thisMonthShipments,
@@ -425,6 +408,40 @@ export class AdminService {
     await this.shipmentsRepo.save(shipment);
 
     return shipment;
+  }
+
+  // ==================== GRÁFICO POR DIA ====================
+
+  async getDashboardChart(days: number = 7) {
+    const labels: string[] = [];
+    const bookings: number[] = [];
+    const users: number[] = [];
+    const trips: number[] = [];
+
+    for (let i = days - 1; i >= 0; i--) {
+      const start = new Date();
+      start.setDate(start.getDate() - i);
+      start.setHours(0, 0, 0, 0);
+
+      const end = new Date(start);
+      end.setHours(23, 59, 59, 999);
+
+      labels.push(
+        `${String(start.getDate()).padStart(2, '0')}/${String(start.getMonth() + 1).padStart(2, '0')}`,
+      );
+
+      const [b, u, t] = await Promise.all([
+        this.bookingsRepo.count({ where: { createdAt: Between(start, end) } }),
+        this.usersRepo.count({ where: { createdAt: Between(start, end) } }),
+        this.tripsRepo.count({ where: { createdAt: Between(start, end) } }),
+      ]);
+
+      bookings.push(b);
+      users.push(u);
+      trips.push(t);
+    }
+
+    return { labels, bookings, users, trips };
   }
 
   // ==================== DASHBOARD OVERVIEW ====================
@@ -448,12 +465,14 @@ export class AdminService {
         total: users.total,
         newToday: users.newToday,
         activeUsers: users.activeUsers,
+        byRole: users.byRole,
       },
       trips: {
         total: trips.total,
         scheduled: trips.byStatus.scheduled,
         inProgress: trips.byStatus.in_progress,
         todayTrips: trips.todayTrips,
+        byStatus: trips.byStatus,
       },
       shipments: {
         total: shipments.total,
@@ -505,15 +524,21 @@ export class AdminService {
       startDate.setMonth(startDate.getMonth() - 1);
     }
 
-    const [bookings, shipments] = await Promise.all([
-      this.bookingsRepo.find({ where: { createdAt: MoreThan(startDate) } }),
-      this.shipmentsRepo.find({ where: { createdAt: MoreThan(startDate) } }),
+    const [bookingsRow, shipmentsRow] = await Promise.all([
+      this.bookingsRepo
+        .createQueryBuilder('b')
+        .select('COALESCE(SUM(b.total_price), 0)', 'revenue')
+        .where('b.created_at > :startDate', { startDate })
+        .getRawOne(),
+      this.shipmentsRepo
+        .createQueryBuilder('s')
+        .select('COALESCE(SUM(s.total_price), 0)', 'revenue')
+        .where('s.created_at > :startDate', { startDate })
+        .getRawOne(),
     ]);
 
-    const bookingsRevenue = bookings.reduce((sum, b) => sum + Number(b.totalPrice || 0), 0);
-    const shipmentsRevenue = shipments.reduce((sum, s) => sum + Number(s.totalPrice || 0), 0);
-
-    return Number((bookingsRevenue + shipmentsRevenue).toFixed(2));
+    const total = Number(bookingsRow?.revenue || 0) + Number(shipmentsRow?.revenue || 0);
+    return Number(total.toFixed(2));
   }
 
   async getRecentActivity(limit: number) {
@@ -926,62 +951,50 @@ export class AdminService {
   }
 
   async getBookingsStats() {
-    const total = await this.bookingsRepo.count();
-
-    // Por status
-    const pending = await this.bookingsRepo.count({ where: { status: BookingStatus.PENDING } });
-    const confirmed = await this.bookingsRepo.count({ where: { status: BookingStatus.CONFIRMED } });
-    const checkedIn = await this.bookingsRepo.count({ where: { status: BookingStatus.CHECKED_IN } });
-    const completed = await this.bookingsRepo.count({ where: { status: BookingStatus.COMPLETED } });
-    const cancelled = await this.bookingsRepo.count({ where: { status: BookingStatus.CANCELLED } });
-
-    // Por status de pagamento
-    const paymentPending = await this.bookingsRepo.count({ where: { paymentStatus: PaymentStatus.PENDING } });
-    const paid = await this.bookingsRepo.count({ where: { paymentStatus: PaymentStatus.PAID } });
-
-    // Receita total
-    const allBookings = await this.bookingsRepo.find();
-    const totalRevenue = allBookings.reduce((sum, b) => sum + Number(b.totalPrice || 0), 0);
-
-    // Receita confirmada (apenas pagamentos confirmados)
-    const paidBookings = await this.bookingsRepo.find({ where: { paymentStatus: PaymentStatus.PAID } });
-    const confirmedRevenue = paidBookings.reduce((sum, b) => sum + Number(b.totalPrice || 0), 0);
-
-    // Estatísticas de período
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const weekAgo = new Date(today);
+    const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const monthAgo = new Date(today);
+    const monthAgo = new Date();
     monthAgo.setMonth(monthAgo.getMonth() - 1);
 
-    const newToday = await this.bookingsRepo.count({
-      where: { createdAt: MoreThan(today) },
-    });
+    const [
+      total, pending, confirmed, checkedIn, completed, cancelled,
+      paymentPending, paid,
+      newToday, newThisWeek, newThisMonth,
+      totalRevenueRow, confirmedRevenueRow,
+    ] = await Promise.all([
+      this.bookingsRepo.count(),
+      this.bookingsRepo.count({ where: { status: BookingStatus.PENDING } }),
+      this.bookingsRepo.count({ where: { status: BookingStatus.CONFIRMED } }),
+      this.bookingsRepo.count({ where: { status: BookingStatus.CHECKED_IN } }),
+      this.bookingsRepo.count({ where: { status: BookingStatus.COMPLETED } }),
+      this.bookingsRepo.count({ where: { status: BookingStatus.CANCELLED } }),
+      this.bookingsRepo.count({ where: { paymentStatus: PaymentStatus.PENDING } }),
+      this.bookingsRepo.count({ where: { paymentStatus: PaymentStatus.PAID } }),
+      this.bookingsRepo.count({ where: { createdAt: MoreThan(today) } }),
+      this.bookingsRepo.count({ where: { createdAt: MoreThan(weekAgo) } }),
+      this.bookingsRepo.count({ where: { createdAt: MoreThan(monthAgo) } }),
+      this.bookingsRepo
+        .createQueryBuilder('b')
+        .select('COALESCE(SUM(b.total_price), 0)', 'totalRevenue')
+        .getRawOne(),
+      this.bookingsRepo
+        .createQueryBuilder('b')
+        .select('COALESCE(SUM(b.total_price), 0)', 'confirmedRevenue')
+        .where('b.payment_status = :status', { status: PaymentStatus.PAID })
+        .getRawOne(),
+    ]);
 
-    const newThisWeek = await this.bookingsRepo.count({
-      where: { createdAt: MoreThan(weekAgo) },
-    });
-
-    const newThisMonth = await this.bookingsRepo.count({
-      where: { createdAt: MoreThan(monthAgo) },
-    });
+    const totalRevenue = Number(totalRevenueRow?.totalRevenue || 0);
+    const confirmedRevenue = Number(confirmedRevenueRow?.confirmedRevenue || 0);
 
     return {
       total,
-      byStatus: {
-        pending,
-        confirmed,
-        checkedIn,
-        completed,
-        cancelled,
-      },
-      byPaymentStatus: {
-        pending: paymentPending,
-        paid,
-      },
+      byStatus: { pending, confirmed, checkedIn, completed, cancelled },
+      byPaymentStatus: { pending: paymentPending, paid },
       revenue: {
         total: Number(totalRevenue.toFixed(2)),
         confirmed: Number(confirmedRevenue.toFixed(2)),
@@ -1034,5 +1047,294 @@ export class AdminService {
     await this.bookingsRepo.delete(id);
 
     return { message: 'Reserva deletada com sucesso' };
+  }
+
+  // ==================== REVIEWS ====================
+
+  async getAllReviews(
+    page: number,
+    limit: number,
+    type?: string,
+    search?: string,
+  ) {
+    const skip = (page - 1) * limit;
+    const qb = this.reviewsRepo
+      .createQueryBuilder('review')
+      .leftJoinAndSelect('review.reviewer', 'reviewer')
+      .leftJoinAndSelect('review.captain', 'captain')
+      .leftJoinAndSelect('review.boat', 'boat')
+      .leftJoinAndSelect('review.passenger', 'passenger')
+      .leftJoinAndSelect('review.trip', 'trip');
+
+    if (type) {
+      qb.andWhere('review.review_type = :type', { type });
+    }
+
+    if (search) {
+      qb.andWhere(
+        '(LOWER(reviewer.name) LIKE LOWER(:search) OR LOWER(captain.name) LIKE LOWER(:search) OR LOWER(passenger.name) LIKE LOWER(:search))',
+        { search: `%${search}%` },
+      );
+    }
+
+    const [reviews, total] = await qb
+      .orderBy('review.createdAt', 'DESC')
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    return {
+      data: reviews,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async getReviewStats() {
+    const [
+      totalPassengerReviews,
+      totalCaptainReviews,
+      avgCaptainRow,
+      avgBoatRow,
+      avgPassengerRow,
+      newToday,
+      newThisWeek,
+      newThisMonth,
+    ] = await Promise.all([
+      this.reviewsRepo.count({ where: { reviewType: ReviewType.PASSENGER_TO_CAPTAIN } }),
+      this.reviewsRepo.count({ where: { reviewType: ReviewType.CAPTAIN_TO_PASSENGER } }),
+      this.reviewsRepo
+        .createQueryBuilder('r')
+        .select('ROUND(AVG(r.rating)::numeric, 2)', 'avg')
+        .where('r.review_type = :type', { type: ReviewType.PASSENGER_TO_CAPTAIN })
+        .getRawOne(),
+      this.reviewsRepo
+        .createQueryBuilder('r')
+        .select('ROUND(AVG(r.boat_rating)::numeric, 2)', 'avg')
+        .where('r.boat_rating IS NOT NULL')
+        .getRawOne(),
+      this.reviewsRepo
+        .createQueryBuilder('r')
+        .select('ROUND(AVG(r.passenger_rating)::numeric, 2)', 'avg')
+        .where('r.review_type = :type', { type: ReviewType.CAPTAIN_TO_PASSENGER })
+        .getRawOne(),
+      this.reviewsRepo.count({ where: { createdAt: MoreThan(this.startOfToday()) } }),
+      this.reviewsRepo.count({ where: { createdAt: MoreThan(this.daysAgo(7)) } }),
+      this.reviewsRepo.count({ where: { createdAt: MoreThan(this.daysAgo(30)) } }),
+    ]);
+
+    // Distribuição de estrelas (capitão)
+    const distributionRows = await this.reviewsRepo
+      .createQueryBuilder('r')
+      .select('r.rating', 'stars')
+      .addSelect('COUNT(*)', 'count')
+      .where('r.review_type = :type', { type: ReviewType.PASSENGER_TO_CAPTAIN })
+      .groupBy('r.rating')
+      .getRawMany();
+
+    const distribution: Record<number, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    for (const row of distributionRows) {
+      if (row.stars) distribution[row.stars] = parseInt(row.count);
+    }
+
+    return {
+      total: totalPassengerReviews + totalCaptainReviews,
+      passengerToCapitain: totalPassengerReviews,
+      captainToPassenger: totalCaptainReviews,
+      averages: {
+        captain: Number(avgCaptainRow?.avg || 0),
+        boat: Number(avgBoatRow?.avg || 0),
+        passenger: Number(avgPassengerRow?.avg || 0),
+      },
+      captainRatingDistribution: distribution,
+      newToday,
+      newThisWeek,
+      newThisMonth,
+    };
+  }
+
+  async getReviewDetails(id: string) {
+    const review = await this.reviewsRepo.findOne({
+      where: { id },
+      relations: ['reviewer', 'captain', 'boat', 'passenger', 'trip'],
+    });
+
+    if (!review) {
+      throw new NotFoundException('Avaliação não encontrada');
+    }
+
+    return review;
+  }
+
+  async deleteReview(id: string) {
+    const review = await this.reviewsRepo.findOne({ where: { id } });
+
+    if (!review) {
+      throw new NotFoundException('Avaliação não encontrada');
+    }
+
+    await this.reviewsRepo.delete(id);
+
+    // Recalcular ratings após remoção
+    if (review.captainId) {
+      const row = await this.reviewsRepo
+        .createQueryBuilder('r')
+        .select('ROUND(AVG(r.rating)::numeric, 1)', 'avg')
+        .where('r.captain_id = :id', { id: review.captainId })
+        .andWhere('r.review_type = :type', { type: ReviewType.PASSENGER_TO_CAPTAIN })
+        .getRawOne();
+      await this.usersRepo.update(review.captainId, { rating: Number(row?.avg || 5.0) });
+    }
+
+    if (review.boatId) {
+      const row = await this.reviewsRepo
+        .createQueryBuilder('r')
+        .select('ROUND(AVG(r.boat_rating)::numeric, 1)', 'avg')
+        .addSelect('COUNT(*)', 'total')
+        .where('r.boat_id = :id', { id: review.boatId })
+        .andWhere('r.boat_rating IS NOT NULL')
+        .getRawOne();
+      await this.boatsRepo.update(review.boatId, {
+        rating: Number(row?.avg || 5.0),
+        reviewCount: parseInt(row?.total || '0'),
+      });
+    }
+
+    if (review.passengerId) {
+      const row = await this.reviewsRepo
+        .createQueryBuilder('r')
+        .select('ROUND(AVG(r.passenger_rating)::numeric, 1)', 'avg')
+        .where('r.passenger_id = :id', { id: review.passengerId })
+        .andWhere('r.review_type = :type', { type: ReviewType.CAPTAIN_TO_PASSENGER })
+        .getRawOne();
+      await this.usersRepo.update(review.passengerId, { passengerRating: Number(row?.avg || 5.0) });
+    }
+
+    return { message: 'Avaliação removida e ratings recalculados com sucesso' };
+  }
+
+  // ==================== EMBARCAÇÕES ====================
+
+  async getAllBoats(page: number, limit: number, verified?: string, search?: string) {
+    const skip = (page - 1) * limit;
+    const qb = this.boatsRepo
+      .createQueryBuilder('boat')
+      .leftJoinAndSelect('boat.owner', 'owner');
+
+    if (verified === 'true') {
+      qb.andWhere('boat.isVerified = true');
+    } else if (verified === 'false') {
+      qb.andWhere('boat.isVerified = false');
+    }
+
+    if (search) {
+      qb.andWhere(
+        '(LOWER(boat.name) LIKE LOWER(:s) OR LOWER(boat.registrationNum) LIKE LOWER(:s) OR LOWER(owner.name) LIKE LOWER(:s))',
+        { s: `%${search}%` },
+      );
+    }
+
+    qb.orderBy('boat.createdAt', 'DESC').skip(skip).take(limit);
+
+    const [boats, total] = await qb.getManyAndCount();
+    return {
+      boats: boats.map(b => ({
+        ...b,
+        owner: b.owner ? { id: b.owner.id, name: b.owner.name, phone: b.owner.phone } : null,
+      })),
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+    };
+  }
+
+  async verifyBoat(id: string, approved: boolean, rejectionReason?: string) {
+    const boat = await this.boatsRepo.findOne({ where: { id } });
+    if (!boat) throw new NotFoundException('Embarcação não encontrada');
+
+    await this.boatsRepo.update(id, {
+      isVerified: approved,
+      rejectionReason: approved ? null : (rejectionReason ?? 'Documentação inválida ou incompleta'),
+      verifiedAt: approved ? new Date() : null,
+    });
+
+    const action = approved ? 'aprovada' : 'rejeitada';
+    return { message: `Embarcação ${action} com sucesso`, boatId: id, isVerified: approved };
+  }
+
+  // ==================== VERIFICAÇÃO DE CAPITÃO ====================
+
+  async verifyCapt(id: string, verified: boolean) {
+    const user = await this.usersRepo.findOne({ where: { id } });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    await this.usersRepo.update(id, {
+      isVerified: verified,
+      verifiedAt: verified ? new Date() : null,
+    });
+
+    const action = verified ? 'verificado' : 'desverificado';
+    return { message: `Capitão ${action} com sucesso`, userId: id, isVerified: verified };
+  }
+
+  async getPendingVerifications() {
+    const [pendingBoats, pendingCaptains] = await Promise.all([
+      this.boatsRepo.find({
+        where: { isVerified: false },
+        relations: ['owner'],
+        order: { createdAt: 'ASC' },
+        take: 50,
+      }),
+      this.usersRepo.find({
+        where: { role: UserRole.CAPTAIN, isVerified: false, isActive: true },
+        order: { createdAt: 'ASC' },
+        take: 50,
+      }),
+    ]);
+
+    return {
+      pendingBoats: pendingBoats.map(b => ({
+        id: b.id,
+        name: b.name,
+        type: b.type,
+        registrationNum: b.registrationNum,
+        documentPhotos: b.documentPhotos,
+        photos: b.photos,
+        rejectionReason: b.rejectionReason,
+        createdAt: b.createdAt,
+        owner: b.owner ? { id: b.owner.id, name: b.owner.name, phone: b.owner.phone } : null,
+      })),
+      pendingCaptains: pendingCaptains.map(u => ({
+        id: u.id,
+        name: u.name,
+        phone: u.phone,
+        email: u.email,
+        cpf: u.cpf,
+        city: u.city,
+        state: u.state,
+        licensePhotoUrl: u.licensePhotoUrl,
+        certificatePhotoUrl: u.certificatePhotoUrl,
+        createdAt: u.createdAt,
+      })),
+      totalPending: pendingBoats.length + pendingCaptains.length,
+    };
+  }
+
+  // ── Helpers de data ─────────────────────────────────────────────────────────
+
+  private startOfToday(): Date {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  private daysAgo(days: number): Date {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d;
   }
 }

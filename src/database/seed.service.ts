@@ -51,10 +51,10 @@ export class SeedService implements OnModuleInit {
     ]);
 
     const captains = await this.usersRepo.save([
-      { name: 'Carlos Ribeiro', phone: '92992001001', passwordHash, role: UserRole.CAPTAIN, rating: 4.9, totalTrips: 230 },
-      { name: 'Francisco Almeida', phone: '92992001002', passwordHash, role: UserRole.CAPTAIN, rating: 4.7, totalTrips: 180 },
-      { name: 'Raimundo Ferreira', phone: '92992001003', passwordHash, role: UserRole.CAPTAIN, rating: 4.8, totalTrips: 150 },
-      { name: 'Antônio Nascimento', phone: '92992001004', passwordHash, role: UserRole.CAPTAIN, rating: 4.6, totalTrips: 95 },
+      { name: 'Carlos Ribeiro', phone: '92992001001', passwordHash, role: UserRole.CAPTAIN, rating: 4.9, totalTrips: 230, isVerified: true, verifiedAt: new Date() },
+      { name: 'Francisco Almeida', phone: '92992001002', passwordHash, role: UserRole.CAPTAIN, rating: 4.7, totalTrips: 180, isVerified: true, verifiedAt: new Date() },
+      { name: 'Raimundo Ferreira', phone: '92992001003', passwordHash, role: UserRole.CAPTAIN, rating: 4.8, totalTrips: 150, isVerified: true, verifiedAt: new Date() },
+      { name: 'Antônio Nascimento', phone: '92992001004', passwordHash, role: UserRole.CAPTAIN, rating: 4.6, totalTrips: 95, isVerified: true, verifiedAt: new Date() },
     ]);
 
     this.logger.log(`  → ${passengers.length + captains.length} usuários criados`);
@@ -149,6 +149,7 @@ export class SeedService implements OnModuleInit {
       // Manaus → Manacapuru (amanhã, várias saídas)
       {
         captainId: captains[0].id, boatId: boats[0].id, routeId: routes[0].id,
+        origin: routes[0].originName, destination: routes[0].destinationName,
         departureAt: createDate(tomorrow, 6, 0),
         estimatedArrivalAt: createDate(tomorrow, 8, 30),
         price: 45, cargoPriceKg: 5, totalSeats: 25, availableSeats: 18,
@@ -156,6 +157,7 @@ export class SeedService implements OnModuleInit {
       },
       {
         captainId: captains[2].id, boatId: boats[3].id, routeId: routes[0].id,
+        origin: routes[0].originName, destination: routes[0].destinationName,
         departureAt: createDate(tomorrow, 10, 0),
         estimatedArrivalAt: createDate(tomorrow, 12, 30),
         price: 40, cargoPriceKg: 4, totalSeats: 30, availableSeats: 25,
@@ -163,6 +165,7 @@ export class SeedService implements OnModuleInit {
       },
       {
         captainId: captains[1].id, boatId: boats[2].id, routeId: routes[0].id,
+        origin: routes[0].originName, destination: routes[0].destinationName,
         departureAt: createDate(tomorrow, 14, 0),
         estimatedArrivalAt: createDate(tomorrow, 16, 30),
         price: 35, cargoPriceKg: 3, totalSeats: 80, availableSeats: 65,
@@ -171,6 +174,7 @@ export class SeedService implements OnModuleInit {
       // Manacapuru → Manaus (volta)
       {
         captainId: captains[0].id, boatId: boats[0].id, routeId: routes[1].id,
+        origin: routes[1].originName, destination: routes[1].destinationName,
         departureAt: createDate(dayAfter, 6, 0),
         estimatedArrivalAt: createDate(dayAfter, 8, 30),
         price: 45, cargoPriceKg: 5, totalSeats: 25, availableSeats: 22,
@@ -179,6 +183,7 @@ export class SeedService implements OnModuleInit {
       // Manaus → Iranduba
       {
         captainId: captains[3].id, boatId: boats[5].id, routeId: routes[2].id,
+        origin: routes[2].originName, destination: routes[2].destinationName,
         departureAt: createDate(tomorrow, 7, 0),
         estimatedArrivalAt: createDate(tomorrow, 7, 45),
         price: 20, cargoPriceKg: 3, totalSeats: 20, availableSeats: 15,
@@ -186,6 +191,7 @@ export class SeedService implements OnModuleInit {
       },
       {
         captainId: captains[3].id, boatId: boats[5].id, routeId: routes[2].id,
+        origin: routes[2].originName, destination: routes[2].destinationName,
         departureAt: createDate(tomorrow, 12, 0),
         estimatedArrivalAt: createDate(tomorrow, 12, 45),
         price: 20, cargoPriceKg: 3, totalSeats: 20, availableSeats: 20,
@@ -194,6 +200,7 @@ export class SeedService implements OnModuleInit {
       // Manaus → Novo Airão
       {
         captainId: captains[2].id, boatId: boats[4].id, routeId: routes[4].id,
+        origin: routes[4].originName, destination: routes[4].destinationName,
         departureAt: createDate(dayAfter, 5, 30),
         estimatedArrivalAt: createDate(dayAfter, 11, 30),
         price: 100, cargoPriceKg: 8, totalSeats: 8, availableSeats: 5,
@@ -202,6 +209,7 @@ export class SeedService implements OnModuleInit {
       // Manaus → Parintins
       {
         captainId: captains[1].id, boatId: boats[2].id, routeId: routes[5].id,
+        origin: routes[5].originName, destination: routes[5].destinationName,
         departureAt: createDate(in3Days, 12, 0),
         estimatedArrivalAt: new Date(createDate(in3Days, 12, 0).getTime() + 1080 * 60000),
         price: 180, cargoPriceKg: 10, totalSeats: 80, availableSeats: 55,
@@ -210,6 +218,7 @@ export class SeedService implements OnModuleInit {
       // Manaus → Itacoatiara
       {
         captainId: captains[0].id, boatId: boats[1].id, routeId: routes[6].id,
+        origin: routes[6].originName, destination: routes[6].destinationName,
         departureAt: createDate(dayAfter, 8, 0),
         estimatedArrivalAt: createDate(dayAfter, 16, 0),
         price: 85, cargoPriceKg: 7, totalSeats: 12, availableSeats: 9,
@@ -218,6 +227,7 @@ export class SeedService implements OnModuleInit {
       // Viagem em andamento (para demo de tracking)
       {
         captainId: captains[0].id, boatId: boats[0].id, routeId: routes[0].id,
+        origin: routes[0].originName, destination: routes[0].destinationName,
         departureAt: createDate(now, now.getHours() - 1, 0),
         estimatedArrivalAt: createDate(now, now.getHours() + 1, 30),
         price: 45, cargoPriceKg: 5, totalSeats: 25, availableSeats: 5,
@@ -273,6 +283,7 @@ export class SeedService implements OnModuleInit {
         recipientAddress: 'Rua das Flores, 123 - Centro, Parintins-AM',
         totalPrice: 42.5,
         trackingCode: 'NVJAM01234',
+        validationCode: '123456',
         status: ShipmentStatus.PENDING,
         paymentMethod: 'pix',
       },
@@ -285,6 +296,7 @@ export class SeedService implements OnModuleInit {
         recipientAddress: 'Av. Principal, 456 - Porto, Manaus-AM',
         totalPrice: 75,
         trackingCode: 'NVJAM05678',
+        validationCode: '234567',
         status: ShipmentStatus.IN_TRANSIT,
         paymentMethod: 'pix',
       },
@@ -297,6 +309,7 @@ export class SeedService implements OnModuleInit {
         recipientAddress: 'Rua do Comércio, 789 - Centro, Beruri-AM',
         totalPrice: 30,
         trackingCode: 'NVJAM09012',
+        validationCode: '345678',
         status: ShipmentStatus.PENDING,
         paymentMethod: 'pix',
       },

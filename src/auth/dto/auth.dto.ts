@@ -1,6 +1,7 @@
-import { IsString, IsNotEmpty, MinLength, IsEnum, IsOptional, IsEmail } from 'class-validator';
+import { IsString, IsNotEmpty, MinLength, IsEnum, IsOptional, IsEmail, Length } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '../../users/user.entity';
+import { IsCpfValid } from '../../common/validators/is-cpf-valid.validator';
 
 export class RegisterDto {
   @ApiProperty({ example: 'João Silva' })
@@ -28,10 +29,22 @@ export class RegisterDto {
   @IsOptional()
   role?: UserRole;
 
-  @ApiProperty({ example: '123.456.789-00', required: false })
-  @IsString({ message: 'O CPF deve ser um texto' })
+  @ApiProperty({ example: '123.456.789-00', required: false, description: 'CPF do usuário (validado automaticamente)' })
   @IsOptional()
+  @IsString({ message: 'O CPF deve ser um texto' })
+  @IsCpfValid()
   cpf?: string;
+
+  @ApiProperty({ example: 'Manaus', description: 'Cidade do usuário (usado para notificações segmentadas)' })
+  @IsString({ message: 'A cidade deve ser um texto' })
+  @IsNotEmpty({ message: 'A cidade é obrigatória' })
+  city: string;
+
+  @ApiProperty({ example: 'AM', required: false, description: 'Estado (UF) — padrão: AM' })
+  @IsString({ message: 'O estado deve ser um texto' })
+  @Length(2, 2, { message: 'O estado deve ter 2 letras (UF)' })
+  @IsOptional()
+  state?: string;
 
   @ApiProperty({ example: 'NVJ-A1B2C3', required: false, description: 'Código de indicação de um amigo' })
   @IsString({ message: 'O código de indicação deve ser um texto' })

@@ -61,6 +61,35 @@ export class User {
   @Column({ name: 'referral_code', type: 'varchar', length: 20, unique: true, nullable: true })
   referralCode: string;
 
+  @Column({ name: 'is_active', type: 'boolean', default: true })
+  isActive: boolean;
+
+  @Column({ name: 'passenger_rating', type: 'decimal', precision: 2, scale: 1, default: 5.0 })
+  passengerRating: number;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  city: string | null;
+
+  @Column({ type: 'varchar', length: 2, default: 'AM' })
+  state: string;
+
+  // ── Verificação de capitão ─────────────────────────────────────────────────
+
+  @Column({ name: 'is_verified', type: 'boolean', default: false })
+  isVerified: boolean; // documentos do capitão verificados pelo admin
+
+  @Column({ name: 'license_photo_url', type: 'text', nullable: true })
+  licensePhotoUrl: string | null; // habilitação de arrais / CNH náutica
+
+  @Column({ name: 'certificate_photo_url', type: 'text', nullable: true })
+  certificatePhotoUrl: string | null; // certificado de segurança / habilitação
+
+  @Column({ name: 'verified_at', type: 'timestamp', nullable: true })
+  verifiedAt: Date | null;
+
+  @Column({ name: 'fcm_token', type: 'text', nullable: true })
+  fcmToken: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -26,6 +26,10 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto) {
+    if (dto.role === UserRole.CAPTAIN || dto.role === UserRole.ADMIN) {
+      throw new ForbiddenException('Capitães devem ser cadastrados pelo administrador do NavegaJá');
+    }
+
     const exists = await this.usersRepo.findOne({ where: { phone: dto.phone } });
     if (exists) {
       throw new ConflictException('Telefone já cadastrado');
@@ -39,6 +43,8 @@ export class AuthService {
       cpf: dto.cpf,
       passwordHash,
       role: dto.role ?? UserRole.PASSENGER,
+      city: dto.city,
+      state: dto.state ?? 'AM',
     });
 
     const saved = await this.usersRepo.save(user) as User;
@@ -193,7 +199,31 @@ export class AuthService {
   }
 
   private sanitizeUser(user: User) {
-    const { passwordHash, ...result } = user;
+    const { passwordHash, resetCode, resetCodeExpires, ...result } = user as any;
+    result.capabilities = this.buildCapabilities(user);
     return result;
+  }
+
+  /**
+   * Informa ao app o que o utilizador pode fazer.
+   * Para passageiros e admin devolve null — sem restrições relevantes no lado do cliente.
+   * Para capitães expõe o estado de verificação e os bloqueios activos.
+   */
+  private buildCapabilities(user: User) {
+    if (user.role !== UserRole.CAPTAIN) return null;
+
+    const isVerified = user.isVerified ?? false;
+    const pendingVerification =
+      !isVerified &&
+      (!!user.licensePhotoUrl || !!user.certificatePhotoUrl);
+
+    return {
+      isVerified,
+      pendingVerification,
+      canOperate: isVerified,
+      canCreateTrips: isVerified,
+      canConfirmPayments: isVerified,
+      canManageShipments: isVerified,
+    };
   }
 }

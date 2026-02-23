@@ -1,0 +1,57 @@
+import { IsString, IsOptional, IsEmail, IsUrl, Length, MaxLength } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsCpfValid } from '../../common/validators/is-cpf-valid.validator';
+
+export class UpdateProfileDto {
+  @ApiPropertyOptional({ example: 'João Silva', description: 'Nome completo' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  name?: string;
+
+  @ApiPropertyOptional({ example: 'joao@email.com', description: 'E-mail' })
+  @IsOptional()
+  @IsEmail({}, { message: 'E-mail inválido' })
+  email?: string;
+
+  @ApiPropertyOptional({ example: 'https://cdn.navegaja.com/avatar.jpg', description: 'URL do avatar' })
+  @IsOptional()
+  @IsUrl({ require_tld: false }, { message: 'URL do avatar inválida' })
+  avatarUrl?: string;
+
+  @ApiPropertyOptional({ example: '123.456.789-00', description: 'CPF do usuário (validado automaticamente)' })
+  @IsOptional()
+  @IsString({ message: 'O CPF deve ser um texto' })
+  @IsCpfValid()
+  cpf?: string;
+
+  @ApiPropertyOptional({ example: 'Parintins', description: 'Cidade (usada para notificações segmentadas)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  city?: string;
+
+  @ApiPropertyOptional({ example: 'AM', description: 'Estado (UF, 2 letras)' })
+  @IsOptional()
+  @IsString()
+  @Length(2, 2, { message: 'Estado deve ter 2 letras (ex: AM)' })
+  state?: string;
+
+  // ── Documentos do capitão (apenas capitães enviam estes campos) ────────────
+
+  @ApiPropertyOptional({
+    example: 'https://storage.googleapis.com/navegaja.appspot.com/captains/uuid.jpg',
+    description: 'Foto da habilitação de arrais / CNH náutica (capitão)',
+  })
+  @IsOptional()
+  @IsUrl({ require_tld: false }, { message: 'URL da habilitação inválida' })
+  licensePhotoUrl?: string;
+
+  @ApiPropertyOptional({
+    example: 'https://storage.googleapis.com/navegaja.appspot.com/captains/uuid.jpg',
+    description: 'Foto do certificado de segurança / habilitação (capitão)',
+  })
+  @IsOptional()
+  @IsUrl({ require_tld: false }, { message: 'URL do certificado inválida' })
+  certificatePhotoUrl?: string;
+}

@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { BoatsModule } from './boats/boats.module';
@@ -19,10 +21,16 @@ import { CouponsModule } from './coupons/coupons.module';
 import { SafetyModule } from './safety/safety.module';
 import { WeatherModule } from './weather/weather.module';
 import { AdminModule } from './admin/admin.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ThrottlerModule.forRoot([
+      { name: 'default', ttl: 60000, limit: 60 },   // 60 req/min globalmente
+      { name: 'strict',  ttl: 60000, limit: 5  },   // 5 req/min em auth sensível
+    ]),
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -57,7 +65,12 @@ import { AdminModule } from './admin/admin.module';
     SafetyModule,
     WeatherModule,
     AdminModule,
+    NotificationsModule,
+    PaymentsModule,
     SeedModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

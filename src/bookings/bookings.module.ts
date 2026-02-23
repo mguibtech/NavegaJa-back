@@ -8,6 +8,7 @@ import { User } from '../users/user.entity';
 import { GamificationModule } from '../gamification/gamification.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { PaymentsModule } from '../payments/payments.module';
     GamificationModule,
     CouponsModule,
     PaymentsModule,
+    NotificationsModule,
   ],
   controllers: [BookingsController],
   providers: [BookingsService],

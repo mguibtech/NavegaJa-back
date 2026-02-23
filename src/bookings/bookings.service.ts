@@ -9,6 +9,7 @@ import { PointAction } from '../gamification/point-transaction.entity';
 import { CouponsService } from '../coupons/coupons.service';
 import { User } from '../users/user.entity';
 import { PixService } from '../payments/pix.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Injectable()
@@ -23,6 +24,7 @@ export class BookingsService {
     private gamificationService: GamificationService,
     private couponsService: CouponsService,
     private pixService: PixService,
+    private notificationsService: NotificationsService,
   ) {}
 
   async calculatePrice(passengerId: string, tripId: string, quantity: number, couponCode?: string) {
@@ -161,6 +163,21 @@ export class BookingsService {
       const coupon = await this.couponsService.findByCode(dto.couponCode);
       await this.couponsService.incrementUsage(coupon.id);
     }
+
+    // Notificar passageiro (se já confirmado) e capitão (nova reserva)
+    const route = `${trip.origin} → ${trip.destination}`;
+    if (saved.status === BookingStatus.CONFIRMED) {
+      await this.notificationsService.sendToUser(passengerId, {
+        title: '✅ Reserva confirmada!',
+        body: `Sua viagem ${route} está confirmada. Boa viagem!`,
+        data: { type: 'booking_confirmed', bookingId: saved.id, tripId: trip.id },
+      });
+    }
+    await this.notificationsService.sendToUser(trip.captainId, {
+      title: '🎫 Nova reserva!',
+      body: `${quantity} assento(s) reservado(s) na viagem ${route}.`,
+      data: { type: 'new_booking', bookingId: saved.id, tripId: trip.id },
+    });
 
     // Adicionar breakdown de preços na resposta
     (saved as any).priceBreakdown = priceBreakdown;
@@ -347,7 +364,16 @@ export class BookingsService {
       booking.paymentStatus = PaymentStatus.REFUNDED;
     }
 
-    return this.bookingsRepo.save(booking);
+    const saved = await this.bookingsRepo.save(booking);
+
+    // Notificar passageiro
+    await this.notificationsService.sendToUser(userId, {
+      title: '❌ Reserva cancelada',
+      body: 'Sua reserva foi cancelada com sucesso.',
+      data: { type: 'booking_cancelled', bookingId: booking.id },
+    });
+
+    return saved;
   }
 
   async complete(bookingId: string): Promise<Booking> {
@@ -379,7 +405,20 @@ export class BookingsService {
    * Confirma pagamento PIX manualmente (admin/capitão)
    * Similar ao padrão do Shipments (shipments.service.ts:388-406)
    */
-  async confirmPayment(bookingId: string, confirmedBy?: string): Promise<Booking> {
+  async confirmPayment(bookingId: string, confirmedBy?: string, confirmedByRole?: string): Promise<Booking> {
+    // Capitão não verificado não pode confirmar pagamentos
+    if (confirmedByRole === 'captain' && confirmedBy) {
+      const captain = await this.usersRepo.findOne({
+        where: { id: confirmedBy },
+        select: ['id', 'isVerified'],
+      });
+      if (!captain?.isVerified) {
+        throw new ForbiddenException(
+          'Conta não verificada. Aguarde a aprovação do NavegaJá.',
+        );
+      }
+    }
+
     const booking = await this.findById(bookingId);
 
     // Validações
@@ -415,6 +454,13 @@ export class BookingsService {
       await this.tripsRepo.save(trip);
     }
 
+    // Notificar passageiro: pagamento confirmado
+    await this.notificationsService.sendToUser(booking.passengerId, {
+      title: '💰 Pagamento confirmado!',
+      body: `Reserva confirmada${trip ? ` — ${trip.origin} → ${trip.destination}` : ''}.`,
+      data: { type: 'payment_confirmed', bookingId: booking.id },
+    });
+
     return saved;
   }
 
@@ -434,6 +480,36 @@ export class BookingsService {
       pixExpiresAt: booking.pixExpiresAt,
       isExpired: booking.pixExpiresAt ? this.pixService.isExpired(booking.pixExpiresAt) : false,
     };
+  }
+
+  /**
+   * Quando a viagem é concluída, completa automaticamente todas as reservas
+   * CONFIRMED e CHECKED_IN — o capitão pode não ter conseguido escanear todos
+   * (conectividade instável no Amazonas).
+   */
+  async autoCompleteByTrip(tripId: string): Promise<void> {
+    const bookings = await this.bookingsRepo.find({
+      where: {
+        tripId,
+        status: In([BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]),
+      },
+    });
+
+    for (const booking of bookings) {
+      booking.status = BookingStatus.COMPLETED;
+      await this.bookingsRepo.save(booking);
+
+      await this.gamificationService.awardPoints(
+        booking.passengerId,
+        PointAction.BOOKING_COMPLETED,
+        booking.id,
+      );
+
+      await this.gamificationService.checkFirstTripOfMonthBonus(
+        booking.passengerId,
+        booking.id,
+      );
+    }
   }
 
   /**
