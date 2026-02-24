@@ -72,6 +72,13 @@ export class TripsService {
       );
     }
 
+    // 2a. Embarcação deve estar aprovada pelo admin
+    if (!boat.isVerified) {
+      throw new ForbiddenException(
+        'Embarcação ainda não aprovada pelo NavegaJá. Aguarde a verificação dos documentos.',
+      );
+    }
+
     // 3. Validar capacidade (totalSeats não pode exceder capacidade da embarcação)
     if (dto.totalSeats > boat.capacity) {
       throw new BadRequestException(

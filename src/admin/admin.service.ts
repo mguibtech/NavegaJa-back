@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, Between } from 'typeorm';
+import { Repository, MoreThan, Between, IsNull } from 'typeorm';
 import { NotificationsService } from '../notifications/notifications.service';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from '../users/user.entity';
@@ -1352,13 +1352,13 @@ export class AdminService {
   async getPendingVerifications() {
     const [pendingBoats, pendingCaptains] = await Promise.all([
       this.boatsRepo.find({
-        where: { isVerified: false },
+        where: { isVerified: false, rejectionReason: IsNull() },
         relations: ['owner'],
         order: { createdAt: 'ASC' },
         take: 50,
       }),
       this.usersRepo.find({
-        where: { role: UserRole.CAPTAIN, isVerified: false, isActive: true },
+        where: { role: UserRole.CAPTAIN, isVerified: false, isActive: true, rejectionReason: IsNull() },
         order: { createdAt: 'ASC' },
         take: 50,
       }),
@@ -1414,16 +1414,16 @@ export class AdminService {
         order: { createdAt: 'DESC' },
         take: 5,
       }),
-      // Barcos não verificados
+      // Barcos pendentes (nunca revistos — rejectionReason IS NULL)
       this.boatsRepo.find({
-        where: { isVerified: false },
+        where: { isVerified: false, rejectionReason: IsNull() },
         relations: ['owner'],
         order: { createdAt: 'DESC' },
         take: 5,
       }),
-      // Capitães não verificados e activos
+      // Capitães pendentes (nunca revistos — rejectionReason IS NULL)
       this.usersRepo.find({
-        where: { role: UserRole.CAPTAIN, isVerified: false, isActive: true },
+        where: { role: UserRole.CAPTAIN, isVerified: false, isActive: true, rejectionReason: IsNull() },
         order: { createdAt: 'DESC' },
         take: 5,
       }),

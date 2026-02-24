@@ -40,6 +40,9 @@ lerna-debug.log*
 !.vscode/launch.json
 !.vscode/extensions.json
 
+# Uploads (user-generated content)
+/uploads
+
 # dotenv environment variable files
 .env
 .env.development.local
