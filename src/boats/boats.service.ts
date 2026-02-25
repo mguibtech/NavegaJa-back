@@ -1,11 +1,11 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Boat } from './boat.entity';
 import { CreateBoatDto } from './dto/create-boat.dto';
 import { UpdateBoatDto } from './dto/update-boat.dto';
 import { Review, ReviewType } from '../reviews/review.entity';
-import { Trip } from '../trips/trip.entity';
+import { Trip, TripStatus } from '../trips/trip.entity';
 import { User } from '../users/user.entity';
 
 @Injectable()
@@ -50,6 +50,39 @@ export class BoatsService {
 
     await this.boatsRepo.update(id, updateData);
     return this.findById(id);
+  }
+
+  async delete(id: string, ownerId: string): Promise<void> {
+    const boat = await this.boatsRepo.findOne({ where: { id } });
+    if (!boat) throw new NotFoundException('Embarcação não encontrada');
+    if (boat.ownerId !== ownerId) throw new ForbiddenException('Esta embarcação não pertence a você');
+
+    const activeTrips = await this.tripsRepo.count({
+      where: [
+        { boatId: id, status: TripStatus.SCHEDULED },
+        { boatId: id, status: TripStatus.IN_PROGRESS },
+      ],
+    });
+    if (activeTrips > 0) {
+      throw new BadRequestException('Não é possível apagar uma embarcação com viagens activas');
+    }
+
+    // Anular FK antes de apagar (trips e reviews podem referenciar este barco)
+    await this.tripsRepo
+      .createQueryBuilder()
+      .update()
+      .set({ boatId: null as any })
+      .where('boat_id = :id', { id })
+      .execute();
+
+    await this.reviewsRepo
+      .createQueryBuilder()
+      .update()
+      .set({ boatId: null as any })
+      .where('boat_id = :id', { id })
+      .execute();
+
+    await this.boatsRepo.delete(id);
   }
 
   async findByOwner(ownerId: string): Promise<Boat[]> {

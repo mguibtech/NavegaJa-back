@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Param, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Param, Body, UseGuards, Request, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { BoatsService } from './boats.service';
 import { CreateBoatDto } from './dto/create-boat.dto';
@@ -43,6 +43,15 @@ export class BoatsController {
   })
   update(@Request() req: any, @Param('id') id: string, @Body() dto: UpdateBoatDto) {
     return this.boatsService.update(id, req.user.sub, dto);
+  }
+
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles('captain')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Apagar embarcação (captain only)' })
+  delete(@Request() req: any, @Param('id') id: string) {
+    return this.boatsService.delete(id, req.user.sub);
   }
 
   @Get('my-boats')

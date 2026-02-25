@@ -23,6 +23,7 @@ import { WeatherModule } from './weather/weather.module';
 import { AdminModule } from './admin/admin.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentsModule } from './payments/payments.module';
+import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { PaymentsModule } from './payments/payments.module';
     AdminModule,
     NotificationsModule,
     PaymentsModule,
+    PaymentMethodsModule,
     SeedModule,
   ],
   providers: [
