@@ -5,7 +5,7 @@ import {
   PointTransaction, PointAction, LoyaltyLevel,
   LEVEL_THRESHOLDS, POINTS_MAP,
 } from './point-transaction.entity';
-import { User } from '../users/user.entity';
+import { User, UserRole } from '../users/user.entity';
 
 @Injectable()
 export class GamificationService {
@@ -114,6 +114,7 @@ export class GamificationService {
   async getLeaderboard(limit = 10) {
     const users = await this.usersRepo.find({
       select: ['id', 'name', 'avatarUrl', 'totalPoints', 'level'],
+      where: [{ role: UserRole.PASSENGER }, { role: UserRole.CAPTAIN }],
       order: { totalPoints: 'DESC' },
       take: limit,
     });

@@ -4,17 +4,21 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { WeatherController } from './weather.controller';
 import { WeatherService } from './weather.service';
 import { WeatherData } from './weather-data.entity';
+import { Trip } from '../trips/trip.entity';
+import { Booking } from '../bookings/booking.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([WeatherData]),
+    TypeOrmModule.forFeature([WeatherData, Trip, Booking]),
     CacheModule.register({
       ttl: 1800000, // 30 minutos em milissegundos
-      max: 100, // Máximo 100 itens no cache
+      max: 100,
     }),
+    NotificationsModule,
   ],
   controllers: [WeatherController],
   providers: [WeatherService],
-  exports: [WeatherService], // Exporta para outros módulos usarem
+  exports: [WeatherService],
 })
 export class WeatherModule {}

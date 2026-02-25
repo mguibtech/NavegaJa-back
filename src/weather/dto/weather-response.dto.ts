@@ -19,6 +19,8 @@ export class CurrentWeatherDto {
   visibility: number;
   rain: number | null;
   pressure: number;
+  sunrise: Date | null;
+  sunset: Date | null;
   isSafeForNavigation: boolean;
   safetyWarnings: string[];
   alerts: any[];
@@ -58,4 +60,26 @@ export class NavigationSafetyDto {
   warnings: string[];
   recommendations: string[];
   weather: CurrentWeatherDto;
+}
+
+export class RiverLevelDto {
+  station: string;
+  stationCode: string;
+  river: string;
+  levelCm: number | null;
+  levelStatus: 'low' | 'normal' | 'attention' | 'alert' | 'emergency' | 'unknown';
+  recordedAt: string | null;
+  source: 'ANA';
+}
+
+export class TripWeatherDto {
+  tripId: string;
+  origin: string;
+  destination: string;
+  departureAt: Date;
+  weather: CurrentWeatherDto;
+  isSafeForNavigation: boolean;
+  safetyScore: number;
+  warnings: string[];
+  recommendations: string[];
 }
