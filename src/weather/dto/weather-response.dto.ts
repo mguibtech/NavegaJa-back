@@ -21,6 +21,7 @@ export class CurrentWeatherDto {
   pressure: number;
   sunrise: Date | null;
   sunset: Date | null;
+  uvIndex: number | null;
   isSafeForNavigation: boolean;
   safetyWarnings: string[];
   alerts: any[];

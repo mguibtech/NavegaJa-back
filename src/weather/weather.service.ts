@@ -19,19 +19,13 @@ import {
   TripWeatherDto,
 } from './dto/weather-response.dto';
 
-/**
- * Serviço de Clima usando OpenWeatherMap API (FREE)
- * Limite: 1.000 chamadas/dia grátis
- * Cache: 30 minutos para economizar chamadas
- */
 @Injectable()
 export class WeatherService {
   private readonly logger = new Logger(WeatherService.name);
   private readonly apiKey: string;
-  private readonly apiUrl = 'https://api.openweathermap.org/data/2.5';
-  private readonly cacheTime = 1800; // 30 minutos em segundos
+  private readonly owmUrl   = 'https://api.openweathermap.org/data/2.5';
+  private readonly cacheTime = 1800; // 30 min
 
-  // Regiões principais do Amazonas com coordenadas
   private readonly regions = {
     manaus:      { lat: -3.119,  lng: -60.0217, name: 'Manaus' },
     parintins:   { lat: -2.6287, lng: -56.7358, name: 'Parintins' },
@@ -40,7 +34,6 @@ export class WeatherService {
     manacapuru:  { lat: -3.2999, lng: -60.6203, name: 'Manacapuru' },
   };
 
-  // Estações fluviométricas da ANA (Agência Nacional de Águas)
   private readonly riverStations = {
     manaus:      { code: '14100000', name: 'Manaus',      river: 'Rio Negro' },
     parintins:   { code: '13850001', name: 'Parintins',   river: 'Rio Amazonas' },
@@ -48,70 +41,50 @@ export class WeatherService {
     manacapuru:  { code: '14110000', name: 'Manacapuru',  river: 'Rio Solimões' },
   };
 
-  // Cotas de referência por estação (cm) — fonte: COBRADE/Defesa Civil AM
   private readonly riverThresholds: Record<string, { low: number; attention: number; alert: number; emergency: number }> = {
-    '14100000': { low: 700,  attention: 2700, alert: 2900, emergency: 3000 }, // Manaus
-    '13850001': { low: 200,  attention: 1000, alert: 1100, emergency: 1200 }, // Parintins
-    '14320000': { low: 200,  attention: 1100, alert: 1200, emergency: 1300 }, // Itacoatiara
-    '14110000': { low: 200,  attention: 1400, alert: 1500, emergency: 1600 }, // Manacapuru
+    '14100000': { low: 700,  attention: 2700, alert: 2900, emergency: 3000 },
+    '13850001': { low: 200,  attention: 1000, alert: 1100, emergency: 1200 },
+    '14320000': { low: 200,  attention: 1100, alert: 1200, emergency: 1300 },
+    '14110000': { low: 200,  attention: 1400, alert: 1500, emergency: 1600 },
   };
 
   constructor(
-    @InjectRepository(WeatherData)
-    private weatherRepo: Repository<WeatherData>,
-    @InjectRepository(Trip)
-    private tripsRepo: Repository<Trip>,
-    @InjectRepository(Booking)
-    private bookingsRepo: Repository<Booking>,
+    @InjectRepository(WeatherData) private weatherRepo: Repository<WeatherData>,
+    @InjectRepository(Trip)        private tripsRepo: Repository<Trip>,
+    @InjectRepository(Booking)     private bookingsRepo: Repository<Booking>,
     private configService: ConfigService,
     private notificationsService: NotificationsService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {
     this.apiKey = this.configService.get<string>('OPENWEATHER_API_KEY') || '';
     if (!this.apiKey) {
-      this.logger.warn('⚠️  OPENWEATHER_API_KEY não configurada! API de clima não funcionará.');
+      this.logger.warn('⚠️  OPENWEATHER_API_KEY não configurada — usando Open-Meteo como provider principal.');
     }
   }
 
-  // ─── OpenWeatherMap ──────────────────────────────────────────────────────────
+  // ─── API pública ─────────────────────────────────────────────────────────────
 
   async getCurrentWeather(lat: number, lng: number, region?: string): Promise<CurrentWeatherDto> {
     const cacheKey = `weather:current:${lat}:${lng}`;
 
     const cached = await this.cacheManager.get<CurrentWeatherDto>(cacheKey);
-    if (cached) {
-      this.logger.debug(`✅ Cache hit: ${cacheKey}`);
-      return cached;
+    if (cached) return cached;
+
+    // Tenta OpenWeatherMap se tiver key; fallback para Open-Meteo
+    if (this.apiKey) {
+      try {
+        return await this.fetchOWMCurrent(lat, lng, region, cacheKey);
+      } catch (err) {
+        this.logger.warn(`⚠️ OpenWeatherMap falhou, usando Open-Meteo: ${err.message}`);
+      }
     }
 
-    this.logger.log(`🌦️  Buscando clima de ${region || 'coordenadas'} na OpenWeatherMap...`);
-
-    try {
-      const response = await axios.get(`${this.apiUrl}/weather`, {
-        params: { lat, lon: lng, appid: this.apiKey, units: 'metric', lang: 'pt_br' },
-      });
-
-      const data = response.data;
-      const weather = this.mapToCurrentWeather(data, lat, lng, region);
-
-      await this.cacheManager.set(cacheKey, weather, this.cacheTime * 1000);
-
-      this.saveWeatherHistory(weather).catch((err) =>
-        this.logger.error('Erro ao salvar histórico de clima:', err),
-      );
-
-      return weather;
-    } catch (error) {
-      this.logger.error('❌ Erro ao buscar clima:', error.message);
-      throw new Error('Não foi possível obter dados meteorológicos');
-    }
+    return this.fetchOpenMeteoCurrent(lat, lng, region, cacheKey);
   }
 
   async getRegionWeather(regionKey: string): Promise<CurrentWeatherDto> {
     const region = this.regions[regionKey.toLowerCase() as keyof typeof this.regions];
-    if (!region) {
-      throw new Error(`Região "${regionKey}" não encontrada`);
-    }
+    if (!region) throw new Error(`Região "${regionKey}" não encontrada`);
     return this.getCurrentWeather(region.lat, region.lng, region.name);
   }
 
@@ -119,25 +92,17 @@ export class WeatherService {
     const cacheKey = `weather:forecast:${lat}:${lng}`;
 
     const cached = await this.cacheManager.get<WeatherForecastDto>(cacheKey);
-    if (cached) {
-      this.logger.debug(`✅ Cache hit: ${cacheKey}`);
-      return cached;
+    if (cached) return cached;
+
+    if (this.apiKey) {
+      try {
+        return await this.fetchOWMForecast(lat, lng, region, cacheKey);
+      } catch (err) {
+        this.logger.warn(`⚠️ OWM forecast falhou, usando Open-Meteo: ${err.message}`);
+      }
     }
 
-    this.logger.log(`📅 Buscando previsão de ${region || 'coordenadas'}...`);
-
-    try {
-      const response = await axios.get(`${this.apiUrl}/forecast`, {
-        params: { lat, lon: lng, appid: this.apiKey, units: 'metric', lang: 'pt_br' },
-      });
-
-      const forecast = this.mapToForecast(response.data, region);
-      await this.cacheManager.set(cacheKey, forecast, this.cacheTime * 1000);
-      return forecast;
-    } catch (error) {
-      this.logger.error('❌ Erro ao buscar previsão:', error.message);
-      throw new Error('Não foi possível obter previsão do tempo');
-    }
+    return this.fetchOpenMeteoForecast(lat, lng, region, cacheKey);
   }
 
   async evaluateNavigationSafety(lat: number, lng: number): Promise<NavigationSafetyDto> {
@@ -152,25 +117,21 @@ export class WeatherService {
       score -= 30;
       recommendations.push('Reduzir velocidade da embarcação');
     }
-
     if (weather.windGust && weather.windGust > 15) {
       warnings.push('Rajadas de vento perigosas');
       score -= 40;
       recommendations.push('Considere adiar a viagem');
     }
-
     if (weather.rain && weather.rain > 5) {
       warnings.push('Chuva forte');
       score -= 20;
       recommendations.push('Tenha equipamentos de segurança prontos');
     }
-
     if (weather.visibility < 1000) {
       warnings.push('Visibilidade reduzida');
       score -= 35;
       recommendations.push('Use luzes de navegação');
     }
-
     if (weather.condition.toLowerCase().includes('tempestade')) {
       warnings.push('ALERTA: Tempestade');
       score -= 50;
@@ -178,7 +139,6 @@ export class WeatherService {
     }
 
     const isSafe = score >= 60;
-
     if (isSafe && warnings.length === 0) {
       recommendations.push('Condições favoráveis para navegação');
     }
@@ -186,27 +146,15 @@ export class WeatherService {
     return { isSafe, score: Math.max(0, score), warnings, recommendations, weather };
   }
 
-  // ─── Clima por viagem ────────────────────────────────────────────────────────
-
   async getTripWeather(tripId: string): Promise<TripWeatherDto> {
-    const trip = await this.tripsRepo.findOne({
-      where: { id: tripId },
-      relations: ['route'],
-    });
+    const trip = await this.tripsRepo.findOne({ where: { id: tripId }, relations: ['route'] });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
 
-    // Coordenadas da origem: usa a rota ou fallback para Manaus
-    const lat = trip.route?.originLat ?? this.regions.manaus.lat;
-    const lng = trip.route?.originLng ?? this.regions.manaus.lng;
-    const regionName = trip.origin || 'Manaus';
+    const lat = Number(trip.route?.originLat ?? this.regions.manaus.lat);
+    const lng = Number(trip.route?.originLng ?? this.regions.manaus.lng);
 
-    const safety = await this.evaluateNavigationSafety(
-      Number(lat),
-      Number(lng),
-    );
-
-    // Enriquecer a região no weather
-    safety.weather.region = regionName;
+    const safety = await this.evaluateNavigationSafety(lat, lng);
+    safety.weather.region = trip.origin || 'Manaus';
 
     return {
       tripId: trip.id,
@@ -221,13 +169,19 @@ export class WeatherService {
     };
   }
 
-  // ─── Alertas automáticos (cron 6h Manaus = 10h UTC) ─────────────────────────
+  getAvailableRegions() {
+    return Object.entries(this.regions).map(([key, value]) => ({
+      key, name: value.name, latitude: value.lat, longitude: value.lng,
+    }));
+  }
+
+  // ─── Cron: alertas climáticos (06h Manaus) ───────────────────────────────────
 
   @Cron('0 10 * * *', { timeZone: 'America/Manaus' })
   async checkScheduledTripsWeather(): Promise<void> {
     this.logger.log('🌦️  Verificando clima das viagens agendadas para hoje...');
 
-    const now = new Date();
+    const now        = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfDay   = new Date(startOfDay.getTime() + 86400000);
 
@@ -240,41 +194,36 @@ export class WeatherService {
 
     for (const trip of trips) {
       try {
-        const lat = Number(trip.route?.originLat ?? this.regions.manaus.lat);
-        const lng = Number(trip.route?.originLng ?? this.regions.manaus.lng);
+        const lat    = Number(trip.route?.originLat ?? this.regions.manaus.lat);
+        const lng    = Number(trip.route?.originLng ?? this.regions.manaus.lng);
         const safety = await this.evaluateNavigationSafety(lat, lng);
 
         if (!safety.isSafe) {
-          const route = `${trip.origin} → ${trip.destination}`;
+          const route       = `${trip.origin} → ${trip.destination}`;
           const warningText = safety.warnings.join(', ');
 
-          // Notificar capitão
           await this.notificationsService.sendToUser(trip.captainId, {
             title: '⚠️ Alerta de clima na sua viagem',
-            body: `${route}: ${warningText}. Verifique as condições antes de partir.`,
-            data: { type: 'weather_alert', tripId: trip.id },
+            body:  `${route}: ${warningText}. Verifique as condições antes de partir.`,
+            data:  { type: 'weather_alert', tripId: trip.id },
           });
 
-          // Notificar passageiros com reserva activa
           const bookings = await this.bookingsRepo.find({
-            where: {
-              tripId: trip.id,
-              status: In([BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]),
-            },
+            where: { tripId: trip.id, status: In([BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]) },
           });
 
           for (const booking of bookings) {
             await this.notificationsService.sendToUser(booking.passengerId, {
               title: '⚠️ Alerta de clima na sua viagem',
-              body: `Viagem ${route}: condições adversas previstas. Fique atento.`,
-              data: { type: 'weather_alert', tripId: trip.id, bookingId: booking.id },
+              body:  `Viagem ${route}: condições adversas previstas. Fique atento.`,
+              data:  { type: 'weather_alert', tripId: trip.id, bookingId: booking.id },
             });
           }
 
-          this.logger.warn(`  ⚠️  Viagem ${trip.id} (${route}): clima adverso — ${bookings.length} passageiro(s) notificado(s)`);
+          this.logger.warn(`  ⚠️  ${trip.id} (${route}): adverso — ${bookings.length} passageiro(s) notificado(s)`);
         }
       } catch (err) {
-        this.logger.error(`Erro ao verificar clima da viagem ${trip.id}:`, err.message);
+        this.logger.error(`Erro ao verificar clima da viagem ${trip.id}: ${err.message}`);
       }
     }
   }
@@ -282,8 +231,8 @@ export class WeatherService {
   // ─── Nível dos rios (ANA) ────────────────────────────────────────────────────
 
   async getRiverLevel(stationCode: string): Promise<RiverLevelDto> {
-    const cacheKey = `river:level:${stationCode}`;
-    const cached = await this.cacheManager.get<RiverLevelDto>(cacheKey);
+    const cacheKey   = `river:level:${stationCode}`;
+    const cached     = await this.cacheManager.get<RiverLevelDto>(cacheKey);
     if (cached) return cached;
 
     const stationInfo = Object.values(this.riverStations).find(s => s.code === stationCode);
@@ -301,9 +250,7 @@ export class WeatherService {
         },
       );
 
-      const xml = response.data as string;
-
-      // Extrai última leitura do XML
+      const xml          = response.data as string;
       const levelMatches = xml.match(/<Nivel>([\d.]+)<\/Nivel>/g) ?? [];
       const dateMatches  = xml.match(/<DataHora>([^<]+)<\/DataHora>/g) ?? [];
 
@@ -324,10 +271,10 @@ export class WeatherService {
         source:      'ANA',
       };
 
-      await this.cacheManager.set(cacheKey, result, 3600 * 1000); // cache 1 hora
+      await this.cacheManager.set(cacheKey, result, 3600 * 1000);
       return result;
     } catch (err) {
-      this.logger.warn(`⚠️ Não foi possível obter nível do rio para estação ${stationCode}: ${err.message}`);
+      this.logger.warn(`⚠️ ANA indisponível para estação ${stationCode}: ${err.message}`);
       return {
         station:     stationInfo?.name ?? stationCode,
         stationCode,
@@ -349,41 +296,94 @@ export class WeatherService {
       .map(r => r.value);
   }
 
-  // ─── Misc ────────────────────────────────────────────────────────────────────
+  // ─── OpenWeatherMap ──────────────────────────────────────────────────────────
 
-  getAvailableRegions() {
-    return Object.entries(this.regions).map(([key, value]) => ({
-      key,
-      name: value.name,
-      latitude: value.lat,
-      longitude: value.lng,
-    }));
+  private async fetchOWMCurrent(
+    lat: number, lng: number, region: string | undefined, cacheKey: string,
+  ): Promise<CurrentWeatherDto> {
+    const response = await axios.get(`${this.owmUrl}/weather`, {
+      params: { lat, lon: lng, appid: this.apiKey, units: 'metric', lang: 'pt_br' },
+    });
+
+    const weather = this.mapOWMToCurrentWeather(response.data, lat, lng, region);
+    await this.cacheManager.set(cacheKey, weather, this.cacheTime * 1000);
+    this.saveWeatherHistory(weather).catch(err => this.logger.error('Erro ao salvar histórico:', err));
+    return weather;
   }
 
-  async getUserDiscount(userId: string): Promise<number> {
-    return 0; // placeholder — desconto de gamificação gerido pelo GamificationService
+  private async fetchOWMForecast(
+    lat: number, lng: number, region: string | undefined, cacheKey: string,
+  ): Promise<WeatherForecastDto> {
+    const response = await axios.get(`${this.owmUrl}/forecast`, {
+      params: { lat, lon: lng, appid: this.apiKey, units: 'metric', lang: 'pt_br' },
+    });
+
+    const forecast = this.mapOWMForecast(response.data, region);
+    await this.cacheManager.set(cacheKey, forecast, this.cacheTime * 1000);
+    return forecast;
   }
 
-  // ─── Helpers privados ────────────────────────────────────────────────────────
+  // ─── Open-Meteo (fallback gratuito, sem API key) ─────────────────────────────
 
-  private classifyRiverLevel(
-    stationCode: string,
-    levelCm: number | null,
-  ): RiverLevelDto['levelStatus'] {
-    if (levelCm === null) return 'unknown';
-    const t = this.riverThresholds[stationCode] ?? { low: 300, attention: 1500, alert: 1700, emergency: 1900 };
+  private async fetchOpenMeteoCurrent(
+    lat: number, lng: number, region: string | undefined, cacheKey: string,
+  ): Promise<CurrentWeatherDto> {
+    this.logger.log(`🌤  Open-Meteo: buscando clima em ${region || `${lat},${lng}`}...`);
 
-    if (levelCm >= t.emergency) return 'emergency';
-    if (levelCm >= t.alert)     return 'alert';
-    if (levelCm >= t.attention) return 'attention';
-    if (levelCm < t.low)        return 'low';
-    return 'normal';
+    const response = await axios.get('https://api.open-meteo.com/v1/forecast', {
+      params: {
+        latitude:  lat,
+        longitude: lng,
+        current: [
+          'temperature_2m', 'relative_humidity_2m', 'apparent_temperature',
+          'precipitation', 'weather_code', 'cloud_cover',
+          'wind_speed_10m', 'wind_gusts_10m', 'wind_direction_10m',
+          'surface_pressure', 'visibility',
+        ].join(','),
+        daily:        'sunrise,sunset,uv_index_max',
+        timezone:     'America/Manaus',
+        forecast_days: 1,
+      },
+      timeout: 10000,
+    });
+
+    const weather = this.mapOpenMeteoToCurrentWeather(response.data, lat, lng, region);
+    await this.cacheManager.set(cacheKey, weather, this.cacheTime * 1000);
+    this.saveWeatherHistory(weather).catch(err => this.logger.error('Erro ao salvar histórico:', err));
+    return weather;
   }
 
-  private mapToCurrentWeather(data: any, lat: number, lng: number, region?: string): CurrentWeatherDto {
-    const weather = data.weather[0];
-    const main    = data.main;
-    const wind    = data.wind;
+  private async fetchOpenMeteoForecast(
+    lat: number, lng: number, region: string | undefined, cacheKey: string,
+  ): Promise<WeatherForecastDto> {
+    this.logger.log(`📅 Open-Meteo: buscando previsão para ${region || `${lat},${lng}`}...`);
+
+    const response = await axios.get('https://api.open-meteo.com/v1/forecast', {
+      params: {
+        latitude:  lat,
+        longitude: lng,
+        daily: [
+          'weather_code', 'temperature_2m_max', 'temperature_2m_min',
+          'precipitation_sum', 'precipitation_probability_max',
+          'wind_speed_10m_max',
+        ].join(','),
+        timezone:      'America/Manaus',
+        forecast_days: 7,
+      },
+      timeout: 10000,
+    });
+
+    const forecast = this.mapOpenMeteoForecast(response.data, region);
+    await this.cacheManager.set(cacheKey, forecast, this.cacheTime * 1000);
+    return forecast;
+  }
+
+  // ─── Mappers OWM ─────────────────────────────────────────────────────────────
+
+  private mapOWMToCurrentWeather(data: any, lat: number, lng: number, region?: string): CurrentWeatherDto {
+    const w    = data.weather[0];
+    const main = data.main;
+    const wind = data.wind;
 
     const conditionMap: Record<string, string> = {
       Clear: 'Ensolarado', Clouds: 'Nublado', Rain: 'Chuva',
@@ -393,9 +393,8 @@ export class WeatherService {
       Ash: 'Cinzas', Squall: 'Rajada', Tornado: 'Tornado',
     };
 
-    const condition = conditionMap[weather.main] || weather.main;
-
-    const currentWeather: CurrentWeatherDto = {
+    const condition = conditionMap[w.main] || w.main;
+    const dto: CurrentWeatherDto = {
       region:       region || `${lat}, ${lng}`,
       latitude:     lat,
       longitude:    lng,
@@ -406,40 +405,27 @@ export class WeatherService {
       windGust:     wind.gust ? Math.round(wind.gust * 10) / 10 : null,
       windDirection: wind.deg,
       condition,
-      description:  weather.description,
-      icon:         weather.icon,
+      description:  w.description,
+      icon:         w.icon,
       cloudiness:   data.clouds.all,
       visibility:   data.visibility,
       rain:         data.rain ? data.rain['1h'] : null,
       pressure:     main.pressure,
       sunrise:      data.sys?.sunrise ? new Date(data.sys.sunrise * 1000) : null,
       sunset:       data.sys?.sunset  ? new Date(data.sys.sunset  * 1000) : null,
+      uvIndex:      null, // OWM free não fornece UV
       isSafeForNavigation: true,
       safetyWarnings: [],
       alerts:       [],
       recordedAt:   new Date(),
     };
 
-    if (wind.speed > 10 || (wind.gust && wind.gust > 15)) {
-      currentWeather.isSafeForNavigation = false;
-      currentWeather.safetyWarnings.push('Ventos fortes');
-    }
-
-    if (currentWeather.rain && currentWeather.rain > 5) {
-      currentWeather.safetyWarnings.push('Chuva intensa');
-    }
-
-    if (weather.main === 'Thunderstorm') {
-      currentWeather.isSafeForNavigation = false;
-      currentWeather.safetyWarnings.push('TEMPESTADE - Não navegue!');
-    }
-
-    return currentWeather;
+    this.applySafetyFlags(dto);
+    return dto;
   }
 
-  private mapToForecast(data: any, region?: string): WeatherForecastDto {
+  private mapOWMForecast(data: any, region?: string): WeatherForecastDto {
     const dailyData = new Map<string, any[]>();
-
     data.list.forEach((item: any) => {
       const date = new Date(item.dt * 1000).toISOString().split('T')[0];
       if (!dailyData.has(date)) dailyData.set(date, []);
@@ -447,10 +433,10 @@ export class WeatherService {
     });
 
     const forecast: ForecastDayDto[] = Array.from(dailyData.entries())
-      .slice(0, 5)
+      .slice(0, 7)
       .map(([dateStr, items]) => {
-        const temps      = items.map((i) => i.main.temp);
-        const rains      = items.map((i) => (i.rain ? i.rain['3h'] : 0));
+        const temps       = items.map(i => i.main.temp);
+        const rains       = items.map(i => i.rain ? i.rain['3h'] : 0);
         const mainWeather = items[Math.floor(items.length / 2)].weather[0];
 
         return {
@@ -460,39 +446,137 @@ export class WeatherService {
           condition:    mainWeather.main,
           description:  mainWeather.description,
           icon:         mainWeather.icon,
-          humidity:     Math.round(items.reduce((acc, i) => acc + i.main.humidity, 0) / items.length),
-          windSpeed:    Math.round(items.reduce((acc, i) => acc + i.wind.speed, 0) / items.length * 10) / 10,
+          humidity:     Math.round(items.reduce((a, i) => a + i.main.humidity, 0) / items.length),
+          windSpeed:    Math.round(items.reduce((a, i) => a + i.wind.speed, 0) / items.length * 10) / 10,
           rain:         Math.max(...rains),
-          chanceOfRain: Math.round((items.filter((i) => i.rain).length / items.length) * 100),
+          chanceOfRain: Math.round(items.filter(i => i.rain).length / items.length * 100),
         };
       });
 
     return { region: region || 'Coordenadas', forecast };
   }
 
-  private async saveWeatherHistory(weather: CurrentWeatherDto): Promise<void> {
-    const data = this.weatherRepo.create({
-      region:             weather.region,
-      latitude:           weather.latitude,
-      longitude:          weather.longitude,
-      temperature:        weather.temperature,
-      feelsLike:          weather.feelsLike,
-      humidity:           weather.humidity,
-      windSpeed:          weather.windSpeed,
-      windGust:           weather.windGust,
-      windDeg:            weather.windDirection,
-      condition:          weather.condition,
-      description:        weather.description,
-      icon:               weather.icon,
-      cloudiness:         weather.cloudiness,
-      visibility:         weather.visibility,
-      rain:               weather.rain,
-      pressure:           weather.pressure,
-      isSafeForNavigation: weather.isSafeForNavigation,
-      alerts:             weather.alerts.length > 0 ? JSON.stringify(weather.alerts) : null,
+  // ─── Mappers Open-Meteo ───────────────────────────────────────────────────────
+
+  private mapOpenMeteoToCurrentWeather(data: any, lat: number, lng: number, region?: string): CurrentWeatherDto {
+    const cur  = data.current;
+    const daily = data.daily;
+
+    const { condition, description, icon } = this.wmoToCondition(cur.weather_code);
+
+    const dto: CurrentWeatherDto = {
+      region:       region || `${lat}, ${lng}`,
+      latitude:     lat,
+      longitude:    lng,
+      temperature:  Math.round(cur.temperature_2m * 10) / 10,
+      feelsLike:    Math.round(cur.apparent_temperature * 10) / 10,
+      humidity:     cur.relative_humidity_2m,
+      windSpeed:    Math.round(cur.wind_speed_10m * 10) / 10,
+      windGust:     cur.wind_gusts_10m ? Math.round(cur.wind_gusts_10m * 10) / 10 : null,
+      windDirection: cur.wind_direction_10m,
+      condition,
+      description,
+      icon,
+      cloudiness:   cur.cloud_cover,
+      visibility:   cur.visibility ?? 10000,
+      rain:         cur.precipitation > 0 ? cur.precipitation : null,
+      pressure:     cur.surface_pressure,
+      sunrise:      daily?.sunrise?.[0] ? new Date(daily.sunrise[0]) : null,
+      sunset:       daily?.sunset?.[0]  ? new Date(daily.sunset[0])  : null,
+      uvIndex:      daily?.uv_index_max?.[0] ?? null,
+      isSafeForNavigation: true,
+      safetyWarnings: [],
+      alerts:       [],
+      recordedAt:   new Date(),
+    };
+
+    this.applySafetyFlags(dto);
+    return dto;
+  }
+
+  private mapOpenMeteoForecast(data: any, region?: string): WeatherForecastDto {
+    const d = data.daily;
+    const forecast: ForecastDayDto[] = (d.time as string[]).map((dateStr, i) => {
+      const { condition, description, icon } = this.wmoToCondition(d.weather_code[i]);
+      return {
+        date:         new Date(dateStr),
+        tempMin:      d.temperature_2m_min[i],
+        tempMax:      d.temperature_2m_max[i],
+        condition,
+        description,
+        icon,
+        humidity:     0, // não disponível no endpoint daily básico
+        windSpeed:    d.wind_speed_10m_max[i],
+        rain:         d.precipitation_sum[i],
+        chanceOfRain: d.precipitation_probability_max[i] ?? 0,
+      };
     });
 
+    return { region: region || 'Coordenadas', forecast };
+  }
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+  private applySafetyFlags(dto: CurrentWeatherDto): void {
+    if (dto.windSpeed > 10 || (dto.windGust && dto.windGust > 15)) {
+      dto.isSafeForNavigation = false;
+      dto.safetyWarnings.push('Ventos fortes');
+    }
+    if (dto.rain && dto.rain > 5) {
+      dto.safetyWarnings.push('Chuva intensa');
+    }
+    if (dto.condition.toLowerCase().includes('tempestade')) {
+      dto.isSafeForNavigation = false;
+      dto.safetyWarnings.push('TEMPESTADE - Não navegue!');
+    }
+  }
+
+  /** Mapeia WMO weather codes (Open-Meteo) para português */
+  private wmoToCondition(code: number): { condition: string; description: string; icon: string } {
+    if (code === 0)                      return { condition: 'Ensolarado',          description: 'céu limpo',               icon: '01d' };
+    if (code === 1)                      return { condition: 'Ensolarado',          description: 'predominantemente limpo',  icon: '01d' };
+    if (code === 2)                      return { condition: 'Parcialmente Nublado',description: 'parcialmente nublado',     icon: '02d' };
+    if (code === 3)                      return { condition: 'Nublado',             description: 'nublado',                  icon: '04d' };
+    if (code >= 45 && code <= 48)        return { condition: 'Nevoeiro',            description: 'nevoeiro',                 icon: '50d' };
+    if (code >= 51 && code <= 55)        return { condition: 'Garoa',               description: 'garoa',                    icon: '09d' };
+    if (code >= 61 && code <= 65)        return { condition: 'Chuva',               description: 'chuva',                    icon: '10d' };
+    if (code >= 71 && code <= 77)        return { condition: 'Neve',                description: 'neve',                     icon: '13d' };
+    if (code >= 80 && code <= 82)        return { condition: 'Chuva',               description: 'pancadas de chuva',        icon: '09d' };
+    if (code >= 95 && code <= 99)        return { condition: 'Tempestade',          description: 'tempestade',               icon: '11d' };
+    return                                      { condition: 'Nublado',             description: 'nublado',                  icon: '04d' };
+  }
+
+  private classifyRiverLevel(stationCode: string, levelCm: number | null): RiverLevelDto['levelStatus'] {
+    if (levelCm === null) return 'unknown';
+    const t = this.riverThresholds[stationCode] ?? { low: 300, attention: 1500, alert: 1700, emergency: 1900 };
+    if (levelCm >= t.emergency) return 'emergency';
+    if (levelCm >= t.alert)     return 'alert';
+    if (levelCm >= t.attention) return 'attention';
+    if (levelCm < t.low)        return 'low';
+    return 'normal';
+  }
+
+  private async saveWeatherHistory(weather: CurrentWeatherDto): Promise<void> {
+    const data = this.weatherRepo.create({
+      region:              weather.region,
+      latitude:            weather.latitude,
+      longitude:           weather.longitude,
+      temperature:         weather.temperature,
+      feelsLike:           weather.feelsLike,
+      humidity:            weather.humidity,
+      windSpeed:           weather.windSpeed,
+      windGust:            weather.windGust,
+      windDeg:             weather.windDirection,
+      condition:           weather.condition,
+      description:         weather.description,
+      icon:                weather.icon,
+      cloudiness:          weather.cloudiness,
+      visibility:          weather.visibility,
+      rain:                weather.rain,
+      pressure:            weather.pressure,
+      isSafeForNavigation: weather.isSafeForNavigation,
+      alerts:              weather.alerts.length > 0 ? JSON.stringify(weather.alerts) : null,
+    });
     await this.weatherRepo.save(data);
-    this.logger.debug(`💾 Histórico salvo: ${weather.region}`);
   }
 }

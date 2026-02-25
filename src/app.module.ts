@@ -24,6 +24,7 @@ import { AdminModule } from './admin/admin.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
+import { LocationsModule } from './locations/locations.module';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
     NotificationsModule,
     PaymentsModule,
     PaymentMethodsModule,
+    LocationsModule,
     SeedModule,
   ],
   providers: [
