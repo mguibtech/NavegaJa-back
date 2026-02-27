@@ -25,6 +25,9 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 import { LocationsModule } from './locations/locations.module';
+import { CaptainModule } from './captain/captain.module';
+import { StopReviewsModule } from './stop-reviews/stop-reviews.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -71,6 +74,9 @@ import { LocationsModule } from './locations/locations.module';
     PaymentsModule,
     PaymentMethodsModule,
     LocationsModule,
+    CaptainModule,
+    StopReviewsModule,
+    ChatModule,
     SeedModule,
   ],
   providers: [

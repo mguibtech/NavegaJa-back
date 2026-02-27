@@ -85,6 +85,9 @@ export class Trip {
   @Column({ name: 'current_lng', type: 'decimal', precision: 10, scale: 7, nullable: true })
   currentLng: number;
 
+  @Column({ name: 'last_location_at', type: 'timestamp', nullable: true })
+  lastLocationAt: Date | null;
+
   @Column({ type: 'text', nullable: true })
   notes: string;
 

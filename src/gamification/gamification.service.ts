@@ -1,10 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThanOrEqual } from 'typeorm';
 import {
   PointTransaction, PointAction, LoyaltyLevel,
   LEVEL_THRESHOLDS, POINTS_MAP,
 } from './point-transaction.entity';
+import { Referral, ReferralStatus } from './referral.entity';
+import { KmTransaction, KmTransactionType, KM_BLOCK, DISCOUNT_PER_BLOCK } from './km-transaction.entity';
 import { User, UserRole } from '../users/user.entity';
 
 @Injectable()
@@ -14,6 +16,10 @@ export class GamificationService {
     private pointsRepo: Repository<PointTransaction>,
     @InjectRepository(User)
     private usersRepo: Repository<User>,
+    @InjectRepository(Referral)
+    private referralsRepo: Repository<Referral>,
+    @InjectRepository(KmTransaction)
+    private kmRepo: Repository<KmTransaction>,
   ) {}
 
   async awardPoints(
@@ -138,11 +144,208 @@ export class GamificationService {
     return levelInfo.discount;
   }
 
+  /**
+   * Registra indicação quando novo usuário se cadastra com código de convite.
+   * Pontos são dados apenas quando o indicado conclui sua 1ª viagem (convertReferral).
+   */
   async processReferral(referralCode: string, newUserId: string): Promise<void> {
     const referrer = await this.usersRepo.findOne({ where: { referralCode } });
     if (!referrer) return;
+    if (referrer.id === newUserId) return; // não pode se auto-indicar
 
-    await this.awardPoints(referrer.id, PointAction.REFERRAL, newUserId);
+    // Verificar se já existe registro de indicação para este usuário
+    const existing = await this.referralsRepo.findOne({ where: { referredId: newUserId } });
+    if (existing) return;
+
+    const referral = this.referralsRepo.create({
+      referrerId: referrer.id,
+      referredId: newUserId,
+      status: ReferralStatus.PENDING,
+      pointsAwarded: false,
+    });
+    await this.referralsRepo.save(referral);
+  }
+
+  /**
+   * Chamado ao concluir a 1ª viagem do indicado → dá 50 NavegaCoins ao referrer.
+   */
+  async convertReferral(completedUserId: string): Promise<void> {
+    const referral = await this.referralsRepo.findOne({
+      where: { referredId: completedUserId, status: ReferralStatus.PENDING, pointsAwarded: false },
+    });
+    if (!referral) return;
+
+    referral.status = ReferralStatus.CONVERTED;
+    referral.pointsAwarded = true;
+    referral.convertedAt = new Date();
+    await this.referralsRepo.save(referral);
+
+    // Dar pontos ao quem indicou
+    await this.awardPoints(referral.referrerId, PointAction.REFERRAL, completedUserId);
+  }
+
+  /**
+   * Estatísticas de indicações do usuário
+   */
+  async getReferralStats(userId: string) {
+    const user = await this.usersRepo.findOne({ where: { id: userId }, select: ['id', 'referralCode'] });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    const referrals = await this.referralsRepo.find({
+      where: { referrerId: userId },
+      relations: ['referred'],
+      order: { createdAt: 'DESC' },
+    });
+
+    const totalReferred = referrals.length;
+    const totalConverted = referrals.filter(r => r.status === ReferralStatus.CONVERTED).length;
+
+    return {
+      referralCode: user.referralCode,
+      totalReferred,
+      totalConverted,
+      pendingConversions: totalReferred - totalConverted,
+      list: referrals.map(r => ({
+        id: r.id,
+        referredName: r.referred?.name || 'Usuário',
+        referredAvatarUrl: r.referred?.avatarUrl || null,
+        status: r.status,
+        createdAt: r.createdAt,
+        convertedAt: r.convertedAt,
+      })),
+    };
+  }
+
+  // ── Sistema de Milhas (km) ─────────────────────────────────────────────────
+
+  /**
+   * Calcula o desconto em R$ para um determinado número de km a resgatar.
+   * km deve ser múltiplo de KM_BLOCK (500). Retorna 0 se inválido.
+   */
+  calcKmDiscount(redeemKm: number): number {
+    if (!redeemKm || redeemKm <= 0) return 0;
+    const blocks = Math.floor(redeemKm / KM_BLOCK);
+    return blocks * DISCOUNT_PER_BLOCK;
+  }
+
+  /**
+   * Valida e debita km do usuário ao confirmar booking.
+   * Retorna o desconto em R$ aplicado.
+   */
+  async deductKm(
+    userId: string,
+    redeemKm: number,
+    bookingId: string,
+  ): Promise<number> {
+    if (!redeemKm || redeemKm <= 0) return 0;
+
+    if (redeemKm % KM_BLOCK !== 0) {
+      throw new BadRequestException(
+        `Km deve ser múltiplo de ${KM_BLOCK}. Informe 500, 1000, 1500...`,
+      );
+    }
+
+    const user = await this.usersRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    if (user.redeemableKm < redeemKm) {
+      throw new BadRequestException(
+        `Km insuficiente. Você tem ${user.redeemableKm} km disponíveis.`,
+      );
+    }
+
+    const blocks = redeemKm / KM_BLOCK;
+    const discount = blocks * DISCOUNT_PER_BLOCK;
+
+    const tx = this.kmRepo.create({
+      userId,
+      km: -redeemKm,
+      type: KmTransactionType.REDEEMED,
+      description: `Resgate de ${redeemKm} km (${blocks} bloco${blocks > 1 ? 's' : ''}) → R$${discount.toFixed(2)} de desconto`,
+      referenceId: bookingId,
+    });
+    await this.kmRepo.save(tx);
+
+    await this.usersRepo.decrement({ id: userId }, 'redeemableKm', redeemKm);
+
+    return discount;
+  }
+
+  /**
+   * Credita km ao usuário ao completar uma viagem.
+   */
+  async creditKm(
+    userId: string,
+    km: number,
+    bookingId: string,
+  ): Promise<void> {
+    if (!km || km <= 0) return;
+
+    const tx = this.kmRepo.create({
+      userId,
+      km,
+      type: KmTransactionType.EARNED,
+      description: `${km} km acumulados na viagem`,
+      referenceId: bookingId,
+    });
+    await this.kmRepo.save(tx);
+
+    await this.usersRepo.increment({ id: userId }, 'totalKmTraveled', km);
+    await this.usersRepo.increment({ id: userId }, 'redeemableKm', km);
+  }
+
+  /**
+   * Devolve km ao usuário ao cancelar booking.
+   */
+  async refundKm(
+    userId: string,
+    kmRedeemed: number,
+    bookingId: string,
+  ): Promise<void> {
+    if (!kmRedeemed || kmRedeemed <= 0) return;
+
+    const tx = this.kmRepo.create({
+      userId,
+      km: kmRedeemed,
+      type: KmTransactionType.REFUNDED,
+      description: `${kmRedeemed} km devolvidos (cancelamento)`,
+      referenceId: bookingId,
+    });
+    await this.kmRepo.save(tx);
+
+    await this.usersRepo.increment({ id: userId }, 'redeemableKm', kmRedeemed);
+  }
+
+  /**
+   * Estatísticas de km do usuário.
+   */
+  async getKmStats(userId: string) {
+    const user = await this.usersRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    const history = await this.kmRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+      take: 20,
+    });
+
+    const blocks = Math.floor(user.redeemableKm / KM_BLOCK);
+
+    return {
+      totalKmTraveled: user.totalKmTraveled,
+      redeemableKm: user.redeemableKm,
+      kmPerBlock: KM_BLOCK,
+      discountPerBlock: DISCOUNT_PER_BLOCK,
+      availableBlocks: blocks,
+      maxDiscount: blocks * DISCOUNT_PER_BLOCK,
+      history: history.map(t => ({
+        id: t.id,
+        km: t.km,
+        type: t.type,
+        description: t.description,
+        createdAt: t.createdAt,
+      })),
+    };
   }
 
   private calculateLevel(totalPoints: number): LoyaltyLevel {

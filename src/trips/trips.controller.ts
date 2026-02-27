@@ -1,9 +1,11 @@
-import { Controller, Post, Get, Put, Delete, Patch, Param, Body, Query, UseGuards, Request, ParseUUIDPipe, ParseIntPipe, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Get, Put, Delete, Patch, Param, Body, Query, UseGuards, Request, ParseUUIDPipe, ParseIntPipe, BadRequestException, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiParam, ApiOkResponse } from '@nestjs/swagger';
 import { TripsService } from './trips.service';
 import { CreateTripDto, UpdateTripStatusDto, UpdateLocationDto, PopularDestinationsResponseDto } from './dto/trip.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
+import { Public } from '../common/decorators/public.decorator';
 
 @ApiTags('Trips')
 @Controller('trips')
@@ -13,6 +15,7 @@ export class TripsController {
   constructor(private tripsService: TripsService) {}
 
   @Get()
+  @Public()
   @ApiOperation({ summary: 'Buscar viagens disponíveis com filtros avançados' })
   @ApiQuery({ name: 'origin', required: false, description: 'Nome da cidade de origem (ex: Manaus)' })
   @ApiQuery({ name: 'destination', required: false, description: 'Nome da cidade de destino (ex: Parintins)' })
@@ -59,7 +62,44 @@ export class TripsController {
     return this.tripsService.findByCaptain(req.user.sub);
   }
 
+  @Get(':id/manage')
+  @UseGuards(RolesGuard)
+  @Roles('captain')
+  @ApiOperation({
+    summary: 'Dados de gestão da viagem (captain only)',
+    description: 'Retorna passageiros e encomendas da viagem para o ecrã "Gerenciar Viagem". Inclui validationCode das encomendas para o capitão confirmar coleta/entrega.',
+  })
+  @ApiParam({ name: 'id', description: 'UUID da viagem' })
+  manageTrip(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.tripsService.findByIdForCaptain(id, req.user.sub);
+  }
+
+  @Get(':id/location')
+  @Public()
+  @ApiOperation({ summary: 'Localização GPS atual da viagem (tempo real)' })
+  @ApiParam({ name: 'id', description: 'UUID da viagem' })
+  getLocation(@Param('id', ParseUUIDPipe) id: string) {
+    return this.tripsService.getLocation(id);
+  }
+
+  @Get(':id/cargo-manifest')
+  @UseGuards(RolesGuard)
+  @Roles('captain', 'admin')
+  @ApiOperation({ summary: 'Manifesto de carga da viagem em PDF' })
+  @ApiParam({ name: 'id', description: 'UUID da viagem' })
+  async getCargoManifest(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    const pdf = await this.tripsService.generateCargoManifestPdf(id, req.user.sub, req.user.role);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="manifesto-${id}.pdf"` });
+    pdf.pipe(res);
+    pdf.end();
+  }
+
   @Get(':id')
+  @Public()
   @ApiOperation({ summary: 'Detalhes de uma viagem específica' })
   @ApiParam({ name: 'id', description: 'UUID da viagem', example: '2b5b9cab-4a3d-4eb6-8e5c-fa11153f587d' })
   findById(@Param('id', new ParseUUIDPipe({ errorHttpStatusCode: 400 })) id: string) {

@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { CacheModule } from '@nestjs/cache-manager';
 import { WeatherController } from './weather.controller';
 import { WeatherService } from './weather.service';
+import { FloodService } from './flood.service';
 import { WeatherData } from './weather-data.entity';
 import { Trip } from '../trips/trip.entity';
 import { Booking } from '../bookings/booking.entity';
@@ -18,7 +19,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     NotificationsModule,
   ],
   controllers: [WeatherController],
-  providers: [WeatherService],
-  exports: [WeatherService],
+  providers: [WeatherService, FloodService],
+  exports: [WeatherService, FloodService],
 })
 export class WeatherModule {}

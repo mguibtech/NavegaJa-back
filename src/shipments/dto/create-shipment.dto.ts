@@ -1,8 +1,9 @@
 import { IsString, IsNotEmpty, IsNumber, IsOptional, IsArray, Min, Max, IsEnum, ValidateNested } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { DimensionsDto } from './dimensions.dto';
 import { PaymentMethod } from '../../common/enums/payment-method.enum';
+import { PaidBy } from '../../common/enums/paid-by.enum';
 
 export class CreateShipmentDto {
   @ApiProperty({ description: 'ID da viagem' })
@@ -16,10 +17,10 @@ export class CreateShipmentDto {
   description: string;
 
   @ApiProperty({ example: 5.5, description: 'Peso em kg (0.1 a 50kg)' })
+  @Transform(({ value }) => parseFloat(String(value)))
   @IsNumber()
   @Min(0.1)
   @Max(50)
-  @Type(() => Number)
   weight: number;
 
   // Opção 1: Enviar dimensions como objeto (RECOMENDADO)
@@ -36,27 +37,27 @@ export class CreateShipmentDto {
 
   // Opção 2: Enviar campos separados (BACKWARD COMPATIBILITY)
   @ApiProperty({ example: 30, description: 'Comprimento em cm (usar dimensions ao invés)', required: false, deprecated: true })
+  @Transform(({ value }) => value !== undefined && value !== '' ? parseFloat(String(value)) : undefined)
   @IsNumber()
   @IsOptional()
   @Min(1)
   @Max(200)
-  @Type(() => Number)
   length?: number;
 
   @ApiProperty({ example: 20, description: 'Largura em cm (usar dimensions ao invés)', required: false, deprecated: true })
+  @Transform(({ value }) => value !== undefined && value !== '' ? parseFloat(String(value)) : undefined)
   @IsNumber()
   @IsOptional()
   @Min(1)
   @Max(200)
-  @Type(() => Number)
   width?: number;
 
   @ApiProperty({ example: 15, description: 'Altura em cm (usar dimensions ao invés)', required: false, deprecated: true })
+  @Transform(({ value }) => value !== undefined && value !== '' ? parseFloat(String(value)) : undefined)
   @IsNumber()
   @IsOptional()
   @Min(1)
   @Max(200)
-  @Type(() => Number)
   height?: number;
 
   // Array de URLs de fotos (máximo 5)
@@ -95,6 +96,17 @@ export class CreateShipmentDto {
   @IsEnum(PaymentMethod)
   @IsOptional()
   paymentMethod?: PaymentMethod;
+
+  @ApiProperty({
+    enum: PaidBy,
+    example: PaidBy.SENDER,
+    default: PaidBy.SENDER,
+    required: false,
+    description: 'Quem paga o frete: sender (remetente, padrão) ou recipient (destinatário paga na entrega — frete a cobrar)',
+  })
+  @IsEnum(PaidBy)
+  @IsOptional()
+  paidBy?: PaidBy;
 
   @ApiProperty({ example: 'PROMO10', required: false, description: 'Código de cupom de desconto' })
   @IsString()

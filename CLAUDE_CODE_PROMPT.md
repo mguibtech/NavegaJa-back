@@ -29,11 +29,14 @@ JWT + Passport (auth)
 class-validator + class-transformer (DTOs)
 bcryptjs (senhas)
 qrcode (QR codes)
+pdfkit (geração de PDFs — bilhete + manifesto)
 firebase-admin (push notifications FCM)
 @nestjs/throttler (rate limiting)
 OpenWeatherMap API (clima)
 npm (package manager — NÃO usar yarn)
 ```
+
+> **Nota PDFKit:** usar `const PDFDocument = require('pdfkit')` (não `import * as`) e retornar tipo `any` (não `PDFKit.PDFDocument`) para evitar erros TS de construção.
 
 ### Rodar o projeto
 ```bash
@@ -62,16 +65,16 @@ node scripts/reset-db.js --confirm
 ```
 backend/src/
 ├── auth/              # JWT, login, registro, refresh token
-├── users/             # Usuários e perfis
+├── users/             # Usuários e perfis + KYC (submit/status)
 ├── boats/             # Embarcações
-├── trips/             # Viagens
-├── bookings/          # Reservas
+├── trips/             # Viagens + GPS tracking + Manifesto PDF
+├── bookings/          # Reservas + Bilhete PDF
 ├── shipments/         # Encomendas
 ├── coupons/           # Cupons + Promoções (módulo unificado)
 ├── favorites/         # Destinos favoritos
 ├── reviews/           # Avaliações
-├── gamification/      # NavegaCoins e gamificação
-├── safety/            # SOS, checklists, contatos de emergência
+├── gamification/      # NavegaCoins, níveis, leaderboard, indicações
+├── safety/            # SOS + push FCM para admins, checklists, emergência
 ├── weather/           # Integração OpenWeatherMap
 ├── admin/             # Endpoints exclusivos do painel admin
 ├── mail/              # Envio de emails
@@ -80,6 +83,10 @@ backend/src/
 ├── upload/            # Upload de arquivos (fotos de encomendas)
 ├── payments/          # Pagamentos PIX
 ├── notifications/     # Push notifications FCM
+├── pdf/               # PdfService — gera bilhete e manifesto (pdfkit)
+├── captain/           # Analytics do capitão (receita, rotas, passageiros)
+├── stop-reviews/      # Avaliações de portos e pontos de parada
+├── chat/              # Chat capitão ↔ passageiro (polling + FCM)
 ├── database/          # Seeds e migrations
 └── main.ts
 ```
@@ -258,6 +265,7 @@ Quando capitão marca trip → `COMPLETED`, o sistema **automaticamente**:
 2. Marca todas essas reservas como `COMPLETED`
 3. Credita NavegaCoins a cada passageiro
 4. Verifica bónus de primeira viagem do mês
+5. Credita km (milhas fluviais) com base em `trip.route.distanceKm`
 
 > Razão: no Amazonas a conectividade é instável — o capitão pode não conseguir escanear todos os QR codes. O benefício da dúvida é dado ao passageiro que pagou.
 
@@ -389,6 +397,28 @@ Sempre remover `passwordHash`, `resetCode`, `resetCodeExpires` ao retornar rela�
 
 ## 📊 ENTIDADES E STATUS
 
+### KycStatus (enum — User entity):
+```typescript
+export enum KycStatus {
+  NONE        = 'none',         // nenhum documento enviado (padrão)
+  PENDING     = 'pending',      // docs enviados, aguardando análise
+  UNDER_REVIEW= 'under_review', // admin iniciou revisão
+  APPROVED    = 'approved',     // aprovado — pode criar viagens
+  REJECTED    = 'rejected',     // reprovado — rejectionReason preenchido
+}
+```
+
+**Campos adicionados em `User`:**
+- `kycStatus: KycStatus` (coluna `kyc_status`)
+- `selfieUrl: string | null` (coluna `selfie_url`)
+- `rnaqNumber: string | null` — número habilitação aquaviária (coluna `rnaq_number`, varchar 30)
+
+**Bloqueio:** capitão com `kycStatus !== 'approved'` → `403 Forbidden` em `POST /trips`.
+
+**Aprovação admin** (`PATCH /admin/users/:id/verify`) seta automaticamente `kycStatus = APPROVED` (ou `REJECTED`).
+
+---
+
 ### TripStatus (enum):
 ```typescript
 enum TripStatus {
@@ -431,30 +461,39 @@ enum ShipmentStatus {
 
 ## ✅ O QUE ESTÁ IMPLEMENTADO
 
-### Backend — Estado real confirmado em 20/02/2026 (v7.0):
+### Backend — Estado real confirmado em 27/02/2026 (v9.1):
 
 | Módulo | Status | Observação |
 |--------|--------|------------|
 | Auth (login telefone + web, JWT, refresh, forgot/reset) | ✅ 100% | accessToken 15min, refreshToken 30d. Rate limiting estrito. Registo público bloqueado para captain/admin |
 | Users (perfil, busca, editar perfil) | ✅ 100% | `capabilities` incluído em todas as respostas |
 | Verificação de capitão (documentos + bloqueio operacional) | ✅ 100% | `isVerified` bloqueia trips, confirmPayment, collectShipment |
+| KYC — Verificação de identidade (fase 1) | ✅ 100% | `kycStatus` enum, endpoints `/users/kyc/submit` e `/users/kyc/status`. Admin usa `PATCH /admin/users/:id/verify` |
 | CPF Validation | ✅ 100% | `@IsCpfValid()` em RegisterDto + UpdateProfileDto |
 | Boats (CRUD + documentos + aprovação admin) | ✅ 100% | isVerified, documentPhotos, rejectionReason |
-| Trips (CRUD, busca, filtros, validações) | ✅ 100% | Requer capitão `isVerified`. Auto-complete bookings ao concluir. `ParseIntPipe` em minPrice/maxPrice/minRating |
-| Bookings (criar, cancelar, check-in, QR code, auto-complete) | ✅ 100% | Auto-complete ao trip→COMPLETED. PIX expira em 15min. Filtro `?status=` disponível |
+| Trips (CRUD, busca, filtros, validações) | ✅ 100% | Requer capitão `isVerified` + `kycStatus='approved'`. Auto-complete bookings ao concluir |
+| GPS Tracking (tempo real) | ✅ 100% | `PATCH /trips/:id/location` (captain) + `GET /trips/:id/location` (público). `lastLocationAt` em Trip |
+| PDF — Bilhete de embarque | ✅ 100% | `GET /bookings/:id/ticket` → `application/pdf`. Usa `PdfService` (pdfkit) |
+| PDF — Manifesto de carga | ✅ 100% | `GET /trips/:id/cargo-manifest` → `application/pdf`. Captain/Admin |
+| Bookings (criar, cancelar, check-in, QR code, auto-complete) | ✅ 100% | Auto-complete ao trip→COMPLETED. PIX expira em 15min. Filtro `?status=` disponível. **409 Conflict** se usuário já tem booking ativa (PENDING/CONFIRMED/CHECKED_IN) na mesma viagem |
 | Shipments (8 estados, QR, tracking, timeline, gamification) | ✅ 100% | collectShipment requer capitão verificado |
 | Coupons + Promotions | ✅ 100% | |
 | Favorites | ✅ 100% | |
-| Gamification (NavegaCoins, níveis, leaderboard, referral) | ✅ 100% | |
+| Gamification (NavegaCoins, níveis, leaderboard) | ✅ 100% | |
+| Sistema de Milhas (km fluviais) | ✅ 100% | `KmTransaction`, saldo em `User`, desconto em `Booking`. `GET /gamification/km-stats` |
+| Indicações melhoradas (Referral entity) | ✅ 100% | Pontos só ao completar 1ª viagem. `GET /gamification/referrals` |
 | Reviews (passageiro→capitão/barco + capitão→passageiro) | ✅ 100% | Requer booking COMPLETED |
+| Avaliações de Paradas (`stop-reviews`) | ✅ 100% | Porto/terminal, rating 1-5, fotos, top locais. Dá +5 NavegaCoins |
+| Chat capitão ↔ passageiro | ✅ 100% | Polling + FCM. 4 endpoints. Somente participantes da booking |
+| Analytics do capitão | ✅ 100% | 4 endpoints: resumo, receita diária, rotas, passageiros recorrentes |
 | Weather (OpenWeatherMap, cache 30min) | ✅ 100% | |
-| Safety (SOS, checklists, contatos emergência) | ✅ 100% | |
+| Safety / SOS (+ FCM para admins) | ✅ 100% | SOS dispara push FCM para todos os admins ativos |
 | Admin (users, trips, shipments, bookings, dashboard, reviews) | ✅ 100% | |
 | Routes | ✅ 100% | Read-only |
 | Cargo (fretes comerciais, 9 tipos) | ✅ 100% | |
 | Upload (imagens + vídeos) | ✅ 100% | Firebase Storage ou disco |
 | Payments (PIX) | ✅ 100% | QR Code PIX, validade 15min |
-| Notifications (Push FCM + Broadcast) | ✅ 100% | Firebase FCM, integrado com todos os módulos |
+| Notifications (Push FCM + Broadcast) | ✅ 100% | Firebase FCM, integrado com todos os módulos. `channelId: 'default'` + `priority: 'high'` em todos os payloads Android |
 | Rate Limiting | ✅ 100% | `@nestjs/throttler` — 60/min global, 5/min nos endpoints de auth |
 
 ---
@@ -467,6 +506,75 @@ enum ShipmentStatus {
 |---|---|
 | `GET /admin/dashboard/revenue` | Gráfico de receita por período (dia/semana/mês) ainda não existe |
 | Upload para S3 | Upload melhorado com S3 (shipments já usa presigned URLs) |
+| Chat — WebSocket | Chat usa polling (10s) + FCM. WebSocket (`@nestjs/platform-socket.io`) não está instalado |
+
+---
+
+## ✈️ SISTEMA DE MILHAS FLUVIAIS (implementado em 25/02/2026)
+
+Inspirado em programas de milhagem de companhias aéreas, mas adaptado para transporte fluvial.
+
+### Regras de negócio:
+- **Acúmulo:** ao completar uma viagem, o passageiro ganha km equivalentes à distância da rota (`Route.distanceKm`)
+- **Bloco:** cada **500 km** = **R$25** de desconto (constante `KM_BLOCK = 500`, `DISCOUNT_PER_BLOCK = 25`)
+- **Resgate flexível:** o usuário escolhe quantos blocos usar — só milhas, só dinheiro, ou parte de cada
+- **Múltiplo obrigatório:** `redeemKm` deve ser múltiplo de 500 (ex: 500, 1000, 1500...)
+- **Saldo:** campo `redeemableKm` em `User` (atual disponível). `totalKmTraveled` é histórico
+- **Devolução:** se a booking for cancelada, os km são devolvidos ao saldo
+
+### Entidades novas / modificadas:
+```
+src/gamification/km-transaction.entity.ts  ← NOVA
+  KmTransactionType: earned | redeemed | refunded
+  Campos: userId, km (positivo=crédito), type, description, referenceId (bookingId)
+
+User:
+  + totalKmTraveled: int (histórico total, não diminui no resgate)
+  + redeemableKm: int   (saldo disponível para resgate)
+
+Booking:
+  + kmRedeemed: int     (km usados nesta booking, 0 se nenhum)
+  + kmDiscount: decimal (valor R$ descontado pelos km)
+```
+
+### GamificationService — novos métodos:
+```typescript
+calcKmDiscount(redeemKm): number       // calcula R$ de desconto (não debita)
+deductKm(userId, redeemKm, bookingId)  // valida e debita km do usuário
+creditKm(userId, km, bookingId)        // credita km ao completar viagem
+refundKm(userId, kmRedeemed, bookingId)// devolve km ao cancelar booking
+getKmStats(userId)                     // retorna saldo, histórico, blocos disponíveis
+```
+
+### Endpoints:
+```
+GET  /gamification/km-stats       (JWT) — saldo de km do usuário logado
+POST /bookings/calculate-price    (JWT) — aceita redeemKm para preview de desconto
+POST /bookings                    (JWT) — aceita redeemKm para aplicar desconto
+```
+
+### Fluxo de acúmulo:
+```
+1. Passageiro conclui viagem (booking → CHECKED_IN → COMPLETED)
+2. Sistema lê trip.route.distanceKm (Route pré-definida) → crédita km
+3. Se rota sem distância definida → 0 km (sem prejuízo)
+```
+
+### Fluxo de resgate:
+```
+1. App chama POST /bookings/calculate-price com { tripId, quantity, redeemKm: 500 }
+   → resposta: { basePrice: 80, kmDiscount: 25, finalPrice: 55, redeemableKm: 1200 }
+2. App confirma → POST /bookings com { ..., redeemKm: 500 }
+   → sistema valida saldo, debita 500 km, aplica R$25 de desconto
+3. Se cancelar → km são devolvidos automaticamente
+```
+
+### GamificationModule:
+`KmTransaction` adicionado ao `TypeOrmModule.forFeature([...])`
+
+### StopReviews:
+Ao criar uma avaliação de ponto de parada → **+5 NavegaCoins** (mesmo `PointAction.REVIEW_CREATED` das reviews normais).
+`StopReviewsModule` importa `GamificationModule`.
 
 ---
 
@@ -589,6 +697,12 @@ node scripts/check-and-create-admin.js
 - Booking CANCELLED → passageiro notificado
 - Shipment muda estado → remetente notificado
 - Nova reserva numa viagem → capitão notificado
+- **Capitão favorito cria viagem** → todos que o favoritaram recebem push `{ type: "captain_new_trip", tripId, captainId }`
+- **Novo cupom criado (admin)** → broadcast para todos os usuários `{ type: "new_coupon", couponCode, applicableTo }`
+
+### Payload FCM Android (CRÍTICO):
+Todos os payloads incluem `android.notification.channelId = 'default'` para exibição na barra em background no Android 8+.
+**O app mobile DEVE criar o canal `default`** na inicialização (via `notifee.createChannel` ou `expo-notifications`).
 
 ### Broadcast (admin):
 ```json
@@ -650,6 +764,140 @@ POST /payments/pix/shipment/:id  → gera QR Code PIX para encomenda (15 min)
 
 ---
 
+## 📍 GPS TRACKING — RASTREAMENTO EM TEMPO REAL
+
+**Campos em `Trip`:** `currentLat`, `currentLng` (já existiam) + `lastLocationAt: timestamp | null` (adicionado).
+
+| Método | Endpoint | Auth | Descrição |
+|--------|----------|------|-----------|
+| PATCH | `/trips/:id/location` | Captain | Atualizar posição GPS `{ lat, lng }` |
+| GET | `/trips/:id/location` | Público | Consultar posição atual |
+
+**Response de ambos:**
+```json
+{ "lat": -3.1019, "lng": -60.0250, "lastLocationAt": "2026-02-25T14:30:00Z", "status": "in_progress" }
+```
+
+**Integração:** capitão envia a cada 30s; passageiro faz polling a cada 15s.
+
+---
+
+## 🪪 KYC — VERIFICAÇÃO DE IDENTIDADE DO CAPITÃO
+
+| Método | Endpoint | Auth | Descrição |
+|--------|----------|------|-----------|
+| POST | `/users/kyc/submit` | Captain | Enviar docs `{ selfieUrl, licensePhotoUrl, rnaqNumber?, certificatePhotoUrl? }` |
+| GET | `/users/kyc/status` | Captain | Ver `{ kycStatus, selfieUrl, licensePhotoUrl, isVerified, verifiedAt, rejectionReason }` |
+| PATCH | `/admin/users/:id/verify` | Admin | Aprovar `{ verified: true }` ou reprovar `{ verified: false, rejectionReason: "..." }` |
+
+**Fluxo:** Capitão faz upload (POST /upload/image) → envia URLs via `/kyc/submit` → admin aprova/rejeita em `/admin/users/:id/verify` → `kycStatus` é atualizado automaticamente.
+
+---
+
+## 📄 PDF — BILHETE E MANIFESTO DE CARGA
+
+**Módulo `PdfService`** em `src/pdf/pdf.service.ts` — exportado por `PdfModule`.
+Importar `PdfModule` nos módulos que precisam de PDF.
+
+**PDFKit:** usar sempre `const PDFDocument = require('pdfkit')` (não `import *`) e retornar `any`.
+
+| Método | Endpoint | Auth | Descrição |
+|--------|----------|------|-----------|
+| GET | `/bookings/:id/ticket` | JWT | PDF bilhete de embarque (`application/pdf`) |
+| GET | `/trips/:id/cargo-manifest` | Captain/Admin | PDF manifesto de carga (`application/pdf`) |
+
+**No app:** receber `responseType: 'blob'` e usar `expo-sharing` ou `react-native-share` para abrir o PDF.
+
+---
+
+## 📊 ANALYTICS DO CAPITÃO
+
+Todos os endpoints em `/captain/analytics` requerem JWT + role `captain`.
+
+| Método | Endpoint | Query | Descrição |
+|--------|----------|-------|-----------|
+| GET | `/captain/analytics` | — | Resumo: receita total, viagens, passageiros, rating, completion rate |
+| GET | `/captain/analytics/revenue` | `?period=7d\|30d\|90d` | Receita diária `[{ date, amount, bookings }]` |
+| GET | `/captain/analytics/routes` | — | Top 10 rotas `[{ origin, destination, tripsCount, totalRevenue, avgPrice }]` |
+| GET | `/captain/analytics/passengers` | — | Passageiros recorrentes (2+ viagens) `[{ passengerId, name, totalBookings, totalSpent, lastTrip }]` |
+
+Queries usam `DATE_TRUNC`, `COALESCE(SUM(...))` via QueryBuilder — nunca `.find()` + `.reduce()`.
+
+---
+
+## ⭐ AVALIAÇÕES DE PONTOS DE PARADA (`stop-reviews`)
+
+Entidade `StopReview` — tabela `stop_reviews`.
+
+| Método | Endpoint | Auth | Descrição |
+|--------|----------|------|-----------|
+| POST | `/stop-reviews` | JWT | Criar `{ locationName, rating(1-5), comment?, photos?[], tripId?, lat?, lng? }` |
+| GET | `/stop-reviews?location=X` | Público | Avaliações de um local (paginado) |
+| GET | `/stop-reviews/top?limit=10` | Público | Top locais por rating médio `[{ locationName, avgRating, totalReviews }]` |
+| GET | `/stop-reviews/my` | JWT | Minhas avaliações (paginado) |
+
+---
+
+## 🤝 INDICAÇÕES MELHORADAS (Referral)
+
+Nova entidade `Referral` — tabela `referrals`. Importada pelo `GamificationModule`.
+
+**Campos:** `id`, `referrerId` (FK User), `referredId` (FK User, unique), `status (pending|converted)`, `pointsAwarded (boolean)`, `createdAt`, `convertedAt`.
+
+**Fluxo:**
+1. Novo usuário registra com `referralCode` → cria `Referral` status `pending` (sem pontos ainda).
+2. Indicado completa a 1ª booking → `convertReferral()` é chamado automaticamente em `bookings.service.ts`.
+3. Referral muda para `converted`, indicador recebe **50 NavegaCoins** + push FCM.
+
+| Método | Endpoint | Auth | Descrição |
+|--------|----------|------|-----------|
+| GET | `/gamification/referrals` | JWT | `{ referralCode, totalReferred, totalConverted, pendingConversion, referrals[] }` |
+
+---
+
+## 💬 CHAT CAPITÃO ↔ PASSAGEIRO
+
+Entidade `ChatMessage` — tabela `chat_messages`. Módulo `ChatModule` importa `Booking` e `NotificationsModule`.
+
+**Acesso:** só o passageiro da booking e o capitão da viagem. Booking `cancelled` → `400`.
+**Limite:** 1000 caracteres por mensagem.
+
+| Método | Endpoint | Auth | Descrição |
+|--------|----------|------|-----------|
+| GET | `/chat/conversations` | JWT | Lista conversas ordenadas pela mensagem mais recente (com `unreadCount`) |
+| POST | `/chat/:bookingId/messages` | JWT | Enviar mensagem `{ content }` + push FCM ao destinatário |
+| GET | `/chat/:bookingId/messages` | JWT | Polling — aceita `?since=ISO&limit=50` para incremental |
+| PATCH | `/chat/:bookingId/read` | JWT | Marca mensagens do outro como lidas → `{ marked: N }` |
+
+**Push FCM ao receber mensagem:** `data: { type: "chat", bookingId }` → app abre o chat.
+**Estratégia no app:** poll a cada 10s com `?since=lastMessage.createdAt`; FCM acorda o poll imediatamente.
+
+### QueryBuilder — padrão OBRIGATÓRIO no chat (e em geral):
+Usar sempre **nomes de propriedade da entidade (camelCase)** com aliases, nunca nomes de coluna raw:
+```typescript
+// ✅ Correto
+.where('msg.bookingId = :bookingId')
+.orderBy('msg.createdAt', 'ASC')
+.where('booking.passengerId = :userId OR trip.captainId = :userId')
+
+// ❌ Errado — TypeORM não resolve colunas snake_case com alias → 500
+.where('msg.booking_id = :bookingId')
+.orderBy('msg.created_at', 'ASC')
+.where('booking.passenger_id = :userId OR trip.captain_id = :userId')
+```
+
+---
+
+## 🆘 SOS — ATUALIZAÇÃO (FCM para Admins)
+
+O módulo SOS já existia em `src/safety/`. A atualização adicionou push FCM para todos os admins ao criar um alerta:
+
+- `SafetyModule` agora importa `NotificationsModule` e injeta o repositório de `User`.
+- Ao `POST /sos`: busca todos os admins com `fcmToken` ativo e envia push instantâneo.
+- **Push payload:** `{ title: "🆘 ALERTA SOS!", body: "SOS acionado por [Nome]", data: { type: "sos", alertId } }`
+
+---
+
 ## 🚨 REGRAS INVIOLÁVEIS
 
 1. **SEMPRE ler o arquivo existente antes de editar**
@@ -685,4 +933,4 @@ POST /payments/pix/shipment/:id  → gera QR Code PIX para encomenda (15 min)
 
 ---
 
-*Prompt atualizado em: 20/02/2026 | Versão: 7.0 | Projeto: NavegaJá Backend*
+*Prompt atualizado em: 27/02/2026 | Versão: 9.1 | Projeto: NavegaJá Backend*

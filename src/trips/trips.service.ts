@@ -7,10 +7,15 @@ import { ShipmentsService } from '../shipments/shipments.service';
 import { ShipmentStatus } from '../shipments/shipment.entity';
 import { SafetyService } from '../safety/safety.service';
 import { WeatherService } from '../weather/weather.service';
+import { FloodService } from '../weather/flood.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { BookingsService } from '../bookings/bookings.service';
+import { PdfService } from '../pdf/pdf.service';
 import { Boat } from '../boats/boat.entity';
 import { User } from '../users/user.entity';
+import { Shipment } from '../shipments/shipment.entity';
+import { Favorite, FavoriteType } from '../favorites/favorite.entity';
+import { Booking } from '../bookings/booking.entity';
 
 @Injectable()
 export class TripsService {
@@ -21,13 +26,19 @@ export class TripsService {
     private boatsRepo: Repository<Boat>,
     @InjectRepository(User)
     private usersRepo: Repository<User>,
+    @InjectRepository(Shipment)
+    private shipmentsRepo: Repository<Shipment>,
+    @InjectRepository(Favorite)
+    private favoritesRepo: Repository<Favorite>,
     @Inject(forwardRef(() => ShipmentsService))
     private shipmentsService: ShipmentsService,
     @Inject(forwardRef(() => SafetyService))
     private safetyService: SafetyService,
     private weatherService: WeatherService,
+    private floodService: FloodService,
     private notificationsService: NotificationsService,
     private bookingsService: BookingsService,
+    private pdfService: PdfService,
   ) {}
 
   async create(captainId: string, dto: CreateTripDto): Promise<Trip> {
@@ -122,6 +133,19 @@ export class TripsService {
       throw new BadRequestException('Preço de carga não pode ser negativo.');
     }
 
+    // 6. Verificar risco de cheia EXTREME (bloqueia criação da viagem)
+    try {
+      const flood = await this.floodService.getFloodStatus(-3.119, -60.0217, 100);
+      if (flood.severity === 'EXTREME') {
+        throw new ForbiddenException(
+          'Criação de viagem bloqueada: cheia extrema detectada na área. Aguarde a melhora das condições.',
+        );
+      }
+    } catch (err) {
+      if (err instanceof ForbiddenException) throw err;
+      // Erro na API de cheias não bloqueia a criação da viagem
+    }
+
     // ========== CRIAR VIAGEM ==========
 
     const trip = this.tripsRepo.create({
@@ -139,7 +163,40 @@ export class TripsService {
       availableCargoKg: dto.cargoCapacityKg || null, // Inicializa com capacidade total
     } as Partial<Trip>);
 
-    return this.tripsRepo.save(trip);
+    const saved = await this.tripsRepo.save(trip);
+
+    // Notificar usuários que favoritaram este capitão (fire-and-forget)
+    this.notifyFavoriteCaptainFans(captainId, saved).catch(() => {});
+
+    return saved;
+  }
+
+  private async notifyFavoriteCaptainFans(captainId: string, trip: Trip): Promise<void> {
+    const [captain, favorites] = await Promise.all([
+      this.usersRepo.findOne({ where: { id: captainId }, select: ['id', 'name'] }),
+      this.favoritesRepo.find({
+        where: { type: FavoriteType.CAPTAIN, captainId },
+        select: ['userId'],
+      }),
+    ]);
+
+    if (!favorites.length) return;
+
+    const userIds = favorites.map(f => f.userId);
+    const captainName = captain?.name || 'Seu capitão favorito';
+
+    const departureDate = trip.departureAt.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    await this.notificationsService.sendToUsers(userIds, {
+      title: `${captainName} abriu nova rota!`,
+      body: `${trip.origin} → ${trip.destination} em ${departureDate}. Garanta sua vaga!`,
+      data: { type: 'captain_new_trip', tripId: trip.id, captainId },
+    });
   }
 
   async findAvailable(routeId?: string, date?: string): Promise<Trip[]> {
@@ -286,6 +343,79 @@ export class TripsService {
     return trip;
   }
 
+  /**
+   * Endpoint de gestão do capitão — retorna bookings + shipments com todos os dados necessários.
+   * Garante que o capitão só acede à sua própria viagem.
+   */
+  async findByIdForCaptain(id: string, captainId: string): Promise<any> {
+    const trip = await this.tripsRepo.findOne({ where: { id }, relations: ['boat'] });
+    if (!trip) throw new NotFoundException('Viagem não encontrada');
+    if (trip.captainId !== captainId) {
+      throw new ForbiddenException('Acesso negado');
+    }
+
+    // Usar entity-based QueryBuilder — TypeORM mapeia colunas snake_case↔camelCase automaticamente
+    const [bookings, shipments] = await Promise.all([
+      this.tripsRepo.manager
+        .createQueryBuilder(Booking, 'b')
+        .leftJoin('b.passenger', 'p')
+        .select([
+          'b.id', 'b.status', 'b.paymentStatus',
+          'b.seats', 'b.seatNumber', 'b.totalPrice', 'b.createdAt',
+          'p.id', 'p.name', 'p.phone', 'p.avatarUrl', 'p.passengerRating',
+        ])
+        .where('b.tripId = :id', { id })
+        .getMany(),
+
+      this.shipmentsRepo.find({
+        where: { tripId: id },
+        order: { createdAt: 'ASC' },
+      }),
+    ]);
+
+    const passageiros = bookings.map(b => ({
+      bookingId: b.id,
+      status: b.status,
+      paymentStatus: b.paymentStatus,
+      seats: b.seats,
+      seatNumber: b.seatNumber,
+      totalPrice: Number(b.totalPrice),
+      createdAt: b.createdAt,
+      passenger: b.passenger ? {
+        id: b.passenger.id,
+        name: b.passenger.name,
+        phone: b.passenger.phone,
+        avatarUrl: (b.passenger as any).avatarUrl,
+        passengerRating: (b.passenger as any).passengerRating,
+      } : null,
+    }));
+
+    const encomendas = shipments.map(s => ({
+      id: s.id,
+      trackingCode: s.trackingCode,
+      validationCode: s.validationCode,
+      status: s.status,
+      description: s.description,
+      weightKg: Number(s.weightKg),
+      totalPrice: Number(s.totalPrice),
+      paidBy: s.paidBy,
+      recipientName: s.recipientName,
+      recipientPhone: s.recipientPhone,
+      recipientAddress: s.recipientAddress,
+      collectionPhotoUrl: s.collectionPhotoUrl,
+      deliveryPhotoUrl: s.deliveryPhotoUrl,
+      createdAt: s.createdAt,
+    }));
+
+    return {
+      ...trip,
+      passageiros,
+      encomendas,
+      totalPassageiros: passageiros.length,
+      totalEncomendas: encomendas.length,
+    };
+  }
+
   // Campos seguros do capitão/passageiro — excluem passwordHash, resetCode, fcmToken
   private static readonly CAPTAIN_SAFE_FIELDS = [
     'captain.id', 'captain.name', 'captain.phone', 'captain.role', 'captain.email',
@@ -323,6 +453,15 @@ export class TripsService {
     // Ajustar availableSeats mantendo a diferença
     const bookedSeats = trip.totalSeats - trip.availableSeats;
     trip.availableSeats = dto.totalSeats - bookedSeats;
+
+    if (dto.cargoPriceKg !== undefined) trip.cargoPriceKg = dto.cargoPriceKg;
+    if (dto.cargoCapacityKg !== undefined) {
+      const usedCargo = (trip.cargoCapacityKg != null && trip.availableCargoKg != null)
+        ? trip.cargoCapacityKg - trip.availableCargoKg
+        : 0;
+      trip.cargoCapacityKg = dto.cargoCapacityKg;
+      trip.availableCargoKg = dto.cargoCapacityKg - usedCargo;
+    }
 
     return this.tripsRepo.save(trip);
   }
@@ -436,14 +575,69 @@ export class TripsService {
     return saved;
   }
 
-  async updateLocation(tripId: string, captainId: string, dto: UpdateLocationDto): Promise<Trip> {
-    const trip = await this.findById(tripId);
+  async updateLocation(tripId: string, captainId: string, dto: UpdateLocationDto): Promise<{ lat: number; lng: number; lastLocationAt: Date; status: string }> {
+    const trip = await this.tripsRepo.findOne({ where: { id: tripId } });
+    if (!trip) throw new NotFoundException('Viagem não encontrada');
     if (trip.captainId !== captainId) {
       throw new ForbiddenException('Apenas o capitão pode atualizar a localização');
     }
-    trip.currentLat = dto.lat;
-    trip.currentLng = dto.lng;
-    return this.tripsRepo.save(trip);
+    const now = new Date();
+    await this.tripsRepo.update(tripId, {
+      currentLat: dto.lat,
+      currentLng: dto.lng,
+      lastLocationAt: now,
+    } as any);
+    return { lat: dto.lat, lng: dto.lng, lastLocationAt: now, status: trip.status };
+  }
+
+  async getLocation(tripId: string): Promise<{ lat: number | null; lng: number | null; lastLocationAt: Date | null; status: string }> {
+    const trip = await this.tripsRepo.findOne({
+      where: { id: tripId },
+      select: ['id', 'currentLat', 'currentLng', 'lastLocationAt', 'status'],
+    });
+    if (!trip) throw new NotFoundException('Viagem não encontrada');
+    return {
+      lat: trip.currentLat ?? null,
+      lng: trip.currentLng ?? null,
+      lastLocationAt: trip.lastLocationAt ?? null,
+      status: trip.status,
+    };
+  }
+
+  async generateCargoManifestPdf(tripId: string, userId: string, userRole: string): Promise<any> {
+    const trip = await this.tripsRepo.findOne({
+      where: { id: tripId },
+      relations: ['captain', 'boat'],
+    });
+    if (!trip) throw new NotFoundException('Viagem não encontrada');
+
+    if (userRole !== 'admin' && trip.captainId !== userId) {
+      throw new ForbiddenException('Apenas o capitão ou admin pode gerar o manifesto');
+    }
+
+    const shipments = await this.shipmentsRepo.find({
+      where: { tripId },
+      order: { createdAt: 'ASC' },
+    });
+
+    return this.pdfService.createCargoManifest({
+      tripId: trip.id,
+      origin: trip.origin || 'N/A',
+      destination: trip.destination || 'N/A',
+      departureAt: trip.departureAt,
+      captainName: (trip.captain as any)?.name || 'Capitão',
+      boatName: (trip.boat as any)?.name || 'Embarcação',
+      shipments: shipments.map(s => ({
+        trackingCode: s.trackingCode,
+        senderName: s.description?.split(' ')[0] || 'Remetente',
+        recipientName: s.recipientName,
+        recipientAddress: s.recipientAddress || '',
+        weight: Number(s.weight) || 0,
+        description: s.description || '',
+        status: s.status,
+        totalPrice: Number(s.totalPrice) || 0,
+      })),
+    });
   }
 
   async getPopularDestinations() {

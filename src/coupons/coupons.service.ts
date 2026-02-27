@@ -5,6 +5,7 @@ import { Coupon, CouponType, CouponApplicability } from './coupon.entity';
 import { CreateCouponDto } from './dto/coupon.dto';
 import { Trip } from '../trips/trip.entity';
 import { Shipment } from '../shipments/shipment.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class CouponsService {
@@ -15,6 +16,7 @@ export class CouponsService {
     private tripsRepo: Repository<Trip>,
     @InjectRepository(Shipment)
     private shipmentsRepo: Repository<Shipment>,
+    private notificationsService: NotificationsService,
   ) {}
 
   async create(dto: CreateCouponDto): Promise<Coupon> {
@@ -36,7 +38,34 @@ export class CouponsService {
       validUntil: dto.validUntil ? new Date(dto.validUntil) : null,
     });
 
-    return this.couponsRepo.save(coupon);
+    const saved = await this.couponsRepo.save(coupon);
+
+    // Notificar todos os usuários (fire-and-forget)
+    this.notifyNewCoupon(saved).catch(() => {});
+
+    return saved;
+  }
+
+  private async notifyNewCoupon(coupon: Coupon): Promise<void> {
+    const discountText = coupon.type === CouponType.PERCENTAGE
+      ? `${Number(coupon.value)}% de desconto`
+      : `R$ ${Number(coupon.value).toFixed(2)} de desconto`;
+
+    const applicableText = coupon.applicableTo === CouponApplicability.TRIPS
+      ? 'em viagens'
+      : coupon.applicableTo === CouponApplicability.SHIPMENTS
+      ? 'em encomendas'
+      : 'em viagens e encomendas';
+
+    await this.notificationsService.broadcast({
+      title: 'Novo cupom disponivel!',
+      body: `Use o codigo ${coupon.code} e ganhe ${discountText} ${applicableText}.`,
+      data: {
+        type: 'new_coupon',
+        couponCode: coupon.code,
+        applicableTo: coupon.applicableTo,
+      },
+    });
   }
 
   async findAll(): Promise<Coupon[]> {

@@ -5,6 +5,7 @@ import {
 import { User } from '../users/user.entity';
 import { Trip } from '../trips/trip.entity';
 import { PaymentMethod } from '../common/enums/payment-method.enum';
+import { PaidBy } from '../common/enums/paid-by.enum';
 
 export enum ShipmentStatus {
   PENDING = 'pending',           // Criada, aguardando pagamento
@@ -40,24 +41,15 @@ export class Shipment {
   description: string;
 
   @Column({ name: 'weight_kg', type: 'decimal', precision: 6, scale: 2, nullable: true })
-  private _weight: number;
+  weightKg: number;
 
-  // Getter e setter para expor como 'weight' na API
+  // Alias 'weight' para compatibilidade com DTO e serializações
   get weight(): number {
-    return this._weight;
+    return this.weightKg;
   }
 
   set weight(value: number) {
-    this._weight = value;
-  }
-
-  // Backward compatibility
-  get weightKg(): number {
-    return this._weight;
-  }
-
-  set weightKg(value: number) {
-    this._weight = value;
+    this.weightKg = Number(value);
   }
 
   // Dimensões em centímetros (para cálculo volumétrico)
@@ -105,6 +97,18 @@ export class Shipment {
     default: PaymentMethod.PIX
   })
   paymentMethod: PaymentMethod;
+
+  @Column({
+    name: 'paid_by',
+    type: 'enum',
+    enum: PaidBy,
+    default: PaidBy.SENDER,
+  })
+  paidBy: PaidBy;
+
+  // ID do utilizador destinatário (preenchido automaticamente se o telefone tiver conta)
+  @Column({ name: 'recipient_user_id', type: 'uuid', nullable: true })
+  recipientUserId: string | null;
 
   @Column({ name: 'qr_code', type: 'text', nullable: true })
   qrCode: string;

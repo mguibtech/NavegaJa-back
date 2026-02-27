@@ -9,6 +9,8 @@ import { GamificationModule } from '../gamification/gamification.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { PdfModule } from '../pdf/pdf.module';
+import { WeatherModule } from '../weather/weather.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     CouponsModule,
     PaymentsModule,
     NotificationsModule,
+    PdfModule,
+    WeatherModule,
   ],
   controllers: [BookingsController],
   providers: [BookingsService],

@@ -89,6 +89,14 @@ export class Booking {
   @Column({ name: 'checked_in_at', type: 'timestamp', nullable: true })
   checkedInAt: Date;
 
+  // ── Milhas resgatadas ──────────────────────────────────────────────────────
+
+  @Column({ name: 'km_redeemed', type: 'int', default: 0 })
+  kmRedeemed: number; // km usados como desconto nesta booking
+
+  @Column({ name: 'km_discount', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  kmDiscount: number; // valor (R$) descontado pelos km
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

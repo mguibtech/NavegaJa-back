@@ -34,4 +34,19 @@ export class GamificationController {
   getLeaderboard(@Query('limit') limit?: number) {
     return this.gamificationService.getLeaderboard(limit || 10);
   }
+
+  @Get('referrals')
+  @ApiOperation({ summary: 'Meu código de indicação e lista de pessoas indicadas' })
+  getReferrals(@Request() req: any) {
+    return this.gamificationService.getReferralStats(req.user.sub);
+  }
+
+  @Get('km-stats')
+  @ApiOperation({
+    summary: 'Meu saldo de km (milhas fluviais) e histórico de transações',
+    description: 'Retorna km acumulados, saldo disponível, quantos blocos de 500 km tem e o desconto máximo disponível (cada bloco = R$25).',
+  })
+  getKmStats(@Request() req: any) {
+    return this.gamificationService.getKmStats(req.user.sub);
+  }
 }

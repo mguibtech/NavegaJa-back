@@ -10,6 +10,7 @@ import { WeatherData } from './weather-data.entity';
 import { Trip, TripStatus } from '../trips/trip.entity';
 import { Booking, BookingStatus } from '../bookings/booking.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { FloodService } from './flood.service';
 import {
   CurrentWeatherDto,
   ForecastDayDto,
@@ -48,17 +49,25 @@ export class WeatherService {
     '14110000': { low: 200,  attention: 1400, alert: 1500, emergency: 1600 },
   };
 
+  private readonly anaProxyUrl: string;
+
   constructor(
     @InjectRepository(WeatherData) private weatherRepo: Repository<WeatherData>,
     @InjectRepository(Trip)        private tripsRepo: Repository<Trip>,
     @InjectRepository(Booking)     private bookingsRepo: Repository<Booking>,
     private configService: ConfigService,
     private notificationsService: NotificationsService,
+    private floodService: FloodService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {
     this.apiKey = this.configService.get<string>('OPENWEATHER_API_KEY') || '';
     if (!this.apiKey) {
       this.logger.warn('⚠️  OPENWEATHER_API_KEY não configurada — usando Open-Meteo como provider principal.');
+    }
+    // ANA_PROXY_URL: Cloudflare Worker proxy (opcional). Se não configurado, tenta ANA direto.
+    this.anaProxyUrl = this.configService.get<string>('ANA_PROXY_URL') || 'https://telemetria.ana.gov.br/Share/DadosHidrometeorologicos.aspx';
+    if (this.configService.get<string>('ANA_PROXY_URL')) {
+      this.logger.log('🌊 ANA: usando proxy Cloudflare Worker');
     }
   }
 
@@ -88,6 +97,25 @@ export class WeatherService {
     return this.getCurrentWeather(region.lat, region.lng, region.name);
   }
 
+  async getRegionForecast(regionKey: string): Promise<WeatherForecastDto> {
+    const region = this.regions[regionKey.toLowerCase() as keyof typeof this.regions];
+    if (!region) throw new Error(`Região "${regionKey}" não encontrada`);
+    return this.getForecast(region.lat, region.lng, region.name);
+  }
+
+  async getRegionAlerts(regionKey: string): Promise<{ region: string; alerts: string[]; isSafe: boolean; safetyScore: number; recommendations: string[] }> {
+    const region = this.regions[regionKey.toLowerCase() as keyof typeof this.regions];
+    if (!region) throw new Error(`Região "${regionKey}" não encontrada`);
+    const safety = await this.evaluateNavigationSafety(region.lat, region.lng);
+    return {
+      region: region.name,
+      alerts: safety.warnings,
+      isSafe: safety.isSafe,
+      safetyScore: safety.score,
+      recommendations: safety.recommendations,
+    };
+  }
+
   async getForecast(lat: number, lng: number, region?: string): Promise<WeatherForecastDto> {
     const cacheKey = `weather:forecast:${lat}:${lng}`;
 
@@ -106,12 +134,16 @@ export class WeatherService {
   }
 
   async evaluateNavigationSafety(lat: number, lng: number): Promise<NavigationSafetyDto> {
-    const weather = await this.getCurrentWeather(lat, lng);
+    const [weather, floodStatus] = await Promise.all([
+      this.getCurrentWeather(lat, lng),
+      this.floodService.getFloodStatus(lat, lng),
+    ]);
 
     const warnings: string[] = [];
     const recommendations: string[] = [];
     let score = 100;
 
+    // ── Condições meteorológicas ──────────────────────────────────────────────
     if (weather.windSpeed > 10) {
       warnings.push('Ventos fortes detectados');
       score -= 30;
@@ -138,12 +170,38 @@ export class WeatherService {
       recommendations.push('NÃO navegue! Aguarde melhora das condições');
     }
 
+    // ── Risco de cheias (Flood Hub) ───────────────────────────────────────────
+    const floodSeverity  = floodStatus.severity;
+    const hasFloodRisk   = floodSeverity !== 'NO_FLOODING';
+
+    if (floodSeverity === 'ABOVE_NORMAL') {
+      warnings.push('Nível fluvial acima do normal');
+      score -= 15;
+      recommendations.push('Atenção redobrada — rio em nível de atenção');
+    } else if (floodSeverity === 'SEVERE') {
+      warnings.push('ALERTA: Cheia severa na área');
+      score -= 30;
+      recommendations.push('Avalie a rota com cuidado — risco de cheia severa');
+    } else if (floodSeverity === 'EXTREME') {
+      warnings.push('PERIGO: Cheia extrema — risco muito alto');
+      score -= 50;
+      recommendations.push('NÃO navegue! Cheia extrema registada na área');
+    }
+
     const isSafe = score >= 60;
     if (isSafe && warnings.length === 0) {
       recommendations.push('Condições favoráveis para navegação');
     }
 
-    return { isSafe, score: Math.max(0, score), warnings, recommendations, weather };
+    return {
+      isSafe,
+      score: Math.max(0, score),
+      warnings,
+      recommendations,
+      weather,
+      floodSeverity,
+      hasFloodRisk,
+    };
   }
 
   async getTripWeather(tripId: string): Promise<TripWeatherDto> {
@@ -230,6 +288,19 @@ export class WeatherService {
 
   // ─── Nível dos rios (ANA) ────────────────────────────────────────────────────
 
+  // Estimativas sazonais (cm) para fallback quando ANA está indisponível.
+  // Baseado em médias históricas por mês — estação chuvosa nov-jun, seca jul-out.
+  private readonly seasonalEstimates: Record<string, number[]> = {
+    // Rio Negro — Manaus: mês 1=jan ... 12=dez
+    '14100000': [2050, 2200, 2350, 2500, 2600, 2550, 2300, 1800, 1200,  900,  950, 1600],
+    // Rio Amazonas — Parintins
+    '13850001': [ 750,  820,  870,  900,  920,  880,  800,  650,  400,  280,  380,  620],
+    // Rio Amazonas — Itacoatiara
+    '14320000': [ 820,  890,  940,  970,  990,  950,  870,  700,  450,  320,  420,  680],
+    // Rio Solimões — Manacapuru
+    '14110000': [1200, 1300, 1400, 1480, 1500, 1450, 1300, 1050,  700,  500,  650, 1000],
+  };
+
   async getRiverLevel(stationCode: string): Promise<RiverLevelDto> {
     const cacheKey   = `river:level:${stationCode}`;
     const cached     = await this.cacheManager.get<RiverLevelDto>(cacheKey);
@@ -237,54 +308,73 @@ export class WeatherService {
 
     const stationInfo = Object.values(this.riverStations).find(s => s.code === stationCode);
 
-    try {
-      const today   = new Date();
-      const dateStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+    // Tenta os últimos 3 dias (ANA publica com atraso de 1-2 dias)
+    for (let daysBack = 0; daysBack <= 3; daysBack++) {
+      try {
+        const date    = new Date();
+        date.setDate(date.getDate() - daysBack);
+        const dateStr = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
 
-      const response = await axios.get(
-        'https://telemetria.ana.gov.br/Share/DadosHidrometeorologicos.aspx',
-        {
-          params: { CodEstacao: stationCode, DataInicio: dateStr, DataFim: dateStr, tipoDados: 3, nivelConsistencia: 1 },
-          timeout: 10000,
-          responseType: 'text',
-        },
-      );
+        const response = await axios.get(
+          this.anaProxyUrl,
+          {
+            params: { CodEstacao: stationCode, DataInicio: dateStr, DataFim: dateStr, tipoDados: 3, nivelConsistencia: 1 },
+            timeout: 8000,
+            responseType: 'text',
+            headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/xml, text/xml' },
+          },
+        );
 
-      const xml          = response.data as string;
-      const levelMatches = xml.match(/<Nivel>([\d.]+)<\/Nivel>/g) ?? [];
-      const dateMatches  = xml.match(/<DataHora>([^<]+)<\/DataHora>/g) ?? [];
+        const xml          = response.data as string;
+        const levelMatches = xml.match(/<Nivel>([\d.]+)<\/Nivel>/g) ?? [];
+        const dateMatches  = xml.match(/<DataHora>([^<]+)<\/DataHora>/g) ?? [];
 
-      const lastLevel = levelMatches.length
-        ? parseFloat(levelMatches[levelMatches.length - 1].replace(/<\/?Nivel>/g, ''))
-        : null;
-      const lastDate = dateMatches.length
-        ? dateMatches[dateMatches.length - 1].replace(/<\/?DataHora>/g, '')
-        : null;
+        const lastLevel = levelMatches.length
+          ? parseFloat(levelMatches[levelMatches.length - 1].replace(/<\/?Nivel>/g, ''))
+          : null;
+        const lastDate = dateMatches.length
+          ? dateMatches[dateMatches.length - 1].replace(/<\/?DataHora>/g, '')
+          : null;
 
-      const result: RiverLevelDto = {
-        station:     stationInfo?.name ?? stationCode,
-        stationCode,
-        river:       stationInfo?.river ?? 'Rio',
-        levelCm:     lastLevel,
-        levelStatus: this.classifyRiverLevel(stationCode, lastLevel),
-        recordedAt:  lastDate,
-        source:      'ANA',
-      };
+        if (lastLevel === null) continue; // tenta o dia anterior
 
-      await this.cacheManager.set(cacheKey, result, 3600 * 1000);
-      return result;
-    } catch (err) {
-      this.logger.warn(`⚠️ ANA indisponível para estação ${stationCode}: ${err.message}`);
-      return {
-        station:     stationInfo?.name ?? stationCode,
-        stationCode,
-        river:       stationInfo?.river ?? 'Rio',
-        levelCm:     null,
-        levelStatus: 'unknown',
-        recordedAt:  null,
-        source:      'ANA',
-      };
+        const result: RiverLevelDto = {
+          station:     stationInfo?.name ?? stationCode,
+          stationCode,
+          river:       stationInfo?.river ?? 'Rio',
+          levelCm:     lastLevel,
+          levelStatus: this.classifyRiverLevel(stationCode, lastLevel),
+          recordedAt:  lastDate,
+          source:      'ANA',
+        };
+
+        await this.cacheManager.set(cacheKey, result, 3600 * 1000);
+        return result;
+      } catch (_err) {
+        // silencioso — tenta próximo dia
+      }
     }
+
+    // Fallback: usa estimativa sazonal quando ANA está indisponível
+    this.logger.warn(`⚠️ ANA indisponível para estação ${stationCode} — usando estimativa sazonal`);
+    const month      = new Date().getMonth(); // 0-based
+    const estimates  = this.seasonalEstimates[stationCode];
+    const levelCm    = estimates ? estimates[month] : null;
+    const now        = new Date();
+    const recordedAt = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} (estimativa)`;
+
+    const result: RiverLevelDto = {
+      station:     stationInfo?.name ?? stationCode,
+      stationCode,
+      river:       stationInfo?.river ?? 'Rio',
+      levelCm,
+      levelStatus: this.classifyRiverLevel(stationCode, levelCm),
+      recordedAt,
+      source:      'estimate',
+    };
+
+    await this.cacheManager.set(cacheKey, result, 3600 * 1000);
+    return result;
   }
 
   async getAllRiverLevels(): Promise<RiverLevelDto[]> {

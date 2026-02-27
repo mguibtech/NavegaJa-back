@@ -61,6 +61,10 @@ export class NavigationSafetyDto {
   warnings: string[];
   recommendations: string[];
   weather: CurrentWeatherDto;
+  /** Severity de cheias na área — 'NO_FLOODING' quando Flood Hub não está activado */
+  floodSeverity: 'NO_FLOODING' | 'ABOVE_NORMAL' | 'SEVERE' | 'EXTREME';
+  /** true quando floodSeverity >= ABOVE_NORMAL */
+  hasFloodRisk: boolean;
 }
 
 export class RiverLevelDto {
@@ -70,7 +74,7 @@ export class RiverLevelDto {
   levelCm: number | null;
   levelStatus: 'low' | 'normal' | 'attention' | 'alert' | 'emergency' | 'unknown';
   recordedAt: string | null;
-  source: 'ANA';
+  source: 'ANA' | 'estimate';
 }
 
 export class TripWeatherDto {

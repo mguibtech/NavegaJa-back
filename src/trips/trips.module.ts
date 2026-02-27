@@ -5,20 +5,24 @@ import { TripsService } from './trips.service';
 import { Trip } from './trip.entity';
 import { Boat } from '../boats/boat.entity';
 import { User } from '../users/user.entity';
+import { Shipment } from '../shipments/shipment.entity';
+import { Favorite } from '../favorites/favorite.entity';
 import { ShipmentsModule } from '../shipments/shipments.module';
 import { SafetyModule } from '../safety/safety.module';
 import { WeatherModule } from '../weather/weather.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { BookingsModule } from '../bookings/bookings.module';
+import { PdfModule } from '../pdf/pdf.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Trip, Boat, User]),
+    TypeOrmModule.forFeature([Trip, Boat, User, Shipment, Favorite]),
     forwardRef(() => ShipmentsModule),
     forwardRef(() => SafetyModule),
     WeatherModule,
     NotificationsModule,
     BookingsModule,
+    PdfModule,
   ],
   controllers: [TripsController],
   providers: [TripsService],

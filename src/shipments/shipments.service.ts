@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as QRCode from 'qrcode';
 import { Shipment, ShipmentStatus } from './shipment.entity';
+import { PaymentMethod } from '../common/enums/payment-method.enum';
+import { PaidBy } from '../common/enums/paid-by.enum';
 import { ShipmentTimeline } from './shipment-timeline.entity';
 import { Trip } from '../trips/trip.entity';
 import { Coupon } from '../coupons/coupon.entity';
@@ -236,11 +238,13 @@ export class ShipmentsService {
     const trackingCode = this.generateTrackingCode();
     const validationCode = this.generateValidationCode();
 
+    const paidBy = dto.paidBy ?? PaidBy.SENDER;
+
     const shipment = this.shipmentsRepo.create({
       senderId,
       tripId: dto.tripId,
       description: dto.description,
-      weight: dto.weight, // Usar 'weight' ao invés de 'weightKg'
+      weightKg: dto.weight,
       length,
       width,
       height,
@@ -250,6 +254,7 @@ export class ShipmentsService {
       recipientAddress: dto.recipientAddress,
       totalPrice: priceCalc.finalPrice,
       paymentMethod: dto.paymentMethod,
+      paidBy,
       trackingCode,
       validationCode,
       status: ShipmentStatus.PENDING,
@@ -280,14 +285,56 @@ export class ShipmentsService {
     saved.qrCode = qrCode;
     await this.shipmentsRepo.update(saved.id, { qrCode });
 
-    // Registra evento inicial
-    await this.createTimelineEvent(
-      saved.id,
-      ShipmentStatus.PENDING,
-      'Encomenda criada e aguardando confirmação de pagamento',
-    );
+    // Evento inicial na timeline
+    const initialEvent = paidBy === PaidBy.RECIPIENT
+      ? 'Encomenda criada — frete a cobrar do destinatário na entrega'
+      : 'Encomenda criada e aguardando confirmação de pagamento';
+    await this.createTimelineEvent(saved.id, ShipmentStatus.PENDING, initialEvent);
+
+    // Notificar destinatário se tiver conta no app (busca por telefone)
+    await this.notifyRecipient(saved, senderId);
 
     return saved;
+  }
+
+  /**
+   * Notifica o destinatário se ele tiver conta no app (lookup por telefone).
+   * Também armazena recipientUserId para notificações futuras.
+   */
+  private async notifyRecipient(shipment: Shipment, senderId: string): Promise<void> {
+    const recipientUser = await this.usersRepo.findOne({
+      where: { phone: shipment.recipientPhone },
+      select: ['id', 'name', 'fcmToken'] as any,
+    });
+
+    if (!recipientUser) return;
+
+    // Guardar ID para notificações futuras (out-for-delivery, etc.)
+    await this.shipmentsRepo.update(shipment.id, { recipientUserId: recipientUser.id });
+    shipment.recipientUserId = recipientUser.id;
+
+    const sender = await this.usersRepo.findOne({
+      where: { id: senderId },
+      select: ['id', 'name'] as any,
+    });
+    const senderName = (sender as any)?.name || 'Alguém';
+    const price = Number(shipment.totalPrice).toFixed(2);
+
+    const body = shipment.paidBy === PaidBy.RECIPIENT
+      ? `${senderName} enviou uma encomenda para você. Valor a pagar na entrega: R$ ${price}`
+      : `${senderName} enviou uma encomenda para você! Rastreie pelo código ${shipment.trackingCode}`;
+
+    await this.notificationsService.sendToUser(recipientUser.id, {
+      title: '📦 Você tem uma encomenda!',
+      body,
+      data: {
+        type: 'shipment_incoming',
+        shipmentId: shipment.id,
+        trackingCode: shipment.trackingCode,
+        paidBy: shipment.paidBy,
+        totalPrice: String(shipment.totalPrice),
+      },
+    });
   }
 
   async findBySender(senderId: string): Promise<Shipment[]> {
@@ -390,9 +437,28 @@ export class ShipmentsService {
   /**
    * Confirmar pagamento (remetente ou admin)
    */
-  async confirmPayment(id: string): Promise<Shipment> {
+  async confirmPayment(id: string, userId: string): Promise<Shipment> {
     const shipment = await this.shipmentsRepo.findOne({ where: { id } });
     if (!shipment) throw new NotFoundException('Encomenda não encontrada');
+
+    // Só o remetente pode confirmar o pagamento
+    if (shipment.senderId !== userId) {
+      throw new ForbiddenException('Acesso negado');
+    }
+
+    // Pagamento em dinheiro é confirmado pelo capitão no momento da coleta
+    if (shipment.paymentMethod === PaymentMethod.CASH) {
+      throw new BadRequestException(
+        'Encomendas com pagamento em dinheiro são confirmadas pelo capitão na coleta',
+      );
+    }
+
+    // Frete a cobrar: destinatário paga na entrega, remetente não confirma pagamento
+    if (shipment.paidBy === PaidBy.RECIPIENT) {
+      throw new BadRequestException(
+        'Esta encomenda é "frete a cobrar" — o pagamento é feito pelo destinatário na entrega',
+      );
+    }
 
     if (shipment.status !== ShipmentStatus.PENDING) {
       throw new BadRequestException('Só é possível confirmar pagamento de encomendas pendentes');
@@ -406,6 +472,37 @@ export class ShipmentsService {
       ShipmentStatus.PAID,
       'Pagamento confirmado. Aguardando coleta pelo capitão.',
     );
+
+    return saved;
+  }
+
+  /**
+   * Confirma pagamento via webhook do gateway (Pix, cartão, etc.)
+   * Chamado pelo sistema, sem verificação de ownership
+   */
+  async confirmPaymentByWebhook(trackingCode: string, gatewayRef?: string): Promise<Shipment> {
+    const shipment = await this.shipmentsRepo.findOne({ where: { trackingCode } });
+    if (!shipment) throw new NotFoundException('Encomenda não encontrada');
+
+    if (shipment.status !== ShipmentStatus.PENDING) {
+      // Idempotente: se já foi pago, retorna sem erro
+      return shipment;
+    }
+
+    shipment.status = ShipmentStatus.PAID;
+    const saved = await this.shipmentsRepo.save(shipment);
+
+    const description = gatewayRef
+      ? `Pagamento confirmado pelo gateway (ref: ${gatewayRef}).`
+      : 'Pagamento confirmado pelo gateway.';
+
+    await this.createTimelineEvent(saved.id, ShipmentStatus.PAID, description);
+
+    await this.notificationsService.sendToUser(saved.senderId, {
+      title: '✅ Pagamento confirmado!',
+      body: `Seu pagamento da encomenda ${saved.trackingCode} foi confirmado.`,
+      data: { type: 'shipment_paid', shipmentId: saved.id, trackingCode: saved.trackingCode },
+    });
 
     return saved;
   }
@@ -442,8 +539,17 @@ export class ShipmentsService {
     }
 
     // Validar status
-    if (shipment.status !== ShipmentStatus.PAID) {
-      throw new BadRequestException('Esta encomenda não está pronta para coleta');
+    // Cash ou frete a cobrar: aceita PENDING (pagamento é feito na entrega/coleta)
+    const isCash = shipment.paymentMethod === PaymentMethod.CASH;
+    const isRecipientPays = shipment.paidBy === PaidBy.RECIPIENT;
+    const validStatuses = (isCash || isRecipientPays)
+      ? [ShipmentStatus.PENDING, ShipmentStatus.PAID]
+      : [ShipmentStatus.PAID];
+
+    if (!validStatuses.includes(shipment.status)) {
+      throw new BadRequestException(
+        'Esta encomenda não está pronta para coleta (pagamento pendente)',
+      );
     }
 
     // Validar código
@@ -511,6 +617,26 @@ export class ShipmentsService {
       data: { type: 'shipment_out_for_delivery', shipmentId: saved.id, trackingCode: saved.trackingCode },
     });
 
+    // Notificar destinatário se tiver conta no app
+    if (saved.recipientUserId) {
+      const price = Number(saved.totalPrice).toFixed(2);
+      const body = saved.paidBy === PaidBy.RECIPIENT
+        ? `Sua encomenda está chegando! Tenha R$ ${price} em mãos para o capitão.`
+        : `Sua encomenda ${saved.trackingCode} está a caminho!`;
+
+      await this.notificationsService.sendToUser(saved.recipientUserId, {
+        title: '🚚 Encomenda a caminho!',
+        body,
+        data: {
+          type: 'shipment_out_for_delivery',
+          shipmentId: saved.id,
+          trackingCode: saved.trackingCode,
+          paidBy: saved.paidBy,
+          totalPrice: String(saved.totalPrice),
+        },
+      });
+    }
+
     return saved;
   }
 
@@ -566,6 +692,15 @@ export class ShipmentsService {
       body: `Sua encomenda ${saved.trackingCode} foi entregue com sucesso!`,
       data: { type: 'shipment_delivered', shipmentId: saved.id, trackingCode: saved.trackingCode },
     });
+
+    // Notificar destinatário (se tiver conta) com confirmação
+    if (saved.recipientUserId) {
+      await this.notificationsService.sendToUser(saved.recipientUserId, {
+        title: '✅ Encomenda recebida!',
+        body: `Entrega da encomenda ${saved.trackingCode} confirmada. Obrigado!`,
+        data: { type: 'shipment_delivered', shipmentId: saved.id, trackingCode: saved.trackingCode },
+      });
+    }
 
     return {
       shipment: saved,

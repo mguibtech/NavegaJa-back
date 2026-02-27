@@ -1,5 +1,6 @@
 import { Controller, Post, Get, Patch, Param, Body, UseGuards, Request, UseInterceptors, UploadedFiles } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -33,6 +34,7 @@ export class ShipmentsController {
   ) {}
 
   @Post('calculate-price')
+  @SkipThrottle({ strict: true })
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Calcular preço da encomenda (com peso volumétrico e cupom)' })
@@ -126,7 +128,7 @@ export class ShipmentsController {
   )
   async create(
     @Request() req: any,
-    @Body() dto: any,
+    @Body() dto: CreateShipmentDto,
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
     const baseUrl = this.configService.get('BASE_URL') || `http://localhost:3000`;
@@ -199,9 +201,31 @@ export class ShipmentsController {
   @Post(':id/confirm-payment')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Confirmar pagamento da encomenda' })
-  confirmPayment(@Param('id') id: string) {
-    return this.shipmentsService.confirmPayment(id);
+  @ApiOperation({ summary: 'Confirmar pagamento da encomenda (Pix/cartão — não usar para dinheiro)' })
+  async confirmPayment(@Param('id') id: string, @Request() req: any) {
+    const shipment = await this.shipmentsService.confirmPayment(id, req.user.sub);
+    return {
+      shipment: this.serializeShipment(shipment),
+      message: 'Pagamento confirmado com sucesso! Aguardando coleta pelo capitão.',
+    };
+  }
+
+  @Post('webhook/payment')
+  @Public()
+  @ApiOperation({ summary: 'Webhook do gateway de pagamento (uso interno)' })
+  async paymentWebhook(
+    @Body('trackingCode') trackingCode: string,
+    @Body('gatewayRef') gatewayRef?: string,
+    @Body('secret') secret?: string,
+  ) {
+    // Valida segredo partilhado para evitar chamadas não autorizadas
+    const expectedSecret = process.env.PAYMENT_WEBHOOK_SECRET;
+    if (expectedSecret && secret !== expectedSecret) {
+      return { received: false, error: 'Unauthorized' };
+    }
+
+    await this.shipmentsService.confirmPaymentByWebhook(trackingCode, gatewayRef);
+    return { received: true };
   }
 
   @Post(':id/collect')

@@ -1,4 +1,5 @@
-import { Controller, Post, Get, Patch, Param, Body, UseGuards, Request, Query } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Param, Body, UseGuards, Request, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto, CancelBookingDto } from './dto/create-booking.dto';
@@ -12,6 +13,15 @@ import { ValidateCouponDto, CalculatePriceDto } from '../coupons/dto/coupon.dto'
 @ApiBearerAuth()
 export class BookingsController {
   constructor(private bookingsService: BookingsService) {}
+
+  @Get(':id/ticket')
+  @ApiOperation({ summary: 'Baixar bilhete de embarque em PDF' })
+  async getTicket(@Param('id') id: string, @Request() req: any, @Res() res: Response) {
+    const pdf = await this.bookingsService.generateTicketPdf(id, req.user.sub, req.user.role);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="bilhete-${id.split('-')[0]}.pdf"` });
+    pdf.pipe(res);
+    pdf.end();
+  }
 
   @Get('my-bookings')
   @ApiOperation({ summary: 'Minhas reservas (passageiro logado)' })
@@ -34,6 +44,7 @@ export class BookingsController {
       dto.tripId,
       dto.quantity,
       dto.couponCode,
+      dto.redeemKm,
     );
   }
 

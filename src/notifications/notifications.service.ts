@@ -107,8 +107,15 @@ export class NotificationsService implements OnModuleInit {
           tokens: batch,
           notification: { title: payload.title, body: payload.body },
           data: payload.data ?? {},
-          android: { priority: 'high' },
-          apns: { payload: { aps: { sound: 'default' } } },
+          android: {
+            priority: 'high',
+            notification: {
+              channelId: 'default',
+              sound: 'default',
+              priority: 'high',
+            },
+          },
+          apns: { payload: { aps: { sound: 'default', badge: 1 } } },
         });
       } catch (error) {
         this.logger.warn(`Erro no batch de notificações: ${error.message}`);
@@ -167,8 +174,15 @@ export class NotificationsService implements OnModuleInit {
           tokens: batch,
           notification: { title: payload.title, body: payload.body },
           data: payload.data ?? {},
-          android: { priority: 'high' },
-          apns: { payload: { aps: { sound: 'default' } } },
+          android: {
+            priority: 'high',
+            notification: {
+              channelId: 'default',
+              sound: 'default',
+              priority: 'high',
+            },
+          },
+          apns: { payload: { aps: { sound: 'default', badge: 1 } } },
         });
         sent += result.successCount;
       } catch (error) {
@@ -188,8 +202,15 @@ export class NotificationsService implements OnModuleInit {
         token,
         notification: { title: payload.title, body: payload.body },
         data: payload.data ?? {},
-        android: { priority: 'high' },
-        apns: { payload: { aps: { sound: 'default' } } },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'default',
+            sound: 'default',
+            priority: 'high',
+          },
+        },
+        apns: { payload: { aps: { sound: 'default', badge: 1 } } },
       });
     } catch (error) {
       // Token inválido/expirado — limpar

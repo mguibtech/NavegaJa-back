@@ -14,6 +14,14 @@ export enum UserRole {
   ADMIN = 'admin',
 }
 
+export enum KycStatus {
+  NONE = 'none',                 // Ainda não enviou documentos
+  PENDING = 'pending',           // Documentos enviados, aguardando revisão
+  UNDER_REVIEW = 'under_review', // Em análise pelo admin
+  APPROVED = 'approved',         // Aprovado — pode criar viagens
+  REJECTED = 'rejected',         // Rejeitado — deve reenviar
+}
+
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
@@ -73,16 +81,25 @@ export class User {
   @Column({ type: 'varchar', length: 2, default: 'AM' })
   state: string;
 
-  // ── Verificação de capitão ─────────────────────────────────────────────────
+  // ── Verificação de capitão (KYC) ──────────────────────────────────────────
 
   @Column({ name: 'is_verified', type: 'boolean', default: false })
   isVerified: boolean; // documentos do capitão verificados pelo admin
+
+  @Column({ name: 'kyc_status', type: 'enum', enum: KycStatus, default: KycStatus.NONE })
+  kycStatus: KycStatus;
 
   @Column({ name: 'license_photo_url', type: 'text', nullable: true })
   licensePhotoUrl: string | null; // habilitação de arrais / CNH náutica
 
   @Column({ name: 'certificate_photo_url', type: 'text', nullable: true })
   certificatePhotoUrl: string | null; // certificado de segurança / habilitação
+
+  @Column({ name: 'selfie_url', type: 'text', nullable: true })
+  selfieUrl: string | null; // selfie segurando o documento
+
+  @Column({ name: 'rnaq_number', type: 'varchar', length: 30, nullable: true })
+  rnaqNumber: string | null; // Registro Nacional de Aquaviário (Marinha do Brasil)
 
   @Column({ name: 'verified_at', type: 'timestamp', nullable: true })
   verifiedAt: Date | null;
@@ -92,6 +109,14 @@ export class User {
 
   @Column({ name: 'fcm_token', type: 'text', nullable: true })
   fcmToken: string | null;
+
+  // ── Sistema de Milhas (km viajados) ──────────────────────────────────────
+
+  @Column({ name: 'total_km_traveled', type: 'int', default: 0 })
+  totalKmTraveled: number; // km acumulados totais (histórico)
+
+  @Column({ name: 'redeemable_km', type: 'int', default: 0 })
+  redeemableKm: number; // km disponíveis para resgate (saldo atual)
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, Between, IsNull } from 'typeorm';
 import { NotificationsService } from '../notifications/notifications.service';
 import * as bcrypt from 'bcryptjs';
-import { User, UserRole } from '../users/user.entity';
+import { User, UserRole, KycStatus } from '../users/user.entity';
 import { Trip, TripStatus } from '../trips/trip.entity';
 import { Shipment, ShipmentStatus } from '../shipments/shipment.entity';
 import { SosAlert, SosAlertStatus } from '../safety/sos-alert.entity';
@@ -1326,9 +1326,10 @@ export class AdminService {
 
     await this.usersRepo.update(id, {
       isVerified: verified,
+      kycStatus: verified ? KycStatus.APPROVED : KycStatus.REJECTED,
       verifiedAt: verified ? new Date() : null,
       rejectionReason: verified ? null : rejectionReason,
-    });
+    } as any);
 
     // Notificação push ao capitão
     if (verified) {

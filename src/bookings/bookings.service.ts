@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, LessThan } from 'typeorm';
 import { Booking, BookingStatus, PaymentStatus, PaymentMethod } from './booking.entity';
@@ -6,10 +6,13 @@ import { Trip, TripStatus } from '../trips/trip.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { GamificationService } from '../gamification/gamification.service';
 import { PointAction } from '../gamification/point-transaction.entity';
+import { KM_BLOCK } from '../gamification/km-transaction.entity';
 import { CouponsService } from '../coupons/coupons.service';
 import { User } from '../users/user.entity';
 import { PixService } from '../payments/pix.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PdfService } from '../pdf/pdf.service';
+import { FloodService } from '../weather/flood.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Injectable()
@@ -25,9 +28,17 @@ export class BookingsService {
     private couponsService: CouponsService,
     private pixService: PixService,
     private notificationsService: NotificationsService,
+    private pdfService: PdfService,
+    private floodService: FloodService,
   ) {}
 
-  async calculatePrice(passengerId: string, tripId: string, quantity: number, couponCode?: string) {
+  async calculatePrice(
+    passengerId: string,
+    tripId: string,
+    quantity: number,
+    couponCode?: string,
+    redeemKm?: number,
+  ) {
     const trip = await this.tripsRepo.findOne({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
 
@@ -39,6 +50,7 @@ export class BookingsService {
     let tripDiscount = 0;
     let couponDiscount = 0;
     let loyaltyDiscount = 0;
+    let kmDiscount = 0;
 
     // 1. Desconto da viagem (capitão)
     if (trip.discount > 0) {
@@ -58,14 +70,30 @@ export class BookingsService {
 
     const priceAfterCoupon = priceAfterTripDiscount - couponDiscount;
 
-    // 3. Desconto de gamificação
+    // 3. Desconto de gamificação (nível de fidelidade)
     const userDiscount = await this.gamificationService.getUserDiscount(passengerId);
     if (userDiscount > 0) {
       loyaltyDiscount = (priceAfterCoupon * userDiscount) / 100;
     }
 
-    const finalPrice = priceAfterCoupon - loyaltyDiscount;
-    const totalDiscount = tripDiscount + couponDiscount + loyaltyDiscount;
+    const priceAfterLoyalty = priceAfterCoupon - loyaltyDiscount;
+
+    // 4. Desconto de km (milhas fluviais) — cada bloco de 500 km = R$25
+    if (redeemKm && redeemKm > 0) {
+      if (redeemKm % KM_BLOCK !== 0) {
+        throw new BadRequestException(`Km deve ser múltiplo de ${KM_BLOCK}. Ex: 500, 1000, 1500...`);
+      }
+      if (user.redeemableKm < redeemKm) {
+        throw new BadRequestException(
+          `Km insuficiente. Você tem ${user.redeemableKm} km disponíveis.`,
+        );
+      }
+      kmDiscount = this.gamificationService.calcKmDiscount(redeemKm);
+      kmDiscount = Math.min(kmDiscount, priceAfterLoyalty); // não pode exceder o preço
+    }
+
+    const finalPrice = priceAfterLoyalty - kmDiscount;
+    const totalDiscount = tripDiscount + couponDiscount + loyaltyDiscount + kmDiscount;
 
     return {
       basePrice,
@@ -76,12 +104,16 @@ export class BookingsService {
       loyaltyDiscount,
       loyaltyDiscountPercent: userDiscount,
       loyaltyLevel: user.level,
+      kmDiscount,
+      kmRedeemed: redeemKm || 0,
+      redeemableKm: user.redeemableKm,
       totalDiscount,
       finalPrice: Math.max(0, finalPrice),
       discountsApplied: [
         trip.discount > 0 && { type: 'trip', label: 'Promoção Especial', percent: trip.discount, amount: tripDiscount },
         couponData && { type: 'coupon', code: couponData.code, label: couponData.description || 'Cupom', amount: couponDiscount },
         userDiscount > 0 && { type: 'loyalty', level: user.level, percent: userDiscount, amount: loyaltyDiscount },
+        kmDiscount > 0 && { type: 'km', label: `${redeemKm} Milhas Fluviais`, amount: kmDiscount },
       ].filter(Boolean),
     };
   }
@@ -95,8 +127,22 @@ export class BookingsService {
       throw new BadRequestException(`Apenas ${trip.availableSeats} assentos disponíveis`);
     }
 
-    // Calcular preço com descontos
-    const priceBreakdown = await this.calculatePrice(passengerId, dto.tripId, quantity, dto.couponCode);
+    // Verificar se já existe booking ativo deste passageiro nesta viagem
+    const existingBooking = await this.bookingsRepo.findOne({
+      where: {
+        passengerId,
+        tripId: dto.tripId,
+        status: In([BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]),
+      },
+    });
+    if (existingBooking) {
+      throw new ConflictException(
+        'Você já possui uma reserva ativa para esta viagem. Para alterar o número de assentos, cancele a reserva existente e crie uma nova.',
+      );
+    }
+
+    // Calcular preço com descontos (inclui km se solicitado)
+    const priceBreakdown = await this.calculatePrice(passengerId, dto.tripId, quantity, dto.couponCode, dto.redeemKm);
     const totalPrice = priceBreakdown.finalPrice;
 
     // Determinar status inicial baseado no método de pagamento
@@ -125,6 +171,8 @@ export class BookingsService {
       paymentMethod: dto.paymentMethod,
       status: initialStatus,
       paymentStatus: initialPaymentStatus,
+      kmRedeemed: priceBreakdown.kmRedeemed,
+      kmDiscount: priceBreakdown.kmDiscount,
     });
 
     // Salva o booking primeiro para gerar o ID
@@ -158,6 +206,11 @@ export class BookingsService {
       await this.tripsRepo.save(trip);
     }
 
+    // Debitar km se foram resgatados
+    if (priceBreakdown.kmRedeemed > 0) {
+      await this.gamificationService.deductKm(passengerId, priceBreakdown.kmRedeemed, saved.id);
+    }
+
     // Incrementar uso do cupom se foi aplicado
     if (dto.couponCode && priceBreakdown.couponDiscount > 0) {
       const coupon = await this.couponsService.findByCode(dto.couponCode);
@@ -181,6 +234,19 @@ export class BookingsService {
 
     // Adicionar breakdown de preços na resposta
     (saved as any).priceBreakdown = priceBreakdown;
+
+    // Adicionar aviso de cheia (informativo — não bloqueia a reserva)
+    let floodWarning = false;
+    let floodSeverity = 'NO_FLOODING';
+    try {
+      const flood = await this.floodService.getFloodStatus(-3.119, -60.0217, 100);
+      floodSeverity = flood.severity;
+      floodWarning = flood.severity === 'SEVERE' || flood.severity === 'EXTREME';
+    } catch (_) {
+      // Erro na API de cheias não bloqueia a reserva
+    }
+    (saved as any).floodWarning = floodWarning;
+    (saved as any).floodSeverity = floodSeverity;
 
     return saved;
   }
@@ -366,6 +432,11 @@ export class BookingsService {
 
     const saved = await this.bookingsRepo.save(booking);
 
+    // Devolver km se foram resgatados nesta booking
+    if (booking.kmRedeemed > 0) {
+      await this.gamificationService.refundKm(booking.passengerId, booking.kmRedeemed, booking.id);
+    }
+
     // Notificar passageiro
     await this.notificationsService.sendToUser(userId, {
       title: '❌ Reserva cancelada',
@@ -377,7 +448,7 @@ export class BookingsService {
   }
 
   async complete(bookingId: string): Promise<Booking> {
-    const booking = await this.findById(bookingId);
+    const booking = await this.findById(bookingId); // já carrega trip.route
     if (booking.status !== BookingStatus.CHECKED_IN) {
       throw new BadRequestException('Reserva precisa estar em check-in para ser concluída');
     }
@@ -397,6 +468,15 @@ export class BookingsService {
       booking.passengerId,
       booking.id,
     );
+
+    // Converte indicação pendente (dá 50pts ao quem indicou este passageiro)
+    await this.gamificationService.convertReferral(booking.passengerId);
+
+    // Credita km (milhas fluviais) com base na distância da rota
+    const distanceKm = Math.round(Number((booking.trip as any)?.route?.distanceKm) || 0);
+    if (distanceKm > 0) {
+      await this.gamificationService.creditKm(booking.passengerId, distanceKm, booking.id);
+    }
 
     return saved;
   }
@@ -493,6 +573,7 @@ export class BookingsService {
         tripId,
         status: In([BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]),
       },
+      relations: ['trip', 'trip.route'],
     });
 
     for (const booking of bookings) {
@@ -509,7 +590,56 @@ export class BookingsService {
         booking.passengerId,
         booking.id,
       );
+
+      // Creditar km da viagem
+      const distanceKm = Math.round(Number((booking.trip as any)?.route?.distanceKm) || 0);
+      if (distanceKm > 0) {
+        await this.gamificationService.creditKm(booking.passengerId, distanceKm, booking.id);
+      }
     }
+  }
+
+  /**
+   * Gera bilhete de embarque em PDF
+   */
+  async generateTicketPdf(bookingId: string, userId: string, userRole: string): Promise<any> {
+    const booking = await this.bookingsRepo.findOne({
+      where: { id: bookingId },
+      relations: ['trip', 'trip.boat', 'trip.captain', 'passenger'],
+    });
+    if (!booking) throw new NotFoundException('Reserva não encontrada');
+
+    // Apenas passenger, captain da viagem ou admin
+    if (
+      userRole !== 'admin' &&
+      booking.passengerId !== userId &&
+      booking.trip?.captainId !== userId
+    ) {
+      throw new ForbiddenException('Acesso negado ao bilhete');
+    }
+
+    const trip = booking.trip;
+    const passenger = booking.passenger;
+    const captain = trip?.captain;
+    const boat = trip?.boat;
+
+    return this.pdfService.createTicket({
+      bookingId: booking.id,
+      passengerName: passenger?.name || 'Passageiro',
+      origin: trip?.origin || 'N/A',
+      destination: trip?.destination || 'N/A',
+      departureAt: trip?.departureAt || new Date(),
+      estimatedArrivalAt: trip?.estimatedArrivalAt || null,
+      captainName: captain?.name || 'Capitão',
+      captainRating: Number(captain?.rating) || 5.0,
+      boatName: boat?.name || 'Embarcação',
+      boatType: (boat as any)?.type || '',
+      seats: booking.seats,
+      totalPrice: Number(booking.totalPrice),
+      paymentStatus: booking.paymentStatus,
+      qrCodeCheckin: booking.qrCodeCheckin,
+      createdAt: booking.createdAt,
+    });
   }
 
   /**

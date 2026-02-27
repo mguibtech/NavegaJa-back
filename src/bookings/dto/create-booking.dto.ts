@@ -26,6 +26,16 @@ export class CreateBookingDto {
   @IsOptional()
   @IsString()
   couponCode?: string;
+
+  @ApiProperty({
+    example: 1000,
+    required: false,
+    description: 'Km a resgatar como desconto (múltiplo de 500). Cada 500 km = R$25 de desconto.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  redeemKm?: number;
 }
 
 export class CancelBookingDto {

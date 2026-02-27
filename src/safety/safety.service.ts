@@ -5,7 +5,9 @@ import { EmergencyContact, EmergencyServiceType } from './emergency-contact.enti
 import { SafetyChecklist } from './safety-checklist.entity';
 import { SosAlert, SosAlertStatus, SosAlertType } from './sos-alert.entity';
 import { Trip } from '../trips/trip.entity';
+import { User, UserRole } from '../users/user.entity';
 import { WeatherService } from '../weather/weather.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class SafetyService {
@@ -18,7 +20,10 @@ export class SafetyService {
     private sosAlertsRepo: Repository<SosAlert>,
     @InjectRepository(Trip)
     private tripsRepo: Repository<Trip>,
+    @InjectRepository(User)
+    private usersRepo: Repository<User>,
     private weatherService: WeatherService,
+    private notificationsService: NotificationsService,
   ) {}
 
   // ==================== CONTATOS DE EMERGÊNCIA ====================
@@ -193,7 +198,27 @@ export class SafetyService {
       status: SosAlertStatus.ACTIVE,
     });
 
-    return this.sosAlertsRepo.save(alert);
+    const saved = await this.sosAlertsRepo.save(alert);
+
+    // Notificar todos os admins ativos com FCM token
+    try {
+      const admins = await this.usersRepo.find({
+        where: { role: UserRole.ADMIN, isActive: true },
+        select: ['id', 'fcmToken'],
+      });
+      const adminIds = admins.filter(a => a.fcmToken).map(a => a.id);
+      if (adminIds.length > 0) {
+        await this.notificationsService.sendToUsers(adminIds, {
+          title: '🆘 ALERTA SOS!',
+          body: `Emergência do tipo "${data.type}" acionada${data.location ? ` em: ${data.location}` : ''}`,
+          data: { type: 'sos_alert', alertId: saved.id, alertType: data.type },
+        });
+      }
+    } catch {
+      // Não falhar a requisição se push falhar
+    }
+
+    return saved;
   }
 
   /**

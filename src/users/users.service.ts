@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User, UserRole } from './user.entity';
+import { User, UserRole, KycStatus } from './user.entity';
 import { Review, ReviewType } from '../reviews/review.entity';
 import { Trip } from '../trips/trip.entity';
 
@@ -55,6 +55,66 @@ export class UsersService {
 
   async updateRating(captainId: string, newRating: number): Promise<void> {
     await this.usersRepo.update(captainId, { rating: newRating });
+  }
+
+  // ── KYC — Verificação de Identidade do Capitão ─────────────────────────────
+
+  async submitKyc(userId: string, data: {
+    selfieUrl: string;
+    licensePhotoUrl: string;
+    rnaqNumber?: string;
+    certificatePhotoUrl?: string;
+  }): Promise<{ kycStatus: KycStatus; message: string }> {
+    const user = await this.usersRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+    if (user.role !== UserRole.CAPTAIN) {
+      throw new ForbiddenException('Somente capitães podem enviar documentos KYC');
+    }
+    if (user.kycStatus === KycStatus.UNDER_REVIEW) {
+      throw new BadRequestException('Seus documentos já estão em análise. Aguarde a revisão do admin.');
+    }
+
+    await this.usersRepo.update(userId, {
+      selfieUrl: data.selfieUrl,
+      licensePhotoUrl: data.licensePhotoUrl,
+      rnaqNumber: data.rnaqNumber || null,
+      certificatePhotoUrl: data.certificatePhotoUrl || null,
+      kycStatus: KycStatus.UNDER_REVIEW,
+      isVerified: false,
+      rejectionReason: null,
+    } as any);
+
+    return {
+      kycStatus: KycStatus.UNDER_REVIEW,
+      message: 'Documentos enviados com sucesso. Um administrador irá analisá-los em breve.',
+    };
+  }
+
+  async getKycStatus(userId: string): Promise<{
+    kycStatus: KycStatus;
+    isVerified: boolean;
+    rejectionReason: string | null;
+    selfieUrl: string | null;
+    licensePhotoUrl: string | null;
+    certificatePhotoUrl: string | null;
+    rnaqNumber: string | null;
+    verifiedAt: Date | null;
+  }> {
+    const user = await this.usersRepo.findOne({
+      where: { id: userId },
+      select: ['id', 'kycStatus', 'isVerified', 'rejectionReason', 'selfieUrl', 'licensePhotoUrl', 'certificatePhotoUrl', 'rnaqNumber', 'verifiedAt'],
+    });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+    return {
+      kycStatus: user.kycStatus,
+      isVerified: user.isVerified,
+      rejectionReason: user.rejectionReason,
+      selfieUrl: user.selfieUrl,
+      licensePhotoUrl: user.licensePhotoUrl,
+      certificatePhotoUrl: user.certificatePhotoUrl,
+      rnaqNumber: user.rnaqNumber,
+      verifiedAt: user.verifiedAt,
+    };
   }
 
   // ── Perfil completo do Capitão ──────────────────────────────────────────────

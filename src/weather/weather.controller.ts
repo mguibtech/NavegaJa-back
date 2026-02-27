@@ -2,11 +2,15 @@ import { Controller, Get, Query, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
 import { WeatherService } from './weather.service';
+import { FloodService } from './flood.service';
 
 @ApiTags('weather')
 @Controller('weather')
 export class WeatherController {
-  constructor(private readonly weatherService: WeatherService) {}
+  constructor(
+    private readonly weatherService: WeatherService,
+    private readonly floodService: FloodService,
+  ) {}
 
   @Get('current')
   @Public()
@@ -23,6 +27,29 @@ export class WeatherController {
     @Query('region') region?: string,
   ) {
     return this.weatherService.getCurrentWeather(parseFloat(lat), parseFloat(lng), region);
+  }
+
+  @Get('region/:regionKey/forecast')
+  @Public()
+  @ApiOperation({
+    summary: 'Previsão de 7 dias de região predefinida',
+    description: 'Regiões disponíveis: manaus, parintins, santarem, itacoatiara, manacapuru',
+  })
+  @ApiParam({ name: 'regionKey', example: 'manaus' })
+  @ApiQuery({ name: 'days', required: false, example: 5, description: 'Número de dias (máx 7, padrão 7)' })
+  async getRegionForecast(@Param('regionKey') regionKey: string) {
+    return this.weatherService.getRegionForecast(regionKey);
+  }
+
+  @Get('region/:regionKey/alerts')
+  @Public()
+  @ApiOperation({
+    summary: 'Alertas climáticos de região predefinida',
+    description: 'Retorna avisos de segurança para navegação na região',
+  })
+  @ApiParam({ name: 'regionKey', example: 'manaus' })
+  async getRegionAlerts(@Param('regionKey') regionKey: string) {
+    return this.weatherService.getRegionAlerts(regionKey);
   }
 
   @Get('region/:regionKey')
@@ -131,5 +158,106 @@ export class WeatherController {
   @ApiOperation({ summary: 'Listar regiões predefinidas disponíveis' })
   getAvailableRegions() {
     return this.weatherService.getAvailableRegions();
+  }
+
+  // ─── Flood Hub ─────────────────────────────────────────────────────────────
+
+  @Get('flood/status')
+  @Public()
+  @ApiOperation({
+    summary: 'Status de cheia por área',
+    description:
+      'Retorna severity (NO_FLOODING | ABOVE_NORMAL | SEVERE | EXTREME) e gauges na área. ' +
+      'source="mock" quando FLOOD_HUB_API_KEY não está configurada. Cache 15 min.',
+  })
+  @ApiQuery({ name: 'lat',      required: true,  example: -3.119  })
+  @ApiQuery({ name: 'lng',      required: true,  example: -60.0217 })
+  @ApiQuery({ name: 'radiusKm', required: false, example: 50, description: 'Raio em km (padrão 50)' })
+  async getFloodStatus(
+    @Query('lat')      lat:      string,
+    @Query('lng')      lng:      string,
+    @Query('radiusKm') radiusKm?: string,
+  ) {
+    return this.floodService.getFloodStatus(
+      parseFloat(lat),
+      parseFloat(lng),
+      radiusKm ? parseFloat(radiusKm) : 50,
+    );
+  }
+
+  @Get('flood/gauge/:gaugeId/model')
+  @Public()
+  @ApiOperation({
+    summary: 'Limiares de uma estação fluviométrica (metros)',
+    description:
+      'Retorna warningLevel, dangerLevel e extremeDangerLevel em metros. ' +
+      'Útil para mostrar referência no RiverDetailModal do app. Cache 1h.',
+  })
+  @ApiParam({ name: 'gaugeId', description: 'ID da estação Flood Hub', example: 'hybas_1120584700' })
+  async getGaugeModel(@Param('gaugeId') gaugeId: string) {
+    return this.floodService.getGaugeModel(gaugeId);
+  }
+
+  @Get('flood/gauge/:gaugeId/forecast')
+  @Public()
+  @ApiOperation({
+    summary: 'Previsão hidrológica 7 dias de uma estação',
+    description:
+      'Série temporal horária com nível (metros) e severity para os próximos dias. ' +
+      'source="mock" com NO_FLOODING quando API não disponível. Cache 2h.',
+  })
+  @ApiParam({ name: 'gaugeId', description: 'ID da estação Flood Hub' })
+  @ApiQuery({ name: 'days', required: false, example: 7, description: 'Número de dias (padrão 7, máx 7)' })
+  async getGaugeForecast(
+    @Param('gaugeId') gaugeId: string,
+    @Query('days')    days?: string,
+  ) {
+    const daysNum = days ? Math.min(parseInt(days, 10) || 7, 7) : 7;
+    return this.floodService.getGaugeForecast(gaugeId, daysNum);
+  }
+
+  @Get('flood/events')
+  @Public()
+  @ApiOperation({
+    summary: 'Eventos de cheia significativos e severos na área',
+    description:
+      'Inclui população afectada e área em km². Retorna [] quando API não disponível. Cache 30 min.',
+  })
+  @ApiQuery({ name: 'lat',      required: true,  example: -3.119   })
+  @ApiQuery({ name: 'lng',      required: true,  example: -60.0217  })
+  @ApiQuery({ name: 'radiusKm', required: false, example: 500, description: 'Raio em km (padrão 500)' })
+  async getFloodEvents(
+    @Query('lat')      lat:      string,
+    @Query('lng')      lng:      string,
+    @Query('radiusKm') radiusKm?: string,
+  ) {
+    return this.floodService.getFloodEvents(
+      parseFloat(lat),
+      parseFloat(lng),
+      radiusKm ? parseFloat(radiusKm) : 500,
+    );
+  }
+
+  @Get('flood/inundation')
+  @Public()
+  @ApiOperation({
+    summary: 'Mapa de inundação — polígonos HIGH/MEDIUM/LOW e KML',
+    description:
+      'Polígonos de risco de inundação para overlay no mapa de navegação. ' +
+      'O campo kml é uma string KML pronta para sobrepor em MapView. Cache 30 min.',
+  })
+  @ApiQuery({ name: 'lat',      required: true,  example: -3.119   })
+  @ApiQuery({ name: 'lng',      required: true,  example: -60.0217  })
+  @ApiQuery({ name: 'radiusKm', required: false, example: 50 })
+  async getInundationMap(
+    @Query('lat')      lat:      string,
+    @Query('lng')      lng:      string,
+    @Query('radiusKm') radiusKm?: string,
+  ) {
+    return this.floodService.getInundationMap(
+      parseFloat(lat),
+      parseFloat(lng),
+      radiusKm ? parseFloat(radiusKm) : 50,
+    );
   }
 }
