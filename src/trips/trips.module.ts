@@ -13,6 +13,7 @@ import { WeatherModule } from '../weather/weather.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { BookingsModule } from '../bookings/bookings.module';
 import { PdfModule } from '../pdf/pdf.module';
+import { BoatStaffModule } from '../boat-staff/boat-staff.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { PdfModule } from '../pdf/pdf.module';
     NotificationsModule,
     BookingsModule,
     PdfModule,
+    BoatStaffModule,
   ],
   controllers: [TripsController],
   providers: [TripsService],

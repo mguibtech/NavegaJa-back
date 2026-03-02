@@ -63,18 +63,18 @@ export class BookingsController {
 
   @Get('trip/:tripId')
   @UseGuards(RolesGuard)
-  @Roles('captain')
-  @ApiOperation({ summary: 'Passageiros de uma viagem (captain)' })
+  @Roles('captain', 'boat_manager')
+  @ApiOperation({ summary: 'Passageiros de uma viagem (captain ou boat_manager)' })
   findByTrip(@Param('tripId') tripId: string) {
     return this.bookingsService.findByTrip(tripId);
   }
 
   @Post(':id/confirm-payment')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'captain')
+  @Roles('admin', 'captain', 'boat_manager')
   @ApiOperation({
     summary: 'Confirmar pagamento PIX manualmente',
-    description: 'Admin ou capitão confirma que recebeu o pagamento PIX',
+    description: 'Admin, capitão ou boat_manager confirma que recebeu o pagamento PIX',
   })
   confirmPayment(@Param('id') id: string, @Request() req: any) {
     return this.bookingsService.confirmPayment(id, req.user.sub, req.user.role);
@@ -97,16 +97,16 @@ export class BookingsController {
 
   @Post(':id/checkin')
   @UseGuards(RolesGuard)
-  @Roles('captain')
-  @ApiOperation({ summary: 'Fazer check-in (captain only)' })
+  @Roles('captain', 'boat_manager')
+  @ApiOperation({ summary: 'Fazer check-in (captain ou boat_manager)' })
   checkin(@Param('id') id: string) {
     return this.bookingsService.checkin(id);
   }
 
   @Patch(':id/complete')
   @UseGuards(RolesGuard)
-  @Roles('captain')
-  @ApiOperation({ summary: 'Concluir viagem do passageiro (captain)' })
+  @Roles('captain', 'boat_manager')
+  @ApiOperation({ summary: 'Concluir viagem do passageiro (captain ou boat_manager)' })
   complete(@Param('id') id: string) {
     return this.bookingsService.complete(id);
   }

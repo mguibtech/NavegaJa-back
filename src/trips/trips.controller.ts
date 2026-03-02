@@ -56,22 +56,25 @@ export class TripsController {
 
   @Get('captain/my-trips')
   @UseGuards(RolesGuard)
-  @Roles('captain')
-  @ApiOperation({ summary: 'Viagens do capitão logado' })
+  @Roles('captain', 'boat_manager')
+  @ApiOperation({ summary: 'Viagens do capitão logado (ou todos os barcos geridos pelo boat_manager)' })
   myTrips(@Request() req: any) {
+    if (req.user.role === 'boat_manager') {
+      return this.tripsService.findByManagedBoats(req.user.sub);
+    }
     return this.tripsService.findByCaptain(req.user.sub);
   }
 
   @Get(':id/manage')
   @UseGuards(RolesGuard)
-  @Roles('captain')
+  @Roles('captain', 'boat_manager')
   @ApiOperation({
-    summary: 'Dados de gestão da viagem (captain only)',
+    summary: 'Dados de gestão da viagem (captain ou boat_manager)',
     description: 'Retorna passageiros e encomendas da viagem para o ecrã "Gerenciar Viagem". Inclui validationCode das encomendas para o capitão confirmar coleta/entrega.',
   })
   @ApiParam({ name: 'id', description: 'UUID da viagem' })
   manageTrip(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.tripsService.findByIdForCaptain(id, req.user.sub);
+    return this.tripsService.findByIdForCaptain(id, req.user.sub, req.user.role);
   }
 
   @Get(':id/location')
@@ -84,7 +87,7 @@ export class TripsController {
 
   @Get(':id/cargo-manifest')
   @UseGuards(RolesGuard)
-  @Roles('captain', 'admin')
+  @Roles('captain', 'admin', 'boat_manager')
   @ApiOperation({ summary: 'Manifesto de carga da viagem em PDF' })
   @ApiParam({ name: 'id', description: 'UUID da viagem' })
   async getCargoManifest(
@@ -108,33 +111,33 @@ export class TripsController {
 
   @Post()
   @UseGuards(RolesGuard)
-  @Roles('captain')
-  @ApiOperation({ summary: 'Criar nova viagem (captain only)' })
+  @Roles('captain', 'boat_manager')
+  @ApiOperation({ summary: 'Criar nova viagem (captain ou boat_manager)' })
   create(@Request() req: any, @Body() dto: CreateTripDto) {
-    return this.tripsService.create(req.user.sub, dto);
+    return this.tripsService.create(req.user.sub, dto, req.user.role);
   }
 
   @Put(':id')
   @UseGuards(RolesGuard)
-  @Roles('captain')
-  @ApiOperation({ summary: 'Atualizar viagem (captain only)' })
+  @Roles('captain', 'boat_manager')
+  @ApiOperation({ summary: 'Atualizar viagem (captain ou boat_manager)' })
   @ApiParam({ name: 'id', description: 'UUID da viagem' })
   update(@Param('id', ParseUUIDPipe) id: string, @Request() req: any, @Body() dto: CreateTripDto) {
-    return this.tripsService.update(id, req.user.sub, dto);
+    return this.tripsService.update(id, req.user.sub, dto, req.user.role);
   }
 
   @Delete(':id')
   @UseGuards(RolesGuard)
-  @Roles('captain')
-  @ApiOperation({ summary: 'Deletar viagem (captain only)' })
+  @Roles('captain', 'boat_manager')
+  @ApiOperation({ summary: 'Deletar viagem (captain ou boat_manager)' })
   @ApiParam({ name: 'id', description: 'UUID da viagem' })
   delete(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
-    return this.tripsService.delete(id, req.user.sub);
+    return this.tripsService.delete(id, req.user.sub, req.user.role);
   }
 
   @Patch(':id/status')
   @UseGuards(RolesGuard)
-  @Roles('captain')
+  @Roles('captain', 'boat_manager')
   @ApiOperation({ summary: 'Atualizar status da viagem' })
   @ApiParam({ name: 'id', description: 'UUID da viagem' })
   updateStatus(
@@ -142,12 +145,12 @@ export class TripsController {
     @Request() req: any,
     @Body() dto: UpdateTripStatusDto,
   ) {
-    return this.tripsService.updateStatus(id, req.user.sub, dto);
+    return this.tripsService.updateStatus(id, req.user.sub, dto, req.user.role);
   }
 
   @Patch(':id/location')
   @UseGuards(RolesGuard)
-  @Roles('captain')
+  @Roles('captain', 'boat_manager')
   @ApiOperation({ summary: 'Atualizar posição GPS' })
   @ApiParam({ name: 'id', description: 'UUID da viagem' })
   updateLocation(
@@ -155,6 +158,6 @@ export class TripsController {
     @Request() req: any,
     @Body() dto: UpdateLocationDto,
   ) {
-    return this.tripsService.updateLocation(id, req.user.sub, dto);
+    return this.tripsService.updateLocation(id, req.user.sub, dto, req.user.role);
   }
 }

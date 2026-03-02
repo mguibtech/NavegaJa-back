@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual, Between } from 'typeorm';
+import { Repository, MoreThanOrEqual, Between, In } from 'typeorm';
 import { Trip, TripStatus } from './trip.entity';
 import { CreateTripDto, UpdateTripStatusDto, UpdateLocationDto } from './dto/trip.dto';
 import { ShipmentsService } from '../shipments/shipments.service';
@@ -11,6 +11,7 @@ import { FloodService } from '../weather/flood.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { BookingsService } from '../bookings/bookings.service';
 import { PdfService } from '../pdf/pdf.service';
+import { BoatStaffService } from '../boat-staff/boat-staff.service';
 import { Boat } from '../boats/boat.entity';
 import { User } from '../users/user.entity';
 import { Shipment } from '../shipments/shipment.entity';
@@ -39,23 +40,28 @@ export class TripsService {
     private notificationsService: NotificationsService,
     private bookingsService: BookingsService,
     private pdfService: PdfService,
+    private boatStaffService: BoatStaffService,
   ) {}
 
-  async create(captainId: string, dto: CreateTripDto): Promise<Trip> {
+  async create(userId: string, dto: CreateTripDto, role?: string): Promise<Trip> {
+    // Alias para compatibilidade interna (trip.captainId = quem criou)
+    const captainId = userId;
     const departureAt = new Date(dto.departureTime);
     const estimatedArrivalAt = new Date(dto.arrivalTime);
 
     // ========== VALIDAÇÕES CRÍTICAS ==========
 
-    // 0. Capitão deve ter documentação verificada pelo admin
-    const captain = await this.usersRepo.findOne({
-      where: { id: captainId },
-      select: ['id', 'isVerified'],
-    });
-    if (!captain?.isVerified) {
-      throw new ForbiddenException(
-        'Conta não verificada. Envie sua habilitação náutica e aguarde a aprovação do NavegaJá.',
-      );
+    // 0. Capitão deve ter documentação verificada pelo admin (boat_manager isento — não é capitão)
+    if (role !== 'boat_manager') {
+      const captain = await this.usersRepo.findOne({
+        where: { id: captainId },
+        select: ['id', 'isVerified'],
+      });
+      if (!captain?.isVerified) {
+        throw new ForbiddenException(
+          'Conta não verificada. Envie sua habilitação náutica e aguarde a aprovação do NavegaJá.',
+        );
+      }
     }
 
     // 1. Origem e destino não podem ser iguais
@@ -77,15 +83,24 @@ export class TripsService {
       );
     }
 
-    // 2. Validar embarcação (deve existir e pertencer ao capitão)
-    const boat = await this.boatsRepo.findOne({
-      where: { id: dto.boatId, ownerId: captainId },
-    });
-
-    if (!boat) {
-      throw new NotFoundException(
-        'Embarcação não encontrada ou você não é o proprietário desta embarcação.',
-      );
+    // 2. Validar embarcação (deve existir e o utilizador ter acesso)
+    let boat: Boat;
+    if (role === 'boat_manager') {
+      const foundBoat = await this.boatsRepo.findOne({ where: { id: dto.boatId } });
+      if (!foundBoat) throw new NotFoundException('Embarcação não encontrada');
+      const staff = await this.boatStaffService.canManageBoat(captainId, dto.boatId);
+      if (!staff?.canCreateTrips) {
+        throw new ForbiddenException('Sem permissão para criar viagens nesta embarcação');
+      }
+      boat = foundBoat;
+    } else {
+      const foundBoat = await this.boatsRepo.findOne({ where: { id: dto.boatId, ownerId: captainId } });
+      if (!foundBoat) {
+        throw new NotFoundException(
+          'Embarcação não encontrada ou você não é o proprietário desta embarcação.',
+        );
+      }
+      boat = foundBoat;
     }
 
     // 2a. Embarcação deve estar aprovada pelo admin
@@ -352,12 +367,10 @@ export class TripsService {
    * Endpoint de gestão do capitão — retorna bookings + shipments com todos os dados necessários.
    * Garante que o capitão só acede à sua própria viagem.
    */
-  async findByIdForCaptain(id: string, captainId: string): Promise<any> {
+  async findByIdForCaptain(id: string, userId: string, role?: string): Promise<any> {
     const trip = await this.tripsRepo.findOne({ where: { id }, relations: ['boat'] });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
-    if (trip.captainId !== captainId) {
-      throw new ForbiddenException('Acesso negado');
-    }
+    await this.assertCanManageTrip(trip, userId, role);
 
     // Usar entity-based QueryBuilder — TypeORM mapeia colunas snake_case↔camelCase automaticamente
     const [bookings, shipments] = await Promise.all([
@@ -421,6 +434,16 @@ export class TripsService {
     };
   }
 
+  /** Verifica se userId pode gerir uma viagem (capitão = dono; boat_manager = atribuído ao barco) */
+  private async assertCanManageTrip(trip: Trip, userId: string, role?: string): Promise<void> {
+    if (role === 'boat_manager') {
+      const staff = await this.boatStaffService.canManageBoat(userId, trip.boatId);
+      if (!staff) throw new ForbiddenException('Sem permissão para gerir esta viagem');
+    } else {
+      if (trip.captainId !== userId) throw new ForbiddenException('Acesso negado');
+    }
+  }
+
   // Campos seguros do capitão/passageiro — excluem passwordHash, resetCode, fcmToken
   private static readonly CAPTAIN_SAFE_FIELDS = [
     'captain.id', 'captain.name', 'captain.phone', 'captain.role', 'captain.email',
@@ -438,12 +461,21 @@ export class TripsService {
     });
   }
 
-  async update(tripId: string, captainId: string, dto: CreateTripDto): Promise<Trip> {
+  /** Viagens de todos os barcos geridos pelo boat_manager */
+  async findByManagedBoats(managerId: string): Promise<Trip[]> {
+    const boatIds = await this.boatStaffService.getAssignedBoatIds(managerId);
+    if (!boatIds.length) return [];
+    return this.tripsRepo.find({
+      where: { boatId: In(boatIds) },
+      relations: ['boat'],
+      order: { departureAt: 'DESC' },
+    });
+  }
+
+  async update(tripId: string, userId: string, dto: CreateTripDto, role?: string): Promise<Trip> {
     const trip = await this.tripsRepo.findOne({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
-    if (trip.captainId !== captainId) {
-      throw new ForbiddenException('Apenas o capitão pode atualizar esta viagem');
-    }
+    await this.assertCanManageTrip(trip, userId, role);
 
     const departureAt = new Date(dto.departureTime);
     const estimatedArrivalAt = new Date(dto.arrivalTime);
@@ -471,12 +503,10 @@ export class TripsService {
     return this.tripsRepo.save(trip);
   }
 
-  async delete(tripId: string, captainId: string): Promise<void> {
+  async delete(tripId: string, userId: string, role?: string): Promise<void> {
     const trip = await this.tripsRepo.findOne({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
-    if (trip.captainId !== captainId) {
-      throw new ForbiddenException('Apenas o capitão pode deletar esta viagem');
-    }
+    await this.assertCanManageTrip(trip, userId, role);
 
     // Cancelar em vez de deletar se houver reservas
     if (trip.availableSeats < trip.totalSeats) {
@@ -487,11 +517,9 @@ export class TripsService {
     }
   }
 
-  async updateStatus(tripId: string, captainId: string, dto: UpdateTripStatusDto): Promise<Trip> {
+  async updateStatus(tripId: string, userId: string, dto: UpdateTripStatusDto, role?: string): Promise<Trip> {
     const trip = await this.findById(tripId);
-    if (trip.captainId !== captainId) {
-      throw new ForbiddenException('Apenas o capitão pode atualizar esta viagem');
-    }
+    await this.assertCanManageTrip(trip, userId, role);
 
     const oldStatus = trip.status;
 
@@ -594,12 +622,10 @@ export class TripsService {
     return saved;
   }
 
-  async updateLocation(tripId: string, captainId: string, dto: UpdateLocationDto): Promise<{ lat: number; lng: number; lastLocationAt: Date; status: string }> {
+  async updateLocation(tripId: string, userId: string, dto: UpdateLocationDto, role?: string): Promise<{ lat: number; lng: number; lastLocationAt: Date; status: string }> {
     const trip = await this.tripsRepo.findOne({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
-    if (trip.captainId !== captainId) {
-      throw new ForbiddenException('Apenas o capitão pode atualizar a localização');
-    }
+    await this.assertCanManageTrip(trip, userId, role);
     const now = new Date();
     await this.tripsRepo.update(tripId, {
       currentLat: dto.lat,
@@ -630,7 +656,10 @@ export class TripsService {
     });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
 
-    if (userRole !== 'admin' && trip.captainId !== userId) {
+    if (userRole === 'boat_manager') {
+      const staff = await this.boatStaffService.canManageBoat(userId, trip.boatId);
+      if (!staff) throw new ForbiddenException('Sem permissão para gerar o manifesto desta viagem');
+    } else if (userRole !== 'admin' && trip.captainId !== userId) {
       throw new ForbiddenException('Apenas o capitão ou admin pode gerar o manifesto');
     }
 

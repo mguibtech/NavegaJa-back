@@ -911,10 +911,11 @@ export class AdminService {
   }
 
   private getUserRoleInfo(role: UserRole) {
-    const roleMap = {
+    const roleMap: Record<UserRole, { label: string; icon: string; color: string }> = {
       [UserRole.PASSENGER]: { label: 'passageiro', icon: '👤', color: 'gray' },
       [UserRole.CAPTAIN]: { label: 'capitão', icon: '⚓', color: 'blue' },
       [UserRole.ADMIN]: { label: 'administrador', icon: '👑', color: 'purple' },
+      [UserRole.BOAT_MANAGER]: { label: 'gestor de barco', icon: '🚢', color: 'teal' },
     };
     return roleMap[role] || roleMap[UserRole.PASSENGER];
   }

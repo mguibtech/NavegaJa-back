@@ -230,9 +230,9 @@ export class ShipmentsController {
 
   @Post(':id/collect')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('captain')
+  @Roles('captain', 'boat_manager')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Coletar encomenda do remetente (captain + validação QR/PIN)' })
+  @ApiOperation({ summary: 'Coletar encomenda do remetente (captain/boat_manager + validação QR/PIN)' })
   collectShipment(
     @Param('id') id: string,
     @Request() req: any,
@@ -249,9 +249,9 @@ export class ShipmentsController {
 
   @Post(':id/out-for-delivery')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('captain')
+  @Roles('captain', 'boat_manager')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Marcar como saiu para entrega (captain)' })
+  @ApiOperation({ summary: 'Marcar como saiu para entrega (captain ou boat_manager)' })
   outForDelivery(@Param('id') id: string, @Request() req: any) {
     return this.shipmentsService.outForDelivery(id, req.user.sub);
   }
@@ -285,9 +285,9 @@ export class ShipmentsController {
 
   @Patch(':id/status')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('captain')
+  @Roles('captain', 'boat_manager')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Atualizar status (captain)' })
+  @ApiOperation({ summary: 'Atualizar status (captain ou boat_manager)' })
   updateStatus(
     @Param('id') id: string,
     @Body('status') status: ShipmentStatus,
@@ -298,9 +298,9 @@ export class ShipmentsController {
 
   @Patch(':id/deliver')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('captain')
+  @Roles('captain', 'boat_manager')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Confirmar entrega + foto (captain)' })
+  @ApiOperation({ summary: 'Confirmar entrega + foto (captain ou boat_manager)' })
   deliver(@Param('id') id: string, @Body('deliveryPhotoUrl') photoUrl?: string) {
     return this.shipmentsService.deliver(id, photoUrl);
   }

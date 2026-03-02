@@ -28,6 +28,7 @@ import { LocationsModule } from './locations/locations.module';
 import { CaptainModule } from './captain/captain.module';
 import { StopReviewsModule } from './stop-reviews/stop-reviews.module';
 import { ChatModule } from './chat/chat.module';
+import { BoatStaffModule } from './boat-staff/boat-staff.module';
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { ChatModule } from './chat/chat.module';
     CaptainModule,
     StopReviewsModule,
     ChatModule,
+    BoatStaffModule,
     SeedModule,
   ],
   providers: [

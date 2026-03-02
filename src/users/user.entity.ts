@@ -12,6 +12,7 @@ export enum UserRole {
   PASSENGER = 'passenger',
   CAPTAIN = 'captain',
   ADMIN = 'admin',
+  BOAT_MANAGER = 'boat_manager',
 }
 
 export enum KycStatus {

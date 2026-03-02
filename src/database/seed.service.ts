@@ -10,6 +10,7 @@ import { Booking, BookingStatus, PaymentStatus } from '../bookings/booking.entit
 import { Shipment, ShipmentStatus } from '../shipments/shipment.entity';
 import { Review } from '../reviews/review.entity';
 import { CargoShipment, CargoType, CargoStatus } from '../cargo/cargo.entity';
+import { BoatStaff } from '../boat-staff/boat-staff.entity';
 
 @Injectable()
 export class SeedService implements OnModuleInit {
@@ -24,14 +25,15 @@ export class SeedService implements OnModuleInit {
     @InjectRepository(Shipment) private shipmentsRepo: Repository<Shipment>,
     @InjectRepository(Review) private reviewsRepo: Repository<Review>,
     @InjectRepository(CargoShipment) private cargoRepo: Repository<CargoShipment>,
+    @InjectRepository(BoatStaff) private boatStaffRepo: Repository<BoatStaff>,
   ) {}
 
   async onModuleInit() {
-    // Admins criados SEMPRE (independente do DB ter dados ou não)
+    // Admins e gestores criados SEMPRE (independente do DB ter dados ou não)
     await this.seedAdmins();
 
     const userCount = await this.usersRepo.count();
-    if (userCount > 1) {
+    if (userCount > 2) {
       this.logger.log('Banco já possui dados, pulando seed de demonstração');
       return;
     }
@@ -85,6 +87,30 @@ export class SeedService implements OnModuleInit {
 
     if (created > 0) this.logger.log(`👤 ${created} admin(s) criados (senha: admin123)`);
     if (updated > 0) this.logger.log(`👤 ${updated} admin(s) actualizados (senha: admin123)`);
+
+    // ── Gestor de barco (boat_manager) de teste ──────────────────────────────
+    const managerPasswordHash = await bcrypt.hash('gestor123', 10);
+    const managerEmail = 'gestor@navegaja.com';
+    const existsManager = await this.usersRepo.findOne({ where: { email: managerEmail } });
+    if (!existsManager) {
+      await this.usersRepo.save({
+        name: 'Gestor Teste',
+        email: managerEmail,
+        phone: '92994001001',
+        passwordHash: managerPasswordHash,
+        role: UserRole.BOAT_MANAGER,
+        isActive: true,
+        isVerified: true,
+        state: 'AM',
+      });
+      this.logger.log(`🚢 Boat manager de teste criado (gestor@navegaja.com / gestor123)`);
+    } else {
+      await this.usersRepo.update(existsManager.id, {
+        passwordHash: managerPasswordHash,
+        role: UserRole.BOAT_MANAGER,
+        isActive: true,
+      });
+    }
   }
 
   private async seed() {
@@ -464,10 +490,30 @@ export class SeedService implements OnModuleInit {
 
     this.logger.log(`  → ${cargoShipments.length} cargas comerciais criadas`);
 
+    // ====== BOAT STAFF — vincular gestor de teste aos dois primeiros barcos ======
+    const gestor = await this.usersRepo.findOne({ where: { email: 'gestor@navegaja.com' } });
+    if (gestor) {
+      await this.boatStaffRepo.save([
+        {
+          userId: gestor.id, boatId: boats[0].id,
+          canCreateTrips: true, canConfirmPayments: true,
+          canManageShipments: true, isActive: true,
+        },
+        {
+          userId: gestor.id, boatId: boats[1].id,
+          canCreateTrips: true, canConfirmPayments: true,
+          canManageShipments: true, isActive: true,
+        },
+      ]);
+      this.logger.log(`  → Gestor de teste vinculado a 2 embarcações`);
+    }
+
     this.logger.log('');
     this.logger.log('📱 Contas de teste:');
-    this.logger.log('   Passageiro: 92991001001 / 123456');
-    this.logger.log('   Capitão:    92992001001 / 123456');
+    this.logger.log('   Passageiro:     92991001001 / 123456');
+    this.logger.log('   Capitão:        92992001001 / 123456');
+    this.logger.log('   Admin (web):    admin@navegaja.com / admin123');
+    this.logger.log('   Boat Manager:   gestor@navegaja.com / gestor123');
     this.logger.log('');
   }
 }

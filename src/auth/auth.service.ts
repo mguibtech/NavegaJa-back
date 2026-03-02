@@ -96,9 +96,9 @@ export class AuthService {
       throw new UnauthorizedException('E-mail ou senha incorretos');
     }
 
-    // ✅ APENAS ADMIN pode acessar dashboard web
-    if (user.role !== 'admin') {
-      throw new UnauthorizedException('Acesso restrito a administradores');
+    // ✅ Apenas admin e boat_manager acedem ao dashboard web
+    if (user.role !== 'admin' && user.role !== 'boat_manager') {
+      throw new UnauthorizedException('Acesso restrito a administradores e gestores de embarcação');
     }
 
     const tokens = this.generateTokens(user);
@@ -206,20 +206,32 @@ export class AuthService {
    * Para capitães expõe o estado de verificação e os bloqueios activos.
    */
   private buildCapabilities(user: User) {
-    if (user.role !== UserRole.CAPTAIN) return null;
+    if (user.role === UserRole.CAPTAIN) {
+      const isVerified = user.isVerified ?? false;
+      const pendingVerification =
+        !isVerified &&
+        (!!user.licensePhotoUrl || !!user.certificatePhotoUrl);
 
-    const isVerified = user.isVerified ?? false;
-    const pendingVerification =
-      !isVerified &&
-      (!!user.licensePhotoUrl || !!user.certificatePhotoUrl);
+      return {
+        isVerified,
+        pendingVerification,
+        canOperate: isVerified,
+        canCreateTrips: isVerified,
+        canConfirmPayments: isVerified,
+        canManageShipments: isVerified,
+      };
+    }
 
-    return {
-      isVerified,
-      pendingVerification,
-      canOperate: isVerified,
-      canCreateTrips: isVerified,
-      canConfirmPayments: isVerified,
-      canManageShipments: isVerified,
-    };
+    if (user.role === UserRole.BOAT_MANAGER) {
+      // Permissões base — as permissões por barco são verificadas na API via BoatStaffService
+      return {
+        isBoatManager: true,
+        canCreateTrips: true,
+        canConfirmPayments: true,
+        canManageShipments: true,
+      };
+    }
+
+    return null;
   }
 }

@@ -9,10 +9,11 @@ import { Booking } from '../bookings/booking.entity';
 import { Shipment } from '../shipments/shipment.entity';
 import { Review } from '../reviews/review.entity';
 import { CargoShipment } from '../cargo/cargo.entity';
+import { BoatStaff } from '../boat-staff/boat-staff.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Boat, Route, Trip, Booking, Shipment, Review, CargoShipment]),
+    TypeOrmModule.forFeature([User, Boat, Route, Trip, Booking, Shipment, Review, CargoShipment, BoatStaff]),
   ],
   providers: [SeedService],
 })
