@@ -121,7 +121,7 @@ Configurado via `@nestjs/throttler` em `app.module.ts` com dois perfis:
 ### Roles:
 - `passenger` — passageiro (padrão)
 - `captain` — capitão de embarcação
-- `admin` — administrador do sistema
+- `admin` — administrador do sistema (Super Admin — acesso total)
 
 ### JWT Strategy — CRÍTICO:
 O `JwtStrategy.validate()` devolve `{ sub, phone, role }`.
@@ -268,6 +268,37 @@ Quando capitão marca trip → `COMPLETED`, o sistema **automaticamente**:
 5. Credita km (milhas fluviais) com base em `trip.route.distanceKm`
 
 > Razão: no Amazonas a conectividade é instável — o capitão pode não conseguir escanear todos os QR codes. O benefício da dúvida é dado ao passageiro que pagou.
+
+### Crianças ≤ 9 anos viajam grátis (implementado em 02/03/2026):
+
+| Campo DTO | Tipo | Descrição |
+|---|---|---|
+| `children` | `number[]` (opcional) | Idades dos menores incluídos (0-17). Só ≤ 9 são gratuitos |
+| `quantity` | `number` | Total de assentos = adultos + crianças (todos contam) |
+
+**Regras:**
+- `children.length > quantity` → `400 Bad Request`
+- Crianças gratuitas (≤ 9 anos) **máximo 3 por reserva** (`MAX_FREE_CHILDREN = 3`) → `400 Bad Request`
+- Crianças **10-17 anos** entram no array mas pagam normalmente (para auditoria/manifesto)
+- Bebés (age=0) são gratuitos
+- Desconto de crianças aplica-se **antes** de todos os outros descontos
+
+**Campos novos na entidade `Booking`:**
+- `childrenCount: int` (default 0) — quantas crianças ≤ 9 viajam grátis
+- `childrenAges: simple-array | null` — idades declaradas (auditoria)
+
+**Response de `POST /bookings/calculate-price`** inclui:
+```json
+{
+  "basePrice": 135.00,
+  "childrenDiscount": 90.00,
+  "freeChildrenCount": 2,
+  "childrenAges": [5, 8, 14],
+  "discountsApplied": [
+    { "type": "children", "label": "2 criança(s) grátis (≤ 9 anos)", "amount": 90.00 }
+  ]
+}
+```
 
 ### Histórico de reservas:
 `GET /bookings/my-bookings` — devolve todas as reservas do passageiro.
@@ -461,7 +492,7 @@ enum ShipmentStatus {
 
 ## ✅ O QUE ESTÁ IMPLEMENTADO
 
-### Backend — Estado real confirmado em 27/02/2026 (v9.1):
+### Backend — Estado real confirmado em 02/03/2026 (v9.2):
 
 | Módulo | Status | Observação |
 |--------|--------|------------|
@@ -471,11 +502,11 @@ enum ShipmentStatus {
 | KYC — Verificação de identidade (fase 1) | ✅ 100% | `kycStatus` enum, endpoints `/users/kyc/submit` e `/users/kyc/status`. Admin usa `PATCH /admin/users/:id/verify` |
 | CPF Validation | ✅ 100% | `@IsCpfValid()` em RegisterDto + UpdateProfileDto |
 | Boats (CRUD + documentos + aprovação admin) | ✅ 100% | isVerified, documentPhotos, rejectionReason |
-| Trips (CRUD, busca, filtros, validações) | ✅ 100% | Requer capitão `isVerified` + `kycStatus='approved'`. Auto-complete bookings ao concluir |
+| Trips (CRUD, busca, filtros, validações) | ✅ 100% | Requer capitão `isVerified` + `kycStatus='approved'`. Auto-complete bookings ao concluir. Validações: origin≠destination, transições de estado, price>0, totalSeats≥1. `startTrip` retorna `weatherWarning` se score 50-70 |
 | GPS Tracking (tempo real) | ✅ 100% | `PATCH /trips/:id/location` (captain) + `GET /trips/:id/location` (público). `lastLocationAt` em Trip |
 | PDF — Bilhete de embarque | ✅ 100% | `GET /bookings/:id/ticket` → `application/pdf`. Usa `PdfService` (pdfkit) |
 | PDF — Manifesto de carga | ✅ 100% | `GET /trips/:id/cargo-manifest` → `application/pdf`. Captain/Admin |
-| Bookings (criar, cancelar, check-in, QR code, auto-complete) | ✅ 100% | Auto-complete ao trip→COMPLETED. PIX expira em 15min. Filtro `?status=` disponível. **409 Conflict** se usuário já tem booking ativa (PENDING/CONFIRMED/CHECKED_IN) na mesma viagem |
+| Bookings (criar, cancelar, check-in, QR code, auto-complete) | ✅ 100% | Auto-complete ao trip→COMPLETED. PIX expira em 15min. Filtro `?status=` disponível. **409 Conflict** se usuário já tem booking ativa na mesma viagem. **Crianças ≤ 9 grátis** via campo `children?: number[]` |
 | Shipments (8 estados, QR, tracking, timeline, gamification) | ✅ 100% | collectShipment requer capitão verificado |
 | Coupons + Promotions | ✅ 100% | |
 | Favorites | ✅ 100% | |
@@ -488,7 +519,7 @@ enum ShipmentStatus {
 | Analytics do capitão | ✅ 100% | 4 endpoints: resumo, receita diária, rotas, passageiros recorrentes |
 | Weather (OpenWeatherMap, cache 30min) | ✅ 100% | |
 | Safety / SOS (+ FCM para admins) | ✅ 100% | SOS dispara push FCM para todos os admins ativos |
-| Admin (users, trips, shipments, bookings, dashboard, reviews) | ✅ 100% | |
+| Admin (users, trips, shipments, bookings, dashboard, reviews) | ✅ 100% | `GET /admin/dashboard` (alias `/dashboard/overview`). Stats corretos com `Between()`. Segurança: `leftJoin`+`addSelect` — sem `passwordHash`/`fcmToken` em relações |
 | Routes | ✅ 100% | Read-only |
 | Cargo (fretes comerciais, 9 tipos) | ✅ 100% | |
 | Upload (imagens + vídeos) | ✅ 100% | Firebase Storage ou disco |
@@ -578,6 +609,29 @@ Ao criar uma avaliação de ponto de parada → **+5 NavegaCoins** (mesmo `Point
 
 ---
 
+## 🚢 VALIDAÇÕES EM TRIPS (implementadas em 02/03/2026)
+
+### Criação (`POST /trips`):
+- `origin.trim().toLowerCase() === destination.trim().toLowerCase()` → `400 Bad Request`
+- `price > 0.01` (DTO `@Min(0.01)`)
+- `totalSeats >= 1` e deve ser inteiro (`@IsInt`)
+
+### Transições de estado (`PATCH /trips/:id/status`):
+```
+SCHEDULED  → IN_PROGRESS | CANCELLED
+IN_PROGRESS → COMPLETED  | CANCELLED
+COMPLETED  → (nenhuma — estado final)
+CANCELLED  → (nenhuma — estado final)
+```
+Qualquer outra transição → `400 Bad Request` com mensagem explicativa.
+
+### Início de viagem (`IN_PROGRESS`):
+- Requer `weatherSafetyScore >= 50` (consulta OpenWeatherMap)
+- Score 50-69: viagem inicia + `weatherWarning` na resposta
+- Score < 50: `400 Bad Request`
+
+---
+
 ## 🔗 DEPENDÊNCIAS CIRCULARES (IMPORTANTE)
 
 Trips e Shipments têm dependência circular. **Sempre usar forwardRef():**
@@ -614,6 +668,13 @@ if (safety.safetyScore < 50) {
   throw new BadRequestException(`Condições climáticas perigosas. Score: ${safety.safetyScore}/100`);
 }
 ```
+
+### Integração Weather no `startTrip` (implementada em 02/03/2026):
+- Score **< 50** → `400 Bad Request` (bloqueia início da viagem)
+- Score **50-69** → viagem inicia MAS resposta inclui `weatherWarning: { score, warnings[], recommendations[] }`
+- Score **≥ 70** → resposta normal (sem campo `weatherWarning`)
+
+O app mobile deve verificar `weatherWarning` na resposta e exibir um modal de aviso ao capitão.
 
 ---
 
@@ -933,4 +994,4 @@ O módulo SOS já existia em `src/safety/`. A atualização adicionou push FCM p
 
 ---
 
-*Prompt atualizado em: 27/02/2026 | Versão: 9.1 | Projeto: NavegaJá Backend*
+*Prompt atualizado em: 02/03/2026 | Versão: 9.2 | Projeto: NavegaJá Backend*

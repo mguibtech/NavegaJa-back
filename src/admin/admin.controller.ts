@@ -276,6 +276,7 @@ export class AdminController {
 
   // ==================== DASHBOARD OVERVIEW ====================
 
+  @Get('dashboard/overview')
   @Get('dashboard')
   @ApiOperation({
     summary: 'Overview geral do sistema (Admin)',

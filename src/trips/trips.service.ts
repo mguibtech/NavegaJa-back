@@ -58,7 +58,12 @@ export class TripsService {
       );
     }
 
-    // 1. Validar datas
+    // 1. Origem e destino não podem ser iguais
+    if (dto.origin.trim().toLowerCase() === dto.destination.trim().toLowerCase()) {
+      throw new BadRequestException('Origem e destino não podem ser iguais.');
+    }
+
+    // 2. Validar datas
     const now = new Date();
     if (departureAt < now) {
       throw new BadRequestException(
@@ -490,7 +495,22 @@ export class TripsService {
 
     const oldStatus = trip.status;
 
+    // Validar transições de status permitidas
+    const validTransitions: Record<string, TripStatus[]> = {
+      [TripStatus.SCHEDULED]: [TripStatus.IN_PROGRESS, TripStatus.CANCELLED],
+      [TripStatus.IN_PROGRESS]: [TripStatus.COMPLETED, TripStatus.CANCELLED],
+    };
+    const allowed: TripStatus[] = validTransitions[oldStatus as string] ?? [];
+    if (!allowed.includes(dto.status)) {
+      throw new BadRequestException(
+        `Transição inválida: "${oldStatus}" → "${dto.status}". ` +
+        (allowed.length ? `Permitido: ${allowed.join(', ')}.` : 'Viagem já está em estado final.'),
+      );
+    }
+
     // ========== VALIDAÇÕES DE SEGURANÇA ANTES DE INICIAR VIAGEM ==========
+    let weatherWarning: { score: number; warnings: string[]; recommendations: string[] } | null = null;
+
     if (dto.status === TripStatus.IN_PROGRESS && oldStatus !== TripStatus.IN_PROGRESS) {
       // 1. Verificar checklist de segurança completo
       const checklistComplete = await this.safetyService.isChecklistComplete(tripId);
@@ -500,17 +520,14 @@ export class TripsService {
         );
       }
 
-      // 2. Verificar condições climáticas
-      // Usar coordenadas da origem da viagem (assumindo que existam campos lat/lng ou usar defaults)
-      // TODO: Adicionar campos originLat, originLng na entidade Trip
-      // Por enquanto, vamos usar Manaus como padrão (-3.119, -60.0217)
+      // 2. Verificar condições climáticas (usa coords atuais do GPS ou padrão Manaus)
       const lat = trip.currentLat || -3.119;
       const lng = trip.currentLng || -60.0217;
 
       try {
         const weatherSafety = await this.weatherService.evaluateNavigationSafety(lat, lng);
 
-        // Score < 50: PERIGOSO - bloquear viagem
+        // Score < 50: PERIGOSO — bloquear viagem
         if (weatherSafety.score < 50) {
           throw new BadRequestException(
             `❌ Condições climáticas PERIGOSAS (Score: ${weatherSafety.score}/100). ` +
@@ -519,22 +536,19 @@ export class TripsService {
           );
         }
 
-        // Score 50-70: ALERTA - avisar mas permitir (decisão do capitão)
+        // Score 50–70: ALERTA — permite mas retorna aviso ao capitão
         if (weatherSafety.score < 70) {
-          console.warn(
-            `⚠️ ALERTA: Condições climáticas moderadas (Score: ${weatherSafety.score}/100). ` +
-            `Navegue com cautela. Recomendações: ${weatherSafety.recommendations.join(', ')}`,
-          );
-          // Poderia enviar notificação para passageiros aqui
+          weatherWarning = {
+            score: weatherSafety.score,
+            warnings: weatherSafety.warnings,
+            recommendations: weatherSafety.recommendations,
+          };
         }
 
-        // Score >= 70: OK para navegar
-        console.log(`✅ Condições climáticas favoráveis (Score: ${weatherSafety.score}/100)`);
-
       } catch (error) {
-        // Se API de clima falhar, logar erro mas não bloquear viagem (fallback)
+        if (error instanceof BadRequestException) throw error;
+        // Se API de clima falhar, não bloquear viagem (fallback)
         console.error('❌ Erro ao verificar clima:', error.message);
-        console.warn('⚠️ Não foi possível verificar clima. Proceda com cautela.');
       }
     }
 
@@ -570,6 +584,11 @@ export class TripsService {
         body: `A viagem ${route} foi cancelada.`,
         data: { type: 'trip_cancelled', tripId },
       });
+    }
+
+    // Incluir weatherWarning no response quando capitão inicia viagem com alerta
+    if (weatherWarning) {
+      return { ...saved, weatherWarning };
     }
 
     return saved;

@@ -97,6 +97,14 @@ export class Booking {
   @Column({ name: 'km_discount', type: 'decimal', precision: 10, scale: 2, default: 0 })
   kmDiscount: number; // valor (R$) descontado pelos km
 
+  // ── Crianças (≤ 9 anos viajam grátis) ─────────────────────────────────────
+
+  @Column({ name: 'children_count', type: 'int', default: 0 })
+  childrenCount: number; // quantas crianças ≤ 9 anos (gratuitas) estão incluídas
+
+  @Column({ name: 'children_ages', type: 'simple-array', nullable: true })
+  childrenAges: number[] | null; // idades declaradas (para auditoria/manifesto)
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

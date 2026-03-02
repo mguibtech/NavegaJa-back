@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, Min, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsInt, IsOptional, IsArray, Min, Max, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { PaymentMethod } from '../booking.entity';
 
@@ -36,6 +36,19 @@ export class CreateBookingDto {
   @IsNumber()
   @Min(0)
   redeemKm?: number;
+
+  @ApiProperty({
+    example: [7, 4],
+    required: false,
+    description: 'Idades das crianças incluídas na reserva. Crianças com até 9 anos não pagam (mas ocupam assento).',
+    type: [Number],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true, message: 'Cada idade deve ser um número inteiro.' })
+  @Min(0, { each: true, message: 'Idade não pode ser negativa.' })
+  @Max(17, { each: true, message: 'Use este campo apenas para menores de 18 anos.' })
+  children?: number[];
 }
 
 export class CancelBookingDto {

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsEnum, IsNumber, IsOptional, IsBoolean, IsDateString, Min, Max } from 'class-validator';
+import { IsString, IsEnum, IsNumber, IsInt, IsOptional, IsBoolean, IsArray, IsDateString, Min, Max } from 'class-validator';
 import { CouponType, CouponApplicability } from '../coupon.entity';
 
 export class CreateCouponDto {
@@ -131,4 +131,17 @@ export class CalculatePriceDto {
   @IsNumber()
   @Min(0)
   redeemKm?: number;
+
+  @ApiProperty({
+    example: [7, 4],
+    required: false,
+    description: 'Idades das crianças. Crianças ≤ 9 anos não pagam.',
+    type: [Number],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(17, { each: true })
+  children?: number[];
 }

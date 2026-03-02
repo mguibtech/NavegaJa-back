@@ -15,6 +15,18 @@ import { Boat } from '../boats/boat.entity';
 
 @Injectable()
 export class AdminService {
+  // Campos seguros do capitão — nunca expor passwordHash/fcmToken/resetCode
+  private static readonly CAPTAIN_SAFE_FIELDS = [
+    'captain.id', 'captain.name', 'captain.phone', 'captain.role', 'captain.email',
+    'captain.avatarUrl', 'captain.rating', 'captain.captainRating', 'captain.isActive',
+    'captain.city', 'captain.state', 'captain.isVerified', 'captain.createdAt',
+  ];
+
+  private static readonly USER_SAFE_FIELDS = [
+    'id', 'name', 'phone', 'email', 'role', 'avatarUrl', 'city', 'state',
+    'isActive', 'isVerified', 'createdAt',
+  ];
+
   constructor(
     @InjectRepository(User)
     private usersRepo: Repository<User>,
@@ -244,7 +256,8 @@ export class AdminService {
     const skip = (page - 1) * limit;
     const qb = this.tripsRepo
       .createQueryBuilder('trip')
-      .leftJoinAndSelect('trip.captain', 'captain')
+      .leftJoin('trip.captain', 'captain')
+      .addSelect(AdminService.CAPTAIN_SAFE_FIELDS)
       .leftJoinAndSelect('trip.boat', 'boat');
 
     if (status) {
@@ -273,13 +286,16 @@ export class AdminService {
   }
 
   async getTripStats() {
-    const today = new Date();
+    const now = new Date();
+    const today = new Date(now);
     today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const weekAgo = new Date();
+    const weekAgo = new Date(now);
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const monthAgo = new Date();
+    const monthAgo = new Date(now);
     monthAgo.setMonth(monthAgo.getMonth() - 1);
 
     const [total, scheduled, inProgress, completed, cancelled, todayTrips, thisWeekTrips, thisMonthTrips, revenueRow] =
@@ -289,9 +305,9 @@ export class AdminService {
         this.tripsRepo.count({ where: { status: TripStatus.IN_PROGRESS } }),
         this.tripsRepo.count({ where: { status: TripStatus.COMPLETED } }),
         this.tripsRepo.count({ where: { status: TripStatus.CANCELLED } }),
-        this.tripsRepo.count({ where: { departureAt: MoreThan(today) } }),
-        this.tripsRepo.count({ where: { departureAt: MoreThan(weekAgo) } }),
-        this.tripsRepo.count({ where: { departureAt: MoreThan(monthAgo) } }),
+        this.tripsRepo.count({ where: { createdAt: Between(today, tomorrow) } }),
+        this.tripsRepo.count({ where: { createdAt: Between(weekAgo, now) } }),
+        this.tripsRepo.count({ where: { createdAt: Between(monthAgo, now) } }),
         this.bookingsRepo
           .createQueryBuilder('b')
           .select('COALESCE(SUM(b.total_price), 0)', 'totalRevenue')
@@ -353,9 +369,11 @@ export class AdminService {
     const skip = (page - 1) * limit;
     const qb = this.shipmentsRepo
       .createQueryBuilder('shipment')
-      .leftJoinAndSelect('shipment.sender', 'sender')
+      .leftJoin('shipment.sender', 'sender')
+      .addSelect(['sender.id', 'sender.name', 'sender.phone', 'sender.email', 'sender.role', 'sender.city', 'sender.createdAt'])
       .leftJoinAndSelect('shipment.trip', 'trip')
-      .leftJoinAndSelect('trip.captain', 'captain');
+      .leftJoin('trip.captain', 'captain')
+      .addSelect(AdminService.CAPTAIN_SAFE_FIELDS);
 
     if (status) {
       qb.andWhere('shipment.status = :status', { status });
@@ -594,6 +612,7 @@ export class AdminService {
       this.usersRepo.find({
         order: { createdAt: 'DESC' },
         take: 10,
+        select: ['id', 'name', 'email', 'phone', 'role', 'city', 'state', 'isActive', 'createdAt'],
       }),
       this.bookingsRepo.find({
         order: { createdAt: 'DESC' },

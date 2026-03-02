@@ -38,6 +38,7 @@ export class BookingsService {
     quantity: number,
     couponCode?: string,
     redeemKm?: number,
+    children?: number[],
   ) {
     const trip = await this.tripsRepo.findOne({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
@@ -45,17 +46,33 @@ export class BookingsService {
     const user = await this.usersRepo.findOne({ where: { id: passengerId } });
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
-    const basePrice = Number(trip.price) * quantity;
-    let priceAfterTripDiscount = basePrice;
+    // Crianças ≤ 9 anos viajam grátis (mas ocupam assento)
+    const MAX_FREE_CHILDREN = 3;
+    const childrenList = children || [];
+    if (childrenList.length > quantity) {
+      throw new BadRequestException('Número de crianças não pode exceder o total de assentos.');
+    }
+    const freeChildrenCount = childrenList.filter(age => age <= 9).length;
+    if (freeChildrenCount > MAX_FREE_CHILDREN) {
+      throw new BadRequestException(
+        `Máximo de ${MAX_FREE_CHILDREN} crianças grátis por reserva. Para grupos maiores, entre em contato com o capitão.`,
+      );
+    }
+    const childrenDiscount = Number(trip.price) * freeChildrenCount;
+
+    const basePrice = Number(trip.price) * quantity; // preço cheio (todos os assentos)
+    const priceAfterChildren = basePrice - childrenDiscount;
+
     let tripDiscount = 0;
+    let priceAfterTripDiscount = priceAfterChildren;
     let couponDiscount = 0;
     let loyaltyDiscount = 0;
     let kmDiscount = 0;
 
     // 1. Desconto da viagem (capitão)
     if (trip.discount > 0) {
-      tripDiscount = (basePrice * trip.discount) / 100;
-      priceAfterTripDiscount = basePrice - tripDiscount;
+      tripDiscount = (priceAfterChildren * trip.discount) / 100;
+      priceAfterTripDiscount = priceAfterChildren - tripDiscount;
     }
 
     // 2. Cupom promocional
@@ -93,10 +110,13 @@ export class BookingsService {
     }
 
     const finalPrice = priceAfterLoyalty - kmDiscount;
-    const totalDiscount = tripDiscount + couponDiscount + loyaltyDiscount + kmDiscount;
+    const totalDiscount = childrenDiscount + tripDiscount + couponDiscount + loyaltyDiscount + kmDiscount;
 
     return {
       basePrice,
+      childrenDiscount,
+      freeChildrenCount,
+      childrenAges: childrenList,
       tripDiscount,
       tripDiscountPercent: trip.discount,
       couponDiscount,
@@ -110,6 +130,7 @@ export class BookingsService {
       totalDiscount,
       finalPrice: Math.max(0, finalPrice),
       discountsApplied: [
+        freeChildrenCount > 0 && { type: 'children', label: `${freeChildrenCount} criança(s) grátis (≤ 9 anos)`, amount: childrenDiscount },
         trip.discount > 0 && { type: 'trip', label: 'Promoção Especial', percent: trip.discount, amount: tripDiscount },
         couponData && { type: 'coupon', code: couponData.code, label: couponData.description || 'Cupom', amount: couponDiscount },
         userDiscount > 0 && { type: 'loyalty', level: user.level, percent: userDiscount, amount: loyaltyDiscount },
@@ -141,8 +162,8 @@ export class BookingsService {
       );
     }
 
-    // Calcular preço com descontos (inclui km se solicitado)
-    const priceBreakdown = await this.calculatePrice(passengerId, dto.tripId, quantity, dto.couponCode, dto.redeemKm);
+    // Calcular preço com descontos (inclui km e crianças grátis se informados)
+    const priceBreakdown = await this.calculatePrice(passengerId, dto.tripId, quantity, dto.couponCode, dto.redeemKm, dto.children);
     const totalPrice = priceBreakdown.finalPrice;
 
     // Determinar status inicial baseado no método de pagamento
@@ -173,6 +194,8 @@ export class BookingsService {
       paymentStatus: initialPaymentStatus,
       kmRedeemed: priceBreakdown.kmRedeemed,
       kmDiscount: priceBreakdown.kmDiscount,
+      childrenCount: priceBreakdown.freeChildrenCount,
+      childrenAges: priceBreakdown.childrenAges?.length ? priceBreakdown.childrenAges : null,
     });
 
     // Salva o booking primeiro para gerar o ID

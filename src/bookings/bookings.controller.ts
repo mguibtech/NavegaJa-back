@@ -45,6 +45,7 @@ export class BookingsController {
       dto.quantity,
       dto.couponCode,
       dto.redeemKm,
+      dto.children,
     );
   }
 
