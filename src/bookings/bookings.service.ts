@@ -4,6 +4,7 @@ import { Repository, In, LessThan } from 'typeorm';
 import { Booking, BookingStatus, PaymentStatus, PaymentMethod } from './booking.entity';
 import { Trip, TripStatus } from '../trips/trip.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { ChildPassengerDto } from './dto/passenger.dto';
 import { GamificationService } from '../gamification/gamification.service';
 import { PointAction } from '../gamification/point-transaction.entity';
 import { KM_BLOCK } from '../gamification/km-transaction.entity';
@@ -38,7 +39,7 @@ export class BookingsService {
     quantity: number,
     couponCode?: string,
     redeemKm?: number,
-    children?: number[],
+    children?: ChildPassengerDto[],
   ) {
     const trip = await this.tripsRepo.findOne({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
@@ -52,7 +53,7 @@ export class BookingsService {
     if (childrenList.length > quantity) {
       throw new BadRequestException('Número de crianças não pode exceder o total de assentos.');
     }
-    const freeChildrenCount = childrenList.filter(age => age <= 9).length;
+    const freeChildrenCount = childrenList.filter(c => c.age <= 9).length;
     if (freeChildrenCount > MAX_FREE_CHILDREN) {
       throw new BadRequestException(
         `Máximo de ${MAX_FREE_CHILDREN} crianças grátis por reserva. Para grupos maiores, entre em contato com o capitão.`,
@@ -116,7 +117,7 @@ export class BookingsService {
       basePrice,
       childrenDiscount,
       freeChildrenCount,
-      childrenAges: childrenList,
+      children: childrenList,
       tripDiscount,
       tripDiscountPercent: trip.discount,
       couponDiscount,
@@ -195,7 +196,8 @@ export class BookingsService {
       kmRedeemed: priceBreakdown.kmRedeemed,
       kmDiscount: priceBreakdown.kmDiscount,
       childrenCount: priceBreakdown.freeChildrenCount,
-      childrenAges: priceBreakdown.childrenAges?.length ? priceBreakdown.childrenAges : null,
+      children: priceBreakdown.children?.length ? priceBreakdown.children : null,
+      extraPassengers: dto.passengers?.length ? dto.passengers : null,
     });
 
     // Salva o booking primeiro para gerar o ID
@@ -407,12 +409,14 @@ export class BookingsService {
         rating: trip.captain.rating,
         avatarUrl: trip.captain.avatarUrl,
       },
-      boat: {
-        id: trip.boat.id,
-        name: trip.boat.name,
-        type: trip.boat.type,
-        photoUrl: trip.boat.photoUrl,
-      },
+      boat: trip.boat
+        ? {
+            id: trip.boat.id,
+            name: trip.boat.name,
+            type: trip.boat.type,
+            photoUrl: trip.boat.photoUrl,
+          }
+        : null,
       progress,
       timeline,
     };
@@ -590,6 +594,24 @@ export class BookingsService {
    * CONFIRMED e CHECKED_IN — o capitão pode não ter conseguido escanear todos
    * (conectividade instável no Amazonas).
    */
+  /** Cancela todas as reservas activas de uma viagem. Retorna os IDs dos passageiros afectados. */
+  async autoCancelByTrip(tripId: string): Promise<string[]> {
+    const bookings = await this.bookingsRepo.find({
+      where: {
+        tripId,
+        status: In([BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]),
+      },
+    });
+
+    const passengerIds: string[] = [];
+    for (const booking of bookings) {
+      booking.status = BookingStatus.CANCELLED;
+      await this.bookingsRepo.save(booking);
+      passengerIds.push(booking.passengerId);
+    }
+    return passengerIds;
+  }
+
   async autoCompleteByTrip(tripId: string): Promise<void> {
     const bookings = await this.bookingsRepo.find({
       where: {
@@ -662,6 +684,8 @@ export class BookingsService {
       paymentStatus: booking.paymentStatus,
       qrCodeCheckin: booking.qrCodeCheckin,
       createdAt: booking.createdAt,
+      children: booking.children,
+      extraPassengers: booking.extraPassengers,
     });
   }
 

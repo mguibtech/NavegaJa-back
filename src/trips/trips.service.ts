@@ -437,7 +437,7 @@ export class TripsService {
   /** Verifica se userId pode gerir uma viagem (capitão = dono; boat_manager = atribuído ao barco) */
   private async assertCanManageTrip(trip: Trip, userId: string, role?: string): Promise<void> {
     if (role === 'boat_manager') {
-      const staff = await this.boatStaffService.canManageBoat(userId, trip.boatId);
+      const staff = trip.boatId ? await this.boatStaffService.canManageBoat(userId, trip.boatId) : null;
       if (!staff) throw new ForbiddenException('Sem permissão para gerir esta viagem');
     } else {
       if (trip.captainId !== userId) throw new ForbiddenException('Acesso negado');
@@ -606,12 +606,20 @@ export class TripsService {
       await this.bookingsService.autoCompleteByTrip(tripId);
       await this.shipmentsService.updateShipmentsByTrip(tripId, ShipmentStatus.ARRIVED);
     } else if (dto.status === TripStatus.CANCELLED && oldStatus !== TripStatus.CANCELLED) {
-      // Viagem cancelada - notificar passageiros
-      await this.notificationsService.sendToTripPassengers(tripId, {
-        title: '❌ Viagem cancelada',
-        body: `A viagem ${route} foi cancelada.`,
-        data: { type: 'trip_cancelled', tripId },
-      });
+      // Cancelar reservas activas (pending/confirmed/checked_in) e recolher IDs dos passageiros
+      const affectedPassengerIds = await this.bookingsService.autoCancelByTrip(tripId);
+
+      // Cancelar encomendas activas (notifica os remetentes internamente)
+      await this.shipmentsService.updateShipmentsByTrip(tripId, ShipmentStatus.CANCELLED);
+
+      // Notificar todos os passageiros afectados
+      if (affectedPassengerIds.length > 0) {
+        await this.notificationsService.sendToUsers(affectedPassengerIds, {
+          title: '❌ Viagem cancelada',
+          body: `A viagem ${route} foi cancelada. A sua reserva foi automaticamente cancelada.`,
+          data: { type: 'trip_cancelled', tripId },
+        });
+      }
     }
 
     // Incluir weatherWarning no response quando capitão inicia viagem com alerta
@@ -657,7 +665,7 @@ export class TripsService {
     if (!trip) throw new NotFoundException('Viagem não encontrada');
 
     if (userRole === 'boat_manager') {
-      const staff = await this.boatStaffService.canManageBoat(userId, trip.boatId);
+      const staff = trip.boatId ? await this.boatStaffService.canManageBoat(userId, trip.boatId) : null;
       if (!staff) throw new ForbiddenException('Sem permissão para gerar o manifesto desta viagem');
     } else if (userRole !== 'admin' && trip.captainId !== userId) {
       throw new ForbiddenException('Apenas o capitão ou admin pode gerar o manifesto');

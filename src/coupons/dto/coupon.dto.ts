@@ -1,6 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsEnum, IsNumber, IsInt, IsOptional, IsBoolean, IsArray, IsDateString, Min, Max } from 'class-validator';
+import { IsString, IsEnum, IsNumber, IsOptional, IsBoolean, IsArray, IsDateString, Min, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { CouponType, CouponApplicability } from '../coupon.entity';
+import { ChildPassengerDto } from '../../bookings/dto/passenger.dto';
 
 export class CreateCouponDto {
   @ApiProperty({ example: 'NATAL2026', description: 'Código do cupom' })
@@ -133,15 +135,13 @@ export class CalculatePriceDto {
   redeemKm?: number;
 
   @ApiProperty({
-    example: [7, 4],
     required: false,
-    description: 'Idades das crianças. Crianças ≤ 9 anos não pagam.',
-    type: [Number],
+    description: 'Crianças incluídas (nome opcional + idade). Crianças ≤ 9 anos não pagam.',
+    type: [ChildPassengerDto],
   })
   @IsOptional()
   @IsArray()
-  @IsInt({ each: true })
-  @Min(0, { each: true })
-  @Max(17, { each: true })
-  children?: number[];
+  @ValidateNested({ each: true })
+  @Type(() => ChildPassengerDto)
+  children?: ChildPassengerDto[];
 }

@@ -29,12 +29,12 @@ export class Trip {
   @JoinColumn({ name: 'captain_id' })
   captain: User;
 
-  @Column({ name: 'boat_id' })
-  boatId: string;
+  @Column({ name: 'boat_id', nullable: true })
+  boatId: string | null;
 
-  @ManyToOne(() => Boat, (boat) => boat.trips)
+  @ManyToOne(() => Boat, (boat) => boat.trips, { nullable: true })
   @JoinColumn({ name: 'boat_id' })
-  boat: Boat;
+  boat: Boat | null;
 
   @Column({ name: 'route_id', nullable: true })
   routeId: string;

@@ -7,6 +7,7 @@ import { UpdateBoatDto } from './dto/update-boat.dto';
 import { Review, ReviewType } from '../reviews/review.entity';
 import { Trip, TripStatus } from '../trips/trip.entity';
 import { User } from '../users/user.entity';
+import { BoatStaff } from '../boat-staff/boat-staff.entity';
 
 @Injectable()
 export class BoatsService {
@@ -19,6 +20,8 @@ export class BoatsService {
     private tripsRepo: Repository<Trip>,
     @InjectRepository(User)
     private usersRepo: Repository<User>,
+    @InjectRepository(BoatStaff)
+    private boatStaffRepo: Repository<BoatStaff>,
   ) {}
 
   async create(ownerId: string, dto: CreateBoatDto): Promise<Boat> {
@@ -67,13 +70,19 @@ export class BoatsService {
       throw new BadRequestException('Não é possível apagar uma embarcação com viagens activas');
     }
 
+    // Remover gestores atribuídos a este barco
+    await this.boatStaffRepo.delete({ boatId: id });
+
+    // Garantir que boat_id em trips é nullable (idempotente — cobre a migração pendente do TypeORM)
+    await this.tripsRepo.manager.query(
+      `ALTER TABLE trips ALTER COLUMN boat_id DROP NOT NULL`,
+    );
+
     // Anular FK antes de apagar (trips e reviews podem referenciar este barco)
-    await this.tripsRepo
-      .createQueryBuilder()
-      .update()
-      .set({ boatId: null as any })
-      .where('boat_id = :id', { id })
-      .execute();
+    await this.tripsRepo.manager.query(
+      `UPDATE trips SET boat_id = NULL WHERE boat_id = $1`,
+      [id],
+    );
 
     await this.reviewsRepo
       .createQueryBuilder()

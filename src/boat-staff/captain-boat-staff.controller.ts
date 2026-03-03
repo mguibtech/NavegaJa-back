@@ -1,5 +1,5 @@
-import { Controller, Post, Get, Patch, Delete, Param, Body, UseGuards, Request } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
+import { Controller, Post, Get, Patch, Delete, Param, Body, UseGuards, Request, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags, ApiOperation, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { BoatStaffService } from './boat-staff.service';
 import { CaptainAssignManagerDto, UpdateBoatStaffDto } from './dto/boat-staff.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -22,6 +22,14 @@ export class CaptainBoatStaffController {
   })
   assign(@Request() req: any, @Body() dto: CaptainAssignManagerDto) {
     return this.boatStaffService.captainAssignByPhone(req.user.sub, dto);
+  }
+
+  @Get('lookup')
+  @ApiOperation({ summary: 'Buscar utilizador por telefone ou CPF (pré-visualização antes de adicionar)' })
+  @ApiQuery({ name: 'phone', required: false, description: 'Telefone do utilizador' })
+  @ApiQuery({ name: 'cpf', required: false, description: 'CPF do utilizador' })
+  lookup(@Query('phone') phone?: string, @Query('cpf') cpf?: string) {
+    return this.boatStaffService.lookupUser({ phone, cpf });
   }
 
   @Get()

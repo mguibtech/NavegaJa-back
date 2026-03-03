@@ -27,6 +27,7 @@ export class BoatStaffService {
     const staff = this.repo.create({
       userId: dto.userId,
       boatId: dto.boatId,
+      position: dto.position ?? null,
       canCreateTrips: dto.canCreateTrips ?? true,
       canConfirmPayments: dto.canConfirmPayments ?? true,
       canManageShipments: dto.canManageShipments ?? true,
@@ -76,13 +77,38 @@ export class BoatStaffService {
 
   // ── Captain-facing methods ────────────────────────────────────────────────
 
-  /** Capitão adiciona um gestor ao seu barco pelo número de telefone */
+  /** Pré-visualiza utilizador por telefone ou CPF sem o adicionar */
+  async lookupUser(query: { phone?: string; cpf?: string }): Promise<{ id: string; name: string; phone: string; avatarUrl: string | null; role: string }> {
+    if (!query.phone && !query.cpf) {
+      throw new BadRequestException('É necessário fornecer o telefone ou o CPF.');
+    }
+    const where = query.phone ? { phone: query.phone } : { cpf: query.cpf };
+    const user = await this.usersRepo.findOne({
+      where,
+      select: ['id', 'name', 'phone', 'avatarUrl', 'role'],
+    });
+    if (!user) {
+      const campo = query.phone ? 'telefone' : 'CPF';
+      throw new NotFoundException(`Nenhum utilizador encontrado com este ${campo}`);
+    }
+    return { id: user.id, name: user.name, phone: user.phone, avatarUrl: user.avatarUrl, role: user.role };
+  }
+
+  /** Capitão adiciona um gestor ao seu barco pelo telefone ou CPF */
   async captainAssignByPhone(captainId: string, dto: CaptainAssignManagerDto): Promise<BoatStaff> {
+    if (!dto.phone && !dto.cpf) {
+      throw new BadRequestException('É necessário fornecer o telefone ou o CPF do utilizador.');
+    }
+
     const boat = await this.boatsRepo.findOne({ where: { id: dto.boatId, ownerId: captainId } });
     if (!boat) throw new ForbiddenException('Este barco não lhe pertence');
 
-    const user = await this.usersRepo.findOne({ where: { phone: dto.phone } });
-    if (!user) throw new NotFoundException('Nenhum utilizador encontrado com este telefone');
+    const where = dto.phone ? { phone: dto.phone } : { cpf: dto.cpf };
+    const user = await this.usersRepo.findOne({ where });
+    if (!user) {
+      const campo = dto.phone ? 'telefone' : 'CPF';
+      throw new NotFoundException(`Nenhum utilizador encontrado com este ${campo}`);
+    }
 
     if (user.id === captainId) {
       throw new BadRequestException('Não pode adicionar-se a si mesmo como gestor');
@@ -98,6 +124,7 @@ export class BoatStaffService {
     const staff = this.repo.create({
       userId: user.id,
       boatId: dto.boatId,
+      position: dto.position ?? null,
       canCreateTrips: dto.canCreateTrips ?? true,
       canConfirmPayments: dto.canConfirmPayments ?? true,
       canManageShipments: dto.canManageShipments ?? true,

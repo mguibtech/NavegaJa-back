@@ -732,7 +732,7 @@ export class ShipmentsService {
         [ShipmentStatus.ARRIVED]: 'Viagem chegou ao destino - Aguardando entrega',
         [ShipmentStatus.OUT_FOR_DELIVERY]: 'Status atualizado automaticamente',
         [ShipmentStatus.DELIVERED]: 'Status atualizado automaticamente',
-        [ShipmentStatus.CANCELLED]: 'Status atualizado automaticamente',
+        [ShipmentStatus.CANCELLED]: 'Viagem cancelada - Encomenda cancelada automaticamente',
       };
 
       await this.createTimelineEvent(
@@ -753,6 +753,12 @@ export class ShipmentsService {
           title: '📍 Encomenda chegou ao destino!',
           body: `Sua encomenda ${shipment.trackingCode} chegou. Em breve será entregue.`,
           data: { type: 'shipment_arrived', shipmentId: shipment.id, trackingCode: shipment.trackingCode },
+        });
+      } else if (newStatus === ShipmentStatus.CANCELLED) {
+        await this.notificationsService.sendToUser(shipment.senderId, {
+          title: '❌ Encomenda cancelada',
+          body: `Sua encomenda ${shipment.trackingCode} foi cancelada porque a viagem foi cancelada.`,
+          data: { type: 'shipment_cancelled', shipmentId: shipment.id, trackingCode: shipment.trackingCode },
         });
       }
     }

@@ -62,7 +62,11 @@ export class StorageService implements OnModuleInit {
     const destination = `${folder}/${filename}`;
 
     if (this.isEnabled && this.bucket) {
-      return this.uploadToFirebase(buffer, destination, mimetype);
+      try {
+        return await this.uploadToFirebase(buffer, destination, mimetype);
+      } catch (error) {
+        this.logger.warn(`Firebase upload falhou (${error.message}) — usando disco local como fallback`);
+      }
     }
 
     return this.uploadToDisk(buffer, filename);

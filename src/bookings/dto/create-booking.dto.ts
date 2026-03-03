@@ -1,6 +1,8 @@
-import { IsString, IsNotEmpty, IsNumber, IsInt, IsOptional, IsArray, Min, Max, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsOptional, IsArray, Min, IsEnum, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { PaymentMethod } from '../booking.entity';
+import { ChildPassengerDto, ExtraPassengerDto } from './passenger.dto';
 
 export class CreateBookingDto {
   @ApiProperty({ description: 'ID da viagem' })
@@ -38,17 +40,26 @@ export class CreateBookingDto {
   redeemKm?: number;
 
   @ApiProperty({
-    example: [7, 4],
     required: false,
-    description: 'Idades das crianças incluídas na reserva. Crianças com até 9 anos não pagam (mas ocupam assento).',
-    type: [Number],
+    description: 'Crianças incluídas na reserva (nome opcional + idade). Crianças com até 9 anos não pagam (mas ocupam assento).',
+    type: [ChildPassengerDto],
   })
   @IsOptional()
   @IsArray()
-  @IsInt({ each: true, message: 'Cada idade deve ser um número inteiro.' })
-  @Min(0, { each: true, message: 'Idade não pode ser negativa.' })
-  @Max(17, { each: true, message: 'Use este campo apenas para menores de 18 anos.' })
-  children?: number[];
+  @ValidateNested({ each: true })
+  @Type(() => ChildPassengerDto)
+  children?: ChildPassengerDto[];
+
+  @ApiProperty({
+    required: false,
+    description: 'Passageiros adultos adicionais (além do passageiro principal). Cada um com nome e CPF.',
+    type: [ExtraPassengerDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ExtraPassengerDto)
+  passengers?: ExtraPassengerDto[];
 }
 
 export class CancelBookingDto {

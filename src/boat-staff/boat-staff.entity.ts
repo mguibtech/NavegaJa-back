@@ -25,6 +25,9 @@ export class BoatStaff {
   @JoinColumn({ name: 'boat_id' })
   boat: Boat;
 
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  position: string | null; // ex: Motorista, Cobrador, Auxiliar
+
   @Column({ name: 'can_create_trips', type: 'boolean', default: true })
   canCreateTrips: boolean;
 

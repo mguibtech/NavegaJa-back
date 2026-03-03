@@ -6,9 +6,10 @@ import { Boat } from './boat.entity';
 import { Review } from '../reviews/review.entity';
 import { Trip } from '../trips/trip.entity';
 import { User } from '../users/user.entity';
+import { BoatStaff } from '../boat-staff/boat-staff.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Boat, Review, Trip, User])],
+  imports: [TypeOrmModule.forFeature([Boat, Review, Trip, User, BoatStaff])],
   controllers: [BoatsController],
   providers: [BoatsService],
   exports: [BoatsService],

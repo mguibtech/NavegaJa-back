@@ -32,8 +32,11 @@ export class SeedService implements OnModuleInit {
     // Admins e gestores criados SEMPRE (independente do DB ter dados ou não)
     await this.seedAdmins();
 
-    const userCount = await this.usersRepo.count();
-    if (userCount > 2) {
+    // Verifica apenas passageiros/capitães — admins e gestores não contam
+    const demoUserCount = await this.usersRepo.count({
+      where: [{ role: UserRole.PASSENGER }, { role: UserRole.CAPTAIN }],
+    });
+    if (demoUserCount > 0) {
       this.logger.log('Banco já possui dados, pulando seed de demonstração');
       return;
     }
@@ -118,18 +121,18 @@ export class SeedService implements OnModuleInit {
 
     // ====== USERS ======
     const passengers = await this.usersRepo.save([
-      { name: 'João Silva', phone: '92991001001', passwordHash, role: UserRole.PASSENGER, rating: 4.8, totalTrips: 12 },
-      { name: 'Maria Santos', phone: '92991001002', passwordHash, role: UserRole.PASSENGER, rating: 5.0, totalTrips: 5 },
-      { name: 'Pedro Oliveira', phone: '92991001003', passwordHash, role: UserRole.PASSENGER, rating: 4.5, totalTrips: 8 },
-      { name: 'Ana Costa', phone: '92991001004', passwordHash, role: UserRole.PASSENGER, rating: 4.9, totalTrips: 3 },
-      { name: 'Lucas Souza', phone: '92991001005', passwordHash, role: UserRole.PASSENGER, rating: 4.7, totalTrips: 15 },
+      { name: 'João Silva',     phone: '92991001001', cpf: '529.982.247-25', passwordHash, role: UserRole.PASSENGER, rating: 4.8, totalTrips: 12 },
+      { name: 'Maria Santos',   phone: '92991001002', cpf: '987.654.321-00', passwordHash, role: UserRole.PASSENGER, rating: 5.0, totalTrips: 5 },
+      { name: 'Pedro Oliveira', phone: '92991001003', cpf: '111.444.777-35', passwordHash, role: UserRole.PASSENGER, rating: 4.5, totalTrips: 8 },
+      { name: 'Ana Costa',      phone: '92991001004', cpf: '222.555.888-46', passwordHash, role: UserRole.PASSENGER, rating: 4.9, totalTrips: 3 },
+      { name: 'Lucas Souza',    phone: '92991001005', cpf: '333.666.999-57', passwordHash, role: UserRole.PASSENGER, rating: 4.7, totalTrips: 15 },
     ]);
 
     const captains = await this.usersRepo.save([
-      { name: 'Carlos Ribeiro', phone: '92992001001', passwordHash, role: UserRole.CAPTAIN, rating: 4.9, totalTrips: 230, isVerified: true, verifiedAt: new Date() },
-      { name: 'Francisco Almeida', phone: '92992001002', passwordHash, role: UserRole.CAPTAIN, rating: 4.7, totalTrips: 180, isVerified: true, verifiedAt: new Date() },
-      { name: 'Raimundo Ferreira', phone: '92992001003', passwordHash, role: UserRole.CAPTAIN, rating: 4.8, totalTrips: 150, isVerified: true, verifiedAt: new Date() },
-      { name: 'Antônio Nascimento', phone: '92992001004', passwordHash, role: UserRole.CAPTAIN, rating: 4.6, totalTrips: 95, isVerified: true, verifiedAt: new Date() },
+      { name: 'Carlos Ribeiro',     phone: '92992001001', cpf: '444.777.111-68', passwordHash, role: UserRole.CAPTAIN, rating: 4.9, totalTrips: 230, isVerified: true, verifiedAt: new Date() },
+      { name: 'Francisco Almeida',  phone: '92992001002', cpf: '555.888.222-79', passwordHash, role: UserRole.CAPTAIN, rating: 4.7, totalTrips: 180, isVerified: true, verifiedAt: new Date() },
+      { name: 'Raimundo Ferreira',  phone: '92992001003', cpf: '666.999.333-80', passwordHash, role: UserRole.CAPTAIN, rating: 4.8, totalTrips: 150, isVerified: true, verifiedAt: new Date() },
+      { name: 'Antônio Nascimento', phone: '92992001004', cpf: '777.111.444-91', passwordHash, role: UserRole.CAPTAIN, rating: 4.6, totalTrips: 95,  isVerified: true, verifiedAt: new Date() },
     ]);
 
     this.logger.log(`  → ${passengers.length + captains.length} usuários criados`);

@@ -23,6 +23,8 @@ export class PdfService {
     paymentStatus: string;
     qrCodeCheckin: string | null;
     createdAt: Date;
+    children?: { name?: string; age: number }[] | null;
+    extraPassengers?: { name: string; cpf: string }[] | null;
   }): any {
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
 
@@ -82,8 +84,44 @@ export class PdfService {
     doc.fontSize(11).font('Helvetica').fillColor('#333333').text(`${data.boatName} (${data.boatType})`, 50, y);
     doc.text(`${data.seats} assento(s)`, col2, y);
 
+    // ── Passageiros adicionais ────────────────────────────────────────────────
+    const hasExtras = data.extraPassengers?.length;
+    const hasChildren = data.children?.length;
+
+    if (hasExtras || hasChildren) {
+      y += 25;
+      doc.moveTo(50, y).lineTo(545, y).stroke('#DDDDDD');
+      y += 15;
+    }
+
+    if (hasExtras) {
+      doc.fontSize(9).font('Helvetica-Bold').fillColor('#888888').text('PASSAGEIROS ADICIONAIS', 50, y);
+      y += 14;
+      data.extraPassengers!.forEach((p, i) => {
+        doc.fontSize(10).font('Helvetica').fillColor('#333333')
+           .text(`${i + 2}. ${p.name}`, 50, y)
+           .text(`CPF: ${p.cpf}`, 300, y);
+        y += 15;
+      });
+      y += 5;
+    }
+
+    if (hasChildren) {
+      doc.fontSize(9).font('Helvetica-Bold').fillColor('#888888').text('CRIANÇAS', 50, y);
+      y += 14;
+      data.children!.forEach((c) => {
+        const label = c.age === 0 ? 'Bebê (0 anos)' : `${c.age} ano${c.age > 1 ? 's' : ''}`;
+        const free = c.age <= 9 ? ' [GRÁTIS]' : '';
+        const nameStr = c.name ? `${c.name} — ` : '';
+        doc.fontSize(10).font('Helvetica').fillColor('#333333')
+           .text(`${nameStr}${label}${free}`, 50, y);
+        y += 15;
+      });
+      y += 5;
+    }
+
     // ── Linha divisória ───────────────────────────────────────────────────────
-    y += 30;
+    y += 10;
     doc.moveTo(50, y).lineTo(545, y).stroke('#DDDDDD');
 
     // ── Pagamento ─────────────────────────────────────────────────────────────

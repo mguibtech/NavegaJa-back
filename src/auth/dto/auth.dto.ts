@@ -24,11 +24,11 @@ export class RegisterDto {
   @MinLength(6, { message: 'A senha deve ter no mínimo 6 caracteres' })
   password: string;
 
-  @ApiProperty({ example: '123.456.789-00', required: false })
-  @IsOptional()
+  @ApiProperty({ example: '123.456.789-00' })
   @IsString({ message: 'O CPF deve ser um texto' })
+  @IsNotEmpty({ message: 'O CPF é obrigatório' })
   @IsCpfValid()
-  cpf?: string;
+  cpf: string;
 
   @ApiProperty({ example: 'Manaus' })
   @IsString({ message: 'A cidade deve ser um texto' })
