@@ -188,6 +188,15 @@ export class TripsService {
     // Notificar usuários que favoritaram este capitão (fire-and-forget)
     this.notifyFavoriteCaptainFans(captainId, saved).catch(() => {});
 
+    // Se criado por gestor, notificar o capitão dono do barco
+    if (role === 'boat_manager' && boat.ownerId !== captainId) {
+      this.notificationsService.sendToUser(boat.ownerId, {
+        title: '🚢 Nova viagem criada no seu barco',
+        body: `${boat.name}: ${dto.origin} → ${dto.destination} foi agendada pelo gestor.`,
+        data: { type: 'trip_created_by_manager', tripId: saved.id, boatId: boat.id },
+      }).catch(() => {});
+    }
+
     return saved;
   }
 
@@ -454,10 +463,28 @@ export class TripsService {
   ];
 
   async findByCaptain(captainId: string): Promise<Trip[]> {
-    return this.tripsRepo.find({
-      where: { captainId },
+    // Incluir viagens criadas directamente pelo capitão + viagens nos barcos do capitão
+    // criadas por boat_managers (trip.captainId = gestor, mas boat.ownerId = capitão)
+    const boats = await this.boatsRepo.find({ where: { ownerId: captainId }, select: ['id'] });
+    const boatIds = boats.map(b => b.id);
+
+    const conditions: any[] = [{ captainId }];
+    if (boatIds.length > 0) {
+      conditions.push({ boatId: In(boatIds) });
+    }
+
+    const trips = await this.tripsRepo.find({
+      where: conditions,
       relations: ['boat'],
       order: { departureAt: 'DESC' },
+    });
+
+    // Deduplicar (viagem criada pelo próprio capitão no seu barco apareceria duas vezes)
+    const seen = new Set<string>();
+    return trips.filter(t => {
+      if (seen.has(t.id)) return false;
+      seen.add(t.id);
+      return true;
     });
   }
 
