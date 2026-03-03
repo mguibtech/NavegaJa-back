@@ -531,14 +531,36 @@ export class TripsService {
   }
 
   async delete(tripId: string, userId: string, role?: string): Promise<void> {
-    const trip = await this.tripsRepo.findOne({ where: { id: tripId } });
+    const trip = await this.tripsRepo.findOne({ where: { id: tripId }, relations: ['boat'] });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
     await this.assertCanManageTrip(trip, userId, role);
+
+    const route = `${trip.origin} → ${trip.destination}`;
 
     // Cancelar em vez de deletar se houver reservas
     if (trip.availableSeats < trip.totalSeats) {
       trip.status = TripStatus.CANCELLED;
       await this.tripsRepo.save(trip);
+
+      // Notificar passageiros afectados
+      const affectedPassengerIds = await this.bookingsService.autoCancelByTrip(tripId);
+      if (affectedPassengerIds.length > 0) {
+        await this.notificationsService.sendToUsers(affectedPassengerIds, {
+          title: '❌ Viagem cancelada',
+          body: `A viagem ${route} foi cancelada. A sua reserva foi automaticamente cancelada.`,
+          data: { type: 'trip_cancelled', tripId },
+        });
+      }
+
+      // Notificar o capitão dono do barco quando o cancelamento foi feito pelo gestor
+      const boatOwnerId = (trip as any).boat?.ownerId;
+      if (role === 'boat_manager' && boatOwnerId && boatOwnerId !== userId) {
+        await this.notificationsService.sendToUser(boatOwnerId, {
+          title: '⚠️ Viagem cancelada pelo gestor',
+          body: `A viagem ${route} foi cancelada pelo gestor do seu barco.`,
+          data: { type: 'trip_cancelled_by_manager', tripId },
+        });
+      }
     } else {
       await this.tripsRepo.remove(trip);
     }
@@ -645,6 +667,16 @@ export class TripsService {
           title: '❌ Viagem cancelada',
           body: `A viagem ${route} foi cancelada. A sua reserva foi automaticamente cancelada.`,
           data: { type: 'trip_cancelled', tripId },
+        });
+      }
+
+      // Notificar o capitão dono do barco quando o cancelamento foi feito pelo gestor
+      const boatOwnerId = (trip as any).boat?.ownerId;
+      if (role === 'boat_manager' && boatOwnerId && boatOwnerId !== userId) {
+        await this.notificationsService.sendToUser(boatOwnerId, {
+          title: '⚠️ Viagem cancelada pelo gestor',
+          body: `A viagem ${route} foi cancelada pelo gestor do seu barco.`,
+          data: { type: 'trip_cancelled_by_manager', tripId },
         });
       }
     }
