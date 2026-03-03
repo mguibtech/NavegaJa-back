@@ -5,6 +5,7 @@ import { SafetyController } from './safety.controller';
 import { EmergencyContact } from './emergency-contact.entity';
 import { SafetyChecklist } from './safety-checklist.entity';
 import { SosAlert } from './sos-alert.entity';
+import { PersonalContact } from './personal-contact.entity';
 import { Trip } from '../trips/trip.entity';
 import { User } from '../users/user.entity';
 import { WeatherModule } from '../weather/weather.module';
@@ -16,6 +17,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       EmergencyContact,
       SafetyChecklist,
       SosAlert,
+      PersonalContact,
       Trip,
       User,
     ]),

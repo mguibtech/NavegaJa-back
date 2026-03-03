@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Patch, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { SafetyService } from './safety.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -214,6 +214,44 @@ export class SafetyController {
   @ApiOperation({ summary: 'Listar meus alertas SOS' })
   getUserSosAlerts(@Request() req: any) {
     return this.safetyService.getUserSosAlerts(req.user.sub);
+  }
+
+  // ==================== CONTACTOS PESSOAIS DE EMERGÊNCIA ====================
+
+  @Get('personal-contacts')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Listar contactos pessoais de emergência',
+    description: 'Lista os contactos que receberão notificação quando o utilizador acionar o SOS. Máximo 5.',
+  })
+  getPersonalContacts(@Request() req: any) {
+    return this.safetyService.getPersonalContacts(req.user.sub);
+  }
+
+  @Post('personal-contacts')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Adicionar contacto pessoal de emergência',
+    description:
+      'Adiciona um contacto (máx. 5). Se o telefone existir no NavegaJá, ' +
+      'esse utilizador recebe notificação FCM com localização quando o SOS for acionado. ' +
+      'Para contactos sem conta, o app envia SMS/WhatsApp directamente.',
+  })
+  addPersonalContact(
+    @Request() req: any,
+    @Body() body: { name: string; phone: string },
+  ) {
+    return this.safetyService.addPersonalContact(req.user.sub, body);
+  }
+
+  @Delete('personal-contacts/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Remover contacto pessoal de emergência' })
+  removePersonalContact(@Param('id') id: string, @Request() req: any) {
+    return this.safetyService.removePersonalContact(req.user.sub, id);
   }
 
   // ==================== INTEGRAÇÃO COM CLIMA ====================

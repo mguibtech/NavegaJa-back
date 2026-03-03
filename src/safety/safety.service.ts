@@ -4,10 +4,13 @@ import { Repository } from 'typeorm';
 import { EmergencyContact, EmergencyServiceType } from './emergency-contact.entity';
 import { SafetyChecklist } from './safety-checklist.entity';
 import { SosAlert, SosAlertStatus, SosAlertType } from './sos-alert.entity';
+import { PersonalContact } from './personal-contact.entity';
 import { Trip } from '../trips/trip.entity';
 import { User, UserRole } from '../users/user.entity';
 import { WeatherService } from '../weather/weather.service';
 import { NotificationsService } from '../notifications/notifications.service';
+
+const MAX_PERSONAL_CONTACTS = 5;
 
 @Injectable()
 export class SafetyService {
@@ -18,6 +21,8 @@ export class SafetyService {
     private checklistsRepo: Repository<SafetyChecklist>,
     @InjectRepository(SosAlert)
     private sosAlertsRepo: Repository<SosAlert>,
+    @InjectRepository(PersonalContact)
+    private personalContactsRepo: Repository<PersonalContact>,
     @InjectRepository(Trip)
     private tripsRepo: Repository<Trip>,
     @InjectRepository(User)
@@ -166,6 +171,58 @@ export class SafetyService {
     return checklist?.allItemsChecked || false;
   }
 
+  // ==================== CONTACTOS PESSOAIS DE EMERGÊNCIA ====================
+
+  /** Lista os contactos pessoais de emergência do utilizador */
+  async getPersonalContacts(userId: string): Promise<PersonalContact[]> {
+    return this.personalContactsRepo.find({
+      where: { userId },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  /**
+   * Adiciona um contacto pessoal de emergência (máx. 5).
+   * Se o telefone corresponder a um utilizador NavegaJá, liga automaticamente.
+   */
+  async addPersonalContact(userId: string, dto: { name: string; phone: string }): Promise<PersonalContact> {
+    const count = await this.personalContactsRepo.count({ where: { userId } });
+    if (count >= MAX_PERSONAL_CONTACTS) {
+      throw new BadRequestException(`Máximo de ${MAX_PERSONAL_CONTACTS} contactos de emergência por utilizador.`);
+    }
+
+    // Verificar se já existe este telefone na lista deste utilizador
+    const existing = await this.personalContactsRepo.findOne({ where: { userId, phone: dto.phone } });
+    if (existing) {
+      throw new BadRequestException('Este número já está na sua lista de contactos de emergência.');
+    }
+
+    // Auto-vincular se o telefone pertencer a um utilizador do app
+    const linked = await this.usersRepo.findOne({
+      where: { phone: dto.phone },
+      select: ['id'],
+    });
+
+    const contact = this.personalContactsRepo.create({
+      userId,
+      name: dto.name,
+      phone: dto.phone,
+      linkedUserId: linked?.id ?? null,
+    });
+
+    return this.personalContactsRepo.save(contact);
+  }
+
+  /** Remove um contacto pessoal de emergência */
+  async removePersonalContact(userId: string, contactId: string): Promise<{ message: string }> {
+    const contact = await this.personalContactsRepo.findOne({ where: { id: contactId, userId } });
+    if (!contact) {
+      throw new NotFoundException('Contacto não encontrado ou não pertence a este utilizador.');
+    }
+    await this.personalContactsRepo.remove(contact);
+    return { message: 'Contacto removido.' };
+  }
+
   // ==================== ALERTAS SOS ====================
 
   /**
@@ -200,8 +257,28 @@ export class SafetyService {
 
     const saved = await this.sosAlertsRepo.save(alert);
 
-    // Notificar todos os admins ativos com FCM token
+    // Buscar nome do utilizador para as notificações
+    const sender = await this.usersRepo.findOne({
+      where: { id: data.userId },
+      select: ['id', 'name'],
+    });
+    const senderName = sender?.name || 'Utilizador';
+
+    const locationDesc = data.location
+      ? ` em: ${data.location}`
+      : (data.latitude && data.longitude ? ` (GPS: ${Number(data.latitude).toFixed(4)}, ${Number(data.longitude).toFixed(4)})` : '');
+
+    const sosData: Record<string, string> = {
+      type: 'sos_alert',
+      alertId: saved.id,
+      alertType: data.type,
+      senderName,
+      ...(data.latitude != null && { lat: String(data.latitude) }),
+      ...(data.longitude != null && { lng: String(data.longitude) }),
+    };
+
     try {
+      // 1. Notificar todos os admins ativos
       const admins = await this.usersRepo.find({
         where: { role: UserRole.ADMIN, isActive: true },
         select: ['id', 'fcmToken'],
@@ -210,8 +287,24 @@ export class SafetyService {
       if (adminIds.length > 0) {
         await this.notificationsService.sendToUsers(adminIds, {
           title: '🆘 ALERTA SOS!',
-          body: `Emergência do tipo "${data.type}" acionada${data.location ? ` em: ${data.location}` : ''}`,
-          data: { type: 'sos_alert', alertId: saved.id, alertType: data.type },
+          body: `${senderName} acionou emergência "${data.type}"${locationDesc}`,
+          data: sosData,
+        });
+      }
+
+      // 2. Notificar contactos pessoais vinculados ao app
+      const personalContacts = await this.personalContactsRepo.find({
+        where: { userId: data.userId },
+      });
+      const linkedIds = personalContacts
+        .map(c => c.linkedUserId)
+        .filter((id): id is string => !!id);
+
+      if (linkedIds.length > 0) {
+        await this.notificationsService.sendToUsers(linkedIds, {
+          title: `🆘 SOS — ${senderName} precisa de ajuda!`,
+          body: `Emergência acionada${locationDesc}. Abra o app para ver a localização.`,
+          data: { ...sosData, type: 'sos_personal_contact' },
         });
       }
     } catch {
