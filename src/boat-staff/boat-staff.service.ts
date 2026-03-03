@@ -144,6 +144,19 @@ export class BoatStaffService {
     return this.sanitizeStaff(result);
   }
 
+  /** Lista gestores (captain) ou as próprias atribuições (boat_manager) */
+  async getMyStaff(userId: string, role: string): Promise<BoatStaff[]> {
+    if (role === 'boat_manager') {
+      const records = await this.repo.find({
+        where: { userId, isActive: true },
+        relations: ['boat'],
+        order: { createdAt: 'DESC' },
+      });
+      return records;
+    }
+    return this.captainGetMyStaff(userId);
+  }
+
   /** Lista todo o staff dos barcos do capitão */
   async captainGetMyStaff(captainId: string): Promise<BoatStaff[]> {
     const boats = await this.boatsRepo.find({ where: { ownerId: captainId }, select: ['id'] });

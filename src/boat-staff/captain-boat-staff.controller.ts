@@ -33,9 +33,15 @@ export class CaptainBoatStaffController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Listar todos os gestores dos meus barcos' })
+  @Roles('captain', 'boat_manager')
+  @ApiOperation({
+    summary: 'Listar gestores (captain) ou as minhas atribuições (boat_manager)',
+    description:
+      'Captain: devolve todos os gestores dos seus barcos. ' +
+      'Boat_manager: devolve os registos BoatStaff onde userId = currentUser (barcos que gere).',
+  })
   getMyStaff(@Request() req: any) {
-    return this.boatStaffService.captainGetMyStaff(req.user.sub);
+    return this.boatStaffService.getMyStaff(req.user.sub, req.user.role);
   }
 
   @Patch(':id')
