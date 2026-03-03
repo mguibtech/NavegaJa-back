@@ -84,7 +84,12 @@ export class NotificationsService implements OnModuleInit {
       select: ['id', 'fcmToken'],
     });
 
-    if (!user?.fcmToken) return;
+    if (!user?.fcmToken) {
+      this.logger.warn(`sendToUser(${userId}): fcmToken ausente — notificação descartada. Utilizador ainda não registou o token FCM.`);
+      return;
+    }
+
+    this.logger.log(`sendToUser(${userId}): enviando "${payload.title}"`);
     await this.sendToToken(user.fcmToken, payload);
   }
 
@@ -198,7 +203,7 @@ export class NotificationsService implements OnModuleInit {
 
   private async sendToToken(token: string, payload: NotificationPayload): Promise<void> {
     try {
-      await this.firebaseApp!.messaging().send({
+      const messageId = await this.firebaseApp!.messaging().send({
         token,
         notification: { title: payload.title, body: payload.body },
         data: payload.data ?? {},
@@ -212,12 +217,14 @@ export class NotificationsService implements OnModuleInit {
         },
         apns: { payload: { aps: { sound: 'default', badge: 1 } } },
       });
+      this.logger.log(`FCM enviado com sucesso: ${messageId}`);
     } catch (error) {
       // Token inválido/expirado — limpar
       if (error?.errorInfo?.code === 'messaging/registration-token-not-registered') {
+        this.logger.warn(`FCM token inválido/expirado — removendo do utilizador`);
         await this.usersRepo.update({ fcmToken: token }, { fcmToken: null });
       }
-      this.logger.warn(`Falha ao enviar notificação: ${error.message}`);
+      this.logger.error(`Falha ao enviar notificação FCM: [${error?.errorInfo?.code ?? 'unknown'}] ${error.message}`);
     }
   }
 }

@@ -132,11 +132,12 @@ export class BoatStaffService {
 
     const saved = await this.repo.save(staff);
 
-    // Notificar o novo gestor
+    // Notificar o novo gestor — requiresTokenRefresh avisa o app para chamar POST /auth/refresh
+    // pois o role foi alterado de 'passenger' para 'boat_manager' na BD
     await this.notificationsService.sendToUser(user.id, {
       title: '🚢 Novo cargo atribuído',
       body: `Você foi adicionado como gestor da embarcação "${boat.name}"`,
-      data: { type: 'boat_manager_assigned', boatId: dto.boatId, boatName: boat.name },
+      data: { type: 'boat_manager_assigned', boatId: dto.boatId, boatName: boat.name, requiresTokenRefresh: 'true' },
     });
 
     const result = await this.repo.findOne({ where: { id: saved.id }, relations: ['user', 'boat'] }) as BoatStaff;
@@ -178,11 +179,11 @@ export class BoatStaffService {
     // Revogar role se não tiver mais barcos atribuídos
     await this.revertRoleIfNoBoats(userId);
 
-    // Notificar o gestor removido
+    // Notificar o gestor removido — requiresTokenRefresh pois o role pode ter revertido para 'passenger'
     await this.notificationsService.sendToUser(userId, {
       title: 'Cargo encerrado',
       body: `Você foi removido como gestor da embarcação "${boatName}"`,
-      data: { type: 'boat_manager_removed', boatId },
+      data: { type: 'boat_manager_removed', boatId, requiresTokenRefresh: 'true' },
     });
 
     return { message: 'Gestor removido com sucesso' };
