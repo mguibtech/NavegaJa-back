@@ -55,9 +55,14 @@ export class BoatsController {
   }
 
   @Get('my-boats')
-  @ApiOperation({ summary: 'Minhas embarcações' })
+  @UseGuards(RolesGuard)
+  @Roles('captain', 'boat_manager')
+  @ApiOperation({
+    summary: 'Minhas embarcações',
+    description: 'Captain: barcos de propriedade. Boat_manager: barcos atribuídos via BoatStaff.',
+  })
   myBoats(@Request() req: any) {
-    return this.boatsService.findByOwner(req.user.sub);
+    return this.boatsService.findAccessibleBoats(req.user.sub, req.user.role);
   }
 
   @Get(':id')

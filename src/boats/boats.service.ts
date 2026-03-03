@@ -98,6 +98,18 @@ export class BoatsService {
     return this.boatsRepo.find({ where: { ownerId } });
   }
 
+  /** Capitão → barcos próprios. Boat_manager → barcos atribuídos via BoatStaff. */
+  async findAccessibleBoats(userId: string, role: string): Promise<Boat[]> {
+    if (role === 'boat_manager') {
+      const staffRecords = await this.boatStaffRepo.find({
+        where: { userId, isActive: true },
+        relations: ['boat'],
+      });
+      return staffRecords.map(s => s.boat).filter((b): b is Boat => !!b);
+    }
+    return this.findByOwner(userId);
+  }
+
   async findById(id: string): Promise<any> {
     const boat = await this.boatsRepo.findOne({
       where: { id },
