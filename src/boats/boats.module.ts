@@ -7,9 +7,10 @@ import { Review } from '../reviews/review.entity';
 import { Trip } from '../trips/trip.entity';
 import { User } from '../users/user.entity';
 import { BoatStaff } from '../boat-staff/boat-staff.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Boat, Review, Trip, User, BoatStaff])],
+  imports: [TypeOrmModule.forFeature([Boat, Review, Trip, User, BoatStaff]), NotificationsModule],
   controllers: [BoatsController],
   providers: [BoatsService],
   exports: [BoatsService],

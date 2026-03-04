@@ -6,8 +6,9 @@ import { CreateBoatDto } from './dto/create-boat.dto';
 import { UpdateBoatDto } from './dto/update-boat.dto';
 import { Review, ReviewType } from '../reviews/review.entity';
 import { Trip, TripStatus } from '../trips/trip.entity';
-import { User } from '../users/user.entity';
+import { User, UserRole } from '../users/user.entity';
 import { BoatStaff } from '../boat-staff/boat-staff.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class BoatsService {
@@ -22,6 +23,7 @@ export class BoatsService {
     private usersRepo: Repository<User>,
     @InjectRepository(BoatStaff)
     private boatStaffRepo: Repository<BoatStaff>,
+    private notificationsService: NotificationsService,
   ) {}
 
   async create(ownerId: string, dto: CreateBoatDto): Promise<Boat> {
@@ -70,8 +72,32 @@ export class BoatsService {
       throw new BadRequestException('Não é possível apagar uma embarcação com viagens activas');
     }
 
+    // Recolher gestores antes de apagar para notificar e reverter roles
+    const staffToRemove = await this.boatStaffRepo.find({
+      where: { boatId: id },
+      select: ['userId'],
+    });
+    const staffUserIds = staffToRemove.map(s => s.userId);
+
     // Remover gestores atribuídos a este barco
     await this.boatStaffRepo.delete({ boatId: id });
+
+    // Para cada gestor: reverter para passenger se não tiver mais barcos; notificar
+    for (const userId of staffUserIds) {
+      const remaining = await this.boatStaffRepo.count({ where: { userId } });
+      if (remaining === 0) {
+        await this.usersRepo.update(userId, { role: UserRole.PASSENGER });
+      }
+      this.notificationsService.sendToUser(userId, {
+        title: '🚢 Embarcação removida',
+        body: `A embarcação "${boat.name}" foi removida pelo capitão. ${remaining === 0 ? 'O seu cargo de gestor foi encerrado.' : 'Ainda tem outros barcos atribuídos.'}`,
+        data: {
+          type: 'boat_deleted',
+          boatId: id,
+          ...(remaining === 0 && { requiresTokenRefresh: 'true' }),
+        },
+      }).catch(() => {});
+    }
 
     // Garantir que boat_id em trips é nullable (idempotente — cobre a migração pendente do TypeORM)
     await this.tripsRepo.manager.query(
