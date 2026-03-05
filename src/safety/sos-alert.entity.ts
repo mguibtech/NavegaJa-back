@@ -10,6 +10,7 @@ export enum SosAlertStatus {
 }
 
 export enum SosAlertType {
+  GENERAL = 'general',         // Alerta geral (botão físico / atalho rápido)
   EMERGENCY = 'emergency',     // Emergência geral
   MEDICAL = 'medical',         // Emergência médica
   FIRE = 'fire',               // Incêndio

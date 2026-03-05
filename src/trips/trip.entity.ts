@@ -79,11 +79,19 @@ export class Trip {
   @Column({ type: 'enum', enum: TripStatus, default: TripStatus.SCHEDULED })
   status: TripStatus;
 
+  // Coordenadas geocodificadas da cidade de origem (preenchidas ao criar a viagem)
+  @Column({ name: 'origin_lat', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  originLat: number | null;
+
+  @Column({ name: 'origin_lng', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  originLng: number | null;
+
+  // GPS em tempo real do capitão (actualizado via PATCH /trips/:id/location)
   @Column({ name: 'current_lat', type: 'decimal', precision: 10, scale: 7, nullable: true })
-  currentLat: number;
+  currentLat: number | null;
 
   @Column({ name: 'current_lng', type: 'decimal', precision: 10, scale: 7, nullable: true })
-  currentLng: number;
+  currentLng: number | null;
 
   @Column({ name: 'last_location_at', type: 'timestamp', nullable: true })
   lastLocationAt: Date | null;

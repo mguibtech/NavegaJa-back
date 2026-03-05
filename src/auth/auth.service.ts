@@ -31,6 +31,13 @@ export class AuthService {
       throw new ConflictException('Telefone já cadastrado');
     }
 
+    if (dto.cpf) {
+      const cpfExists = await this.usersRepo.findOne({ where: { cpf: dto.cpf } });
+      if (cpfExists) {
+        throw new ConflictException('CPF já cadastrado');
+      }
+    }
+
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = this.usersRepo.create({
       name: dto.name,
@@ -41,6 +48,7 @@ export class AuthService {
       role: UserRole.PASSENGER, // app mobile cria sempre passageiro
       city: dto.city,
       state: dto.state ?? 'AM',
+      gender: dto.gender ?? null,
     });
 
     const saved = await this.usersRepo.save(user) as User;

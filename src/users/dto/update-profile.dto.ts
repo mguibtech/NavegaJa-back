@@ -1,5 +1,6 @@
-import { IsString, IsOptional, IsEmail, IsUrl, Length, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsEmail, IsUrl, Length, MaxLength, IsEnum } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Gender } from '../../users/user.entity';
 import { IsCpfValid } from '../../common/validators/is-cpf-valid.validator';
 
 export class UpdateProfileDto {
@@ -36,6 +37,11 @@ export class UpdateProfileDto {
   @IsString()
   @Length(2, 2, { message: 'Estado deve ter 2 letras (ex: AM)' })
   state?: string;
+
+  @ApiPropertyOptional({ enum: Gender, example: 'M', description: 'Gênero (M, F ou other)' })
+  @IsOptional()
+  @IsEnum(Gender, { message: 'Gênero inválido. Use M, F ou other' })
+  gender?: Gender;
 
   // ── Documentos do capitão (apenas capitães enviam estes campos) ────────────
 

@@ -163,6 +163,23 @@ export class BookingsService {
       );
     }
 
+    // Validar CPFs dos passageiros adicionais
+    if (dto.passengers?.length) {
+      // CPFs duplicados entre os extras
+      const extraCpfs = dto.passengers.map(p => p.cpf);
+      if (new Set(extraCpfs).size !== extraCpfs.length) {
+        throw new BadRequestException('Há CPFs duplicados entre os passageiros adicionais.');
+      }
+
+      // CPF de extra igual ao do passageiro principal
+      const mainUser = await this.usersRepo.findOne({ where: { id: passengerId }, select: ['cpf'] });
+      if (mainUser?.cpf && extraCpfs.includes(mainUser.cpf)) {
+        throw new BadRequestException(
+          'O CPF do passageiro principal não pode constar nos passageiros adicionais.',
+        );
+      }
+    }
+
     // Calcular preço com descontos (inclui km e crianças grátis se informados)
     const priceBreakdown = await this.calculatePrice(passengerId, dto.tripId, quantity, dto.couponCode, dto.redeemKm, dto.children);
     const totalPrice = priceBreakdown.finalPrice;

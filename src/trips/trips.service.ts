@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException, BadRequestException,
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThanOrEqual, Between, In } from 'typeorm';
 import { Trip, TripStatus } from './trip.entity';
+import { geocodeCity } from './city-coords';
 import { CreateTripDto, UpdateTripStatusDto, UpdateLocationDto } from './dto/trip.dto';
 import { ShipmentsService } from '../shipments/shipments.service';
 import { ShipmentStatus } from '../shipments/shipment.entity';
@@ -181,6 +182,7 @@ export class TripsService {
       cargoPriceKg: dto.cargoPriceKg || 0,
       cargoCapacityKg: dto.cargoCapacityKg || null,
       availableCargoKg: dto.cargoCapacityKg || null, // Inicializa com capacidade total
+      ...(() => { const c = geocodeCity(dto.origin); return c ? { originLat: c.lat, originLng: c.lng } : {}; })(),
     } as Partial<Trip>);
 
     const saved = await this.tripsRepo.save(trip);
@@ -598,8 +600,9 @@ export class TripsService {
       }
 
       // 2. Verificar condições climáticas (usa coords atuais do GPS ou padrão Manaus)
-      const lat = trip.currentLat || -3.119;
-      const lng = trip.currentLng || -60.0217;
+      const _gc = geocodeCity(trip.origin);
+      const lat = trip.currentLat || trip.originLat || _gc?.lat || -3.119;
+      const lng = trip.currentLng || trip.originLng || _gc?.lng || -60.0217;
 
       try {
         const weatherSafety = await this.weatherService.evaluateNavigationSafety(lat, lng);
@@ -705,12 +708,38 @@ export class TripsService {
   async getLocation(tripId: string): Promise<{ lat: number | null; lng: number | null; lastLocationAt: Date | null; status: string }> {
     const trip = await this.tripsRepo.findOne({
       where: { id: tripId },
-      select: ['id', 'currentLat', 'currentLng', 'lastLocationAt', 'status'],
+      relations: ['route'],
     });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
+
+    // Viagem agendada → posição é a cidade de origem (da rota ou geocodificada)
+    const _originCoords = (trip.route?.originLat && trip.route?.originLng)
+      ? { lat: Number(trip.route.originLat), lng: Number(trip.route.originLng) }
+      : (trip.originLat ? { lat: Number(trip.originLat), lng: Number(trip.originLng) } : geocodeCity(trip.origin));
+    if (trip.status === TripStatus.SCHEDULED && _originCoords) {
+      return {
+        lat: _originCoords.lat,
+        lng: _originCoords.lng,
+        lastLocationAt: null,
+        status: trip.status,
+      };
+    }
+
+    // Viagem concluída → posição é a cidade de destino (da rota)
+    if (trip.status === TripStatus.COMPLETED && trip.route) {
+      return {
+        lat: Number(trip.route.destinationLat),
+        lng: Number(trip.route.destinationLng),
+        lastLocationAt: trip.lastLocationAt ?? null,
+        status: trip.status,
+      };
+    }
+
+    // Em progresso ou sem rota → GPS em tempo real (fallback: coords da cidade de origem)
+    const _fb = trip.originLat ? { lat: Number(trip.originLat), lng: Number(trip.originLng) } : geocodeCity(trip.origin);
     return {
-      lat: trip.currentLat ?? null,
-      lng: trip.currentLng ?? null,
+      lat: trip.currentLat ?? _fb?.lat ?? null,
+      lng: trip.currentLng ?? _fb?.lng ?? null,
       lastLocationAt: trip.lastLocationAt ?? null,
       status: trip.status,
     };

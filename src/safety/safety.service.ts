@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EmergencyContact, EmergencyServiceType } from './emergency-contact.entity';
@@ -237,6 +237,17 @@ export class SafetyService {
     longitude?: number;
     location?: string;
   }) {
+    // Impede duplicado — só 1 SOS activo por utilizador de cada vez
+    const existing = await this.sosAlertsRepo.findOne({
+      where: { userId: data.userId, status: SosAlertStatus.ACTIVE },
+    });
+    if (existing) {
+      throw new ConflictException({
+        message: 'Já tens um alerta SOS activo. Cancela-o antes de criar um novo.',
+        activeAlert: existing,
+      });
+    }
+
     // Valida tripId — se não existir na BD, ignora (SOS pode ocorrer sem viagem ativa)
     let validTripId: string | null = null;
     if (data.tripId) {
@@ -482,14 +493,9 @@ export class SafetyService {
     try {
       return await this.weatherService.evaluateNavigationSafety(latitude, longitude);
     } catch (error) {
-      // Se falhar, retorna seguro por padrão (não bloqueia navegação)
-      return {
-        isSafe: true,
-        score: 100,
-        warnings: ['Não foi possível verificar clima'],
-        recommendations: ['Verifique condições manualmente'],
-        weather: null,
-      };
+      throw new ServiceUnavailableException(
+        'Serviço de clima indisponível. Verifique manualmente as condições antes de navegar.',
+      );
     }
   }
 }

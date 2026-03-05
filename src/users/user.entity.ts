@@ -15,6 +15,12 @@ export enum UserRole {
   BOAT_MANAGER = 'boat_manager',
 }
 
+export enum Gender {
+  MALE = 'M',
+  FEMALE = 'F',
+  OTHER = 'other',
+}
+
 export enum KycStatus {
   NONE = 'none',                 // Ainda não enviou documentos
   PENDING = 'pending',           // Documentos enviados, aguardando revisão
@@ -54,6 +60,9 @@ export class User {
 
   @Column({ name: 'avatar_url', type: 'text', nullable: true })
   avatarUrl: string;
+
+  @Column({ name: 'gender', type: 'enum', enum: Gender, nullable: true })
+  gender: Gender | null;
 
   @Column({ type: 'decimal', precision: 2, scale: 1, default: 5.0 })
   rating: number;

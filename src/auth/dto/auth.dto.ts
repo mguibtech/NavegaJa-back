@@ -1,6 +1,7 @@
-import { IsString, IsNotEmpty, MinLength, IsOptional, IsEmail, Length } from 'class-validator';
+import { IsString, IsNotEmpty, MinLength, IsOptional, IsEmail, Length, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsCpfValid } from '../../common/validators/is-cpf-valid.validator';
+import { Gender } from '../../users/user.entity';
 
 /** Registo público via app mobile — cria sempre PASSAGEIRO */
 export class RegisterDto {
@@ -45,6 +46,11 @@ export class RegisterDto {
   @IsString()
   @IsOptional()
   referralCode?: string;
+
+  @ApiProperty({ enum: Gender, example: 'M', required: false })
+  @IsEnum(Gender, { message: 'Gênero inválido. Use M, F ou other' })
+  @IsOptional()
+  gender?: Gender;
 }
 
 export class LoginDto {

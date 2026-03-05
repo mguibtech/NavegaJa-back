@@ -144,23 +144,24 @@ export class WeatherService {
     let score = 100;
 
     // ── Condições meteorológicas ──────────────────────────────────────────────
-    if (weather.windSpeed > 10) {
+    // Thresholds calibrados para o contexto do Amazonas (período chuvoso intenso)
+    if (weather.windSpeed > 15) {
       warnings.push('Ventos fortes detectados');
       score -= 30;
       recommendations.push('Reduzir velocidade da embarcação');
     }
-    if (weather.windGust && weather.windGust > 15) {
+    if (weather.windGust && weather.windGust > 20) {
       warnings.push('Rajadas de vento perigosas');
       score -= 40;
       recommendations.push('Considere adiar a viagem');
     }
-    if (weather.rain && weather.rain > 5) {
-      warnings.push('Chuva forte');
+    if (weather.rain && weather.rain > 15) {
+      warnings.push('Chuva torrencial');
       score -= 20;
       recommendations.push('Tenha equipamentos de segurança prontos');
     }
-    if (weather.visibility < 1000) {
-      warnings.push('Visibilidade reduzida');
+    if (weather.visibility < 500) {
+      warnings.push('Visibilidade criticamente reduzida');
       score -= 35;
       recommendations.push('Use luzes de navegação');
     }
@@ -568,7 +569,7 @@ export class WeatherService {
       description,
       icon,
       cloudiness:   cur.cloud_cover,
-      visibility:   cur.visibility ?? 10000,
+      visibility:   cur.visibility > 0 ? cur.visibility : 10000,
       rain:         cur.precipitation > 0 ? cur.precipitation : null,
       pressure:     cur.surface_pressure,
       sunrise:      daily?.sunrise?.[0] ? new Date(daily.sunrise[0]) : null,
@@ -608,12 +609,12 @@ export class WeatherService {
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
   private applySafetyFlags(dto: CurrentWeatherDto): void {
-    if (dto.windSpeed > 10 || (dto.windGust && dto.windGust > 15)) {
+    if (dto.windSpeed > 15 || (dto.windGust && dto.windGust > 20)) {
       dto.isSafeForNavigation = false;
       dto.safetyWarnings.push('Ventos fortes');
     }
-    if (dto.rain && dto.rain > 5) {
-      dto.safetyWarnings.push('Chuva intensa');
+    if (dto.rain && dto.rain > 15) {
+      dto.safetyWarnings.push('Chuva torrencial');
     }
     if (dto.condition.toLowerCase().includes('tempestade')) {
       dto.isSafeForNavigation = false;
