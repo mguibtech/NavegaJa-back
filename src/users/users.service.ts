@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { User, UserRole, KycStatus } from './user.entity';
 import { Review, ReviewType } from '../reviews/review.entity';
 import { Trip } from '../trips/trip.entity';
+import { LocationsService } from '../locations/locations.service';
+import { CommunityLocationSource } from '../locations/community-location.entity';
 
 @Injectable()
 export class UsersService {
@@ -14,6 +16,7 @@ export class UsersService {
     private reviewsRepo: Repository<Review>,
     @InjectRepository(Trip)
     private tripsRepo: Repository<Trip>,
+    private locationsService: LocationsService,
   ) {}
 
   async findById(id: string): Promise<any> {
@@ -38,6 +41,16 @@ export class UsersService {
 
   async updateProfile(id: string, data: Partial<User>): Promise<any> {
     const { passwordHash, role, isActive, ...safeData } = data as any;
+
+    // Se forneceu localização da comunidade → actualizar timestamp e criar sugestão
+    if (safeData.homeCommunity && safeData.homeLat && safeData.homeLng) {
+      safeData.locationUpdatedAt = new Date();
+      this.locationsService.suggestCommunity(
+        { name: safeData.homeCommunity, lat: safeData.homeLat, lng: safeData.homeLng, municipio: safeData.homeMunicipio },
+        id,
+        CommunityLocationSource.USER_HOME,
+      ).catch(() => {});
+    }
 
     // Se o capitão actualizou documentos, marcar como não verificado
     // para forçar nova revisão pelo admin

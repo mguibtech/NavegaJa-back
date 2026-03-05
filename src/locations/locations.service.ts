@@ -1,7 +1,12 @@
 import { Injectable, Logger, BadRequestException, NotFoundException, Inject } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, ILike, Not } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import axios from 'axios';
+import { CommunityLocation, CommunityLocationSource, CommunityLocationStatus } from './community-location.entity';
+import { SuggestLocationDto } from './dto/suggest-location.dto';
+import { AMAZON_CITY_COORDS } from '../trips/city-coords';
 
 export interface CepResponseDto {
   cep: string;
@@ -31,6 +36,33 @@ export interface ReverseGeocodeDto {
   longitude: number;
 }
 
+/** Raio em km para considerar duas sugestões como o mesmo ponto */
+const DEDUP_RADIUS_KM = 2;
+
+/** Normaliza nome para deduplicação: minúsculas, sem acento */
+function normalizeName(name: string): string {
+  return name.trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+/** Distância em km (Haversine simplificado) */
+function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export interface LocationSuggestion {
+  name: string;
+  lat: number;
+  lng: number;
+  municipio: string | null;
+  source: 'lookup' | 'community';
+}
+
 @Injectable()
 export class LocationsService {
   private readonly logger = new Logger(LocationsService.name);
@@ -41,6 +73,7 @@ export class LocationsService {
   private readonly TTL_GEOCODE    = 1800 * 1000;        // 30min
 
   constructor(
+    @InjectRepository(CommunityLocation) private communityRepo: Repository<CommunityLocation>,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
@@ -168,6 +201,138 @@ export class LocationsService {
         longitude: lng,
       };
     }
+  }
+
+  // ─── Comunidades ribeirinhas ─────────────────────────────────────────────────
+
+  /**
+   * Sugere uma nova comunidade. Se já existir ponto próximo (< 2km) ou mesmo
+   * nome normalizado, incrementa confirmedCount. Ao atingir 2 → auto-confirma.
+   */
+  async suggestCommunity(
+    dto: SuggestLocationDto,
+    userId: string,
+    source: CommunityLocationSource = CommunityLocationSource.USER_SUGGESTION,
+  ): Promise<CommunityLocation> {
+    const normalized = normalizeName(dto.name);
+
+    // Verificar duplicados existentes (pending ou confirmed)
+    const existing = await this.communityRepo.find({
+      where: [
+        { normalizedName: normalized, status: Not(CommunityLocationStatus.REJECTED) },
+      ],
+    });
+
+    // Verificar também por proximidade geográfica
+    const nearby = existing.find(e =>
+      distanceKm(Number(e.lat), Number(e.lng), dto.lat, dto.lng) < DEDUP_RADIUS_KM,
+    );
+
+    if (nearby) {
+      nearby.confirmedCount += 1;
+      if (nearby.confirmedCount >= 2 && nearby.status === CommunityLocationStatus.PENDING) {
+        nearby.status = CommunityLocationStatus.CONFIRMED;
+        this.logger.log(`Auto-confirmado: "${nearby.name}" (${nearby.confirmedCount} sugestões)`);
+      }
+      return this.communityRepo.save(nearby);
+    }
+
+    // Nova sugestão
+    const entry = this.communityRepo.create({
+      name:           dto.name.trim(),
+      normalizedName: normalized,
+      lat:            dto.lat,
+      lng:            dto.lng,
+      municipio:      dto.municipio || null,
+      state:          dto.state || 'AM',
+      status:         CommunityLocationStatus.PENDING,
+      confirmedCount: 1,
+      source,
+      suggestedById:  userId,
+    });
+
+    return this.communityRepo.save(entry);
+  }
+
+  /**
+   * Busca unificada: lookup table estática + comunidades confirmadas na BD.
+   * Retorna até 5 resultados ordenados por relevância.
+   */
+  async searchLocations(query: string, lat?: number, lng?: number): Promise<LocationSuggestion[]> {
+    const q = query.trim();
+    if (!q || q.length < 2) return [];
+
+    const qNorm = normalizeName(q);
+    const results: LocationSuggestion[] = [];
+
+    // 1. Lookup table estática (city-coords.ts)
+    for (const [key, coords] of Object.entries(AMAZON_CITY_COORDS)) {
+      if (key.includes(qNorm) || qNorm.includes(key)) {
+        const displayName = key.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        results.push({ name: displayName, lat: coords.lat, lng: coords.lng, municipio: null, source: 'lookup' });
+        if (results.length >= 3) break;
+      }
+    }
+
+    // 2. Comunidades confirmadas na BD
+    const dbResults = await this.communityRepo.find({
+      where: { status: CommunityLocationStatus.CONFIRMED, normalizedName: ILike(`%${qNorm}%`) },
+      order: { confirmedCount: 'DESC' },
+      take: 5,
+    });
+
+    for (const c of dbResults) {
+      if (!results.find(r => distanceKm(r.lat, r.lng, Number(c.lat), Number(c.lng)) < 1)) {
+        results.push({ name: c.name, lat: Number(c.lat), lng: Number(c.lng), municipio: c.municipio, source: 'community' });
+      }
+    }
+
+    // Ordenar por proximidade se coords fornecidas
+    if (lat !== undefined && lng !== undefined) {
+      results.sort((a, b) => distanceKm(lat, lng, a.lat, a.lng) - distanceKm(lat, lng, b.lat, b.lng));
+    }
+
+    return results.slice(0, 5);
+  }
+
+  /** Aprovar sugestão manualmente (admin) */
+  async approveLocation(id: string): Promise<CommunityLocation> {
+    const loc = await this.communityRepo.findOneOrFail({ where: { id } });
+    loc.status = CommunityLocationStatus.CONFIRMED;
+    return this.communityRepo.save(loc);
+  }
+
+  /** Rejeitar sugestão (admin) */
+  async rejectLocation(id: string, reason?: string): Promise<CommunityLocation> {
+    const loc = await this.communityRepo.findOneOrFail({ where: { id } });
+    loc.status = CommunityLocationStatus.REJECTED;
+    loc.rejectionReason = reason || null;
+    return this.communityRepo.save(loc);
+  }
+
+  /** Listagem para o painel admin */
+  async listForAdmin(status?: CommunityLocationStatus): Promise<CommunityLocation[]> {
+    return this.communityRepo.find({
+      where: status ? { status } : undefined,
+      relations: ['suggestedBy'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  /** Busca uma comunidade confirmada por nome normalizado — usada no TripsService */
+  async findConfirmedByName(name: string): Promise<{ lat: number; lng: number } | null> {
+    const normalized = normalizeName(name);
+    const loc = await this.communityRepo.findOne({
+      where: { normalizedName: normalized, status: CommunityLocationStatus.CONFIRMED },
+    });
+    if (loc) return { lat: Number(loc.lat), lng: Number(loc.lng) };
+
+    // Fuzzy: contém
+    const fuzzy = await this.communityRepo.findOne({
+      where: { normalizedName: ILike(`%${normalized}%`), status: CommunityLocationStatus.CONFIRMED },
+      order: { confirmedCount: 'DESC' },
+    });
+    return fuzzy ? { lat: Number(fuzzy.lat), lng: Number(fuzzy.lng) } : null;
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────

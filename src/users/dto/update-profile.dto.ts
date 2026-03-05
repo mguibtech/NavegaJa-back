@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEmail, IsUrl, Length, MaxLength, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsEmail, IsUrl, Length, MaxLength, IsEnum, IsNumber, Min, Max } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Gender } from '../../users/user.entity';
 import { IsCpfValid } from '../../common/validators/is-cpf-valid.validator';
@@ -42,6 +42,34 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsEnum(Gender, { message: 'Gênero inválido. Use M, F ou other' })
   gender?: Gender;
+
+  // ── Localização da comunidade (crowdsourcing) ─────────────────────────────
+
+  @ApiPropertyOptional({ example: 'Comunidade do Pesqueiro', description: 'Nome da comunidade/localidade onde mora' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  homeCommunity?: string;
+
+  @ApiPropertyOptional({ example: 'Manacapuru', description: 'Município da comunidade' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  homeMunicipio?: string;
+
+  @ApiPropertyOptional({ example: -3.41, description: 'Latitude da comunidade (confirmada no mapa)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  homeLat?: number;
+
+  @ApiPropertyOptional({ example: -60.65, description: 'Longitude da comunidade' })
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  homeLng?: number;
 
   // ── Documentos do capitão (apenas capitães enviam estes campos) ────────────
 

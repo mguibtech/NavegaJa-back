@@ -3,6 +3,8 @@ import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiResponse, ApiBody } 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
 import { AdminService } from './admin.service';
+import { LocationsService } from '../locations/locations.service';
+import { CommunityLocationStatus } from '../locations/community-location.entity';
 import { UserRole } from '../users/user.entity';
 import { NotificationsService, BroadcastFilters } from '../notifications/notifications.service';
 import { IsString, IsNotEmpty, IsOptional, IsArray, IsEnum, IsEmail, MinLength, Length } from 'class-validator';
@@ -65,6 +67,7 @@ export class AdminController {
   constructor(
     private adminService: AdminService,
     private notificationsService: NotificationsService,
+    private locationsService: LocationsService,
   ) {}
 
   // ==================== USUÁRIOS ====================
@@ -624,4 +627,32 @@ export class AdminController {
   ) {
     return this.adminService.verifyCapt(id, verified, rejectionReason);
   }
+
+  // ==================== LOCALIDADES COMUNITÁRIAS ====================
+
+  @Get('locations')
+  @ApiOperation({
+    summary: 'Listar sugestões de localidades (Admin)',
+    description: 'status: pending | confirmed | rejected. Sem parâmetro → todas.',
+  })
+  @ApiQuery({ name: 'status', required: false, enum: ['pending', 'confirmed', 'rejected'] })
+  listLocations(@Query('status') status?: string) {
+    return this.locationsService.listForAdmin(status as CommunityLocationStatus | undefined);
+  }
+
+  @Patch('locations/:id/approve')
+  @ApiOperation({ summary: 'Aprovar sugestão de localidade (Admin)' })
+  approveLocation(@Param('id') id: string) {
+    return this.locationsService.approveLocation(id);
+  }
+
+  @Patch('locations/:id/reject')
+  @ApiOperation({ summary: 'Rejeitar sugestão de localidade (Admin)' })
+  rejectLocation(
+    @Param('id') id: string,
+    @Body('reason') reason?: string,
+  ) {
+    return this.locationsService.rejectLocation(id, reason);
+  }
+
 }

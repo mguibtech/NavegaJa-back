@@ -2,6 +2,7 @@ import { Controller, Post, Get, Put, Delete, Patch, Param, Body, Query, UseGuard
 import type { Response } from 'express';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiParam, ApiOkResponse } from '@nestjs/swagger';
 import { TripsService } from './trips.service';
+import { LocationsService } from '../locations/locations.service';
 import { CreateTripDto, UpdateTripStatusDto, UpdateLocationDto, PopularDestinationsResponseDto } from './dto/trip.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
@@ -12,7 +13,10 @@ import { Public } from '../common/decorators/public.decorator';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class TripsController {
-  constructor(private tripsService: TripsService) {}
+  constructor(
+    private tripsService: TripsService,
+    private locationsService: LocationsService,
+  ) {}
 
   @Get()
   @Public()
@@ -47,7 +51,26 @@ export class TripsController {
     );
   }
 
+  @Get('geocode')
+  @Public()
+  @ApiOperation({ summary: 'Autocomplete de localidades para origem/destino da viagem' })
+  @ApiQuery({ name: 'q', required: true, description: 'Texto de busca (min 2 chars)' })
+  @ApiQuery({ name: 'lat', required: false, description: 'Latitude atual (ordena por proximidade)' })
+  @ApiQuery({ name: 'lng', required: false, description: 'Longitude atual' })
+  geocodeLocations(
+    @Query('q') q: string,
+    @Query('lat') lat?: string,
+    @Query('lng') lng?: string,
+  ) {
+    return this.locationsService.searchLocations(
+      q || '',
+      lat ? parseFloat(lat) : undefined,
+      lng ? parseFloat(lng) : undefined,
+    );
+  }
+
   @Get('popular')
+  @Public()
   @ApiOperation({ summary: 'Destinos e rotas populares' })
   @ApiOkResponse({ type: PopularDestinationsResponseDto })
   getPopular() {

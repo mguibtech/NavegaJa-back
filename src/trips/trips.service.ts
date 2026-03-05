@@ -13,6 +13,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { BookingsService } from '../bookings/bookings.service';
 import { PdfService } from '../pdf/pdf.service';
 import { BoatStaffService } from '../boat-staff/boat-staff.service';
+import { LocationsService } from '../locations/locations.service';
 import { Boat } from '../boats/boat.entity';
 import { User } from '../users/user.entity';
 import { Shipment } from '../shipments/shipment.entity';
@@ -42,6 +43,7 @@ export class TripsService {
     private bookingsService: BookingsService,
     private pdfService: PdfService,
     private boatStaffService: BoatStaffService,
+    private locationsService: LocationsService,
   ) {}
 
   async create(userId: string, dto: CreateTripDto, role?: string): Promise<Trip> {
@@ -182,7 +184,7 @@ export class TripsService {
       cargoPriceKg: dto.cargoPriceKg || 0,
       cargoCapacityKg: dto.cargoCapacityKg || null,
       availableCargoKg: dto.cargoCapacityKg || null, // Inicializa com capacidade total
-      ...(() => { const c = geocodeCity(dto.origin); return c ? { originLat: c.lat, originLng: c.lng } : {}; })(),
+      ...await (async () => { const lk = geocodeCity(dto.origin); if (lk) return { originLat: lk.lat, originLng: lk.lng }; const db = await this.locationsService.findConfirmedByName(dto.origin); return db ? { originLat: db.lat, originLng: db.lng } : {}; })(),
     } as Partial<Trip>);
 
     const saved = await this.tripsRepo.save(trip);

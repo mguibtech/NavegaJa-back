@@ -12,6 +12,7 @@ import { Coupon } from '../coupons/coupon.entity';
 import { Review } from '../reviews/review.entity';
 import { Boat } from '../boats/boat.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { LocationsModule } from '../locations/locations.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       Boat,
     ]),
     NotificationsModule,
+    LocationsModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

@@ -1,7 +1,9 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { LocationsService } from './locations.service';
+import { SuggestLocationDto } from './dto/suggest-location.dto';
 
 @ApiTags('Locations')
 @Controller('locations')
@@ -124,5 +126,48 @@ export class LocationsController {
   ) {
     const label = await this.service.getLocationLabel(parseFloat(lat), parseFloat(lng));
     return { label };
+  }
+
+  // ─── Comunidades ribeirinhas ──────────────────────────────────────────────────
+
+  @Get('search')
+  @Public()
+  @ApiOperation({
+    summary: 'Autocomplete de localidades',
+    description: 'Busca unificada: lookup table estática + comunidades confirmadas. Usar com debounce 400ms no app.',
+  })
+  @ApiQuery({ name: 'q', required: true, example: 'Pesqueiro' })
+  @ApiQuery({ name: 'lat', required: false, example: -3.3, description: 'Latitude atual (ordena por proximidade)' })
+  @ApiQuery({ name: 'lng', required: false, example: -60.6 })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: [
+        { name: 'Comunidade do Pesqueiro', lat: -3.41, lng: -60.65, municipio: 'Manacapuru', source: 'community' },
+        { name: 'Pesqueiro', lat: -3.35, lng: -60.5, municipio: null, source: 'lookup' },
+      ],
+    },
+  })
+  searchLocations(
+    @Query('q') q: string,
+    @Query('lat') lat?: string,
+    @Query('lng') lng?: string,
+  ) {
+    return this.service.searchLocations(
+      q || '',
+      lat ? parseFloat(lat) : undefined,
+      lng ? parseFloat(lng) : undefined,
+    );
+  }
+
+  @Post('suggest')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Sugerir nova comunidade/localidade',
+    description: 'Qualquer utilizador autenticado pode sugerir. Auto-confirma com 2+ sugestões no mesmo ponto (< 2km).',
+  })
+  suggestCommunity(@Body() dto: SuggestLocationDto, @Request() req: any) {
+    return this.service.suggestCommunity(dto, req.user.sub);
   }
 }

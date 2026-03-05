@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { CacheModule } from '@nestjs/cache-manager';
 import { LocationsController } from './locations.controller';
 import { LocationsService } from './locations.service';
+import { CommunityLocation } from './community-location.entity';
 
 @Module({
   imports: [
+    TypeOrmModule.forFeature([CommunityLocation]),
     CacheModule.register({ ttl: 3600000, max: 200 }),
   ],
   controllers: [LocationsController],

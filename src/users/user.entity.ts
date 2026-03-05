@@ -120,6 +120,23 @@ export class User {
   @Column({ name: 'fcm_token', type: 'text', nullable: true })
   fcmToken: string | null;
 
+  // ── Localização da comunidade (crowdsourcing) ─────────────────────────────
+
+  @Column({ name: 'home_community', type: 'varchar', length: 150, nullable: true })
+  homeCommunity: string | null; // Ex: "Comunidade do Pesqueiro"
+
+  @Column({ name: 'home_municipio', type: 'varchar', length: 150, nullable: true })
+  homeMunicipio: string | null; // Ex: "Manacapuru"
+
+  @Column({ name: 'home_lat', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  homeLat: number | null;
+
+  @Column({ name: 'home_lng', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  homeLng: number | null;
+
+  @Column({ name: 'location_updated_at', type: 'timestamp', nullable: true })
+  locationUpdatedAt: Date | null;
+
   // ── Sistema de Milhas (km viajados) ──────────────────────────────────────
 
   @Column({ name: 'total_km_traveled', type: 'int', default: 0 })
