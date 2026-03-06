@@ -216,15 +216,26 @@ export class LocationsService {
   ): Promise<CommunityLocation> {
     const normalized = normalizeName(dto.name);
 
-    // Verificar duplicados existentes (pending ou confirmed)
-    const existing = await this.communityRepo.find({
-      where: [
-        { normalizedName: normalized, status: Not(CommunityLocationStatus.REJECTED) },
-      ],
+    // Buscar candidatos por nome OU por proximidade geográfica (bounding box ~2km ≈ 0.018°)
+    const DELTA = 0.018;
+    const existingByName = await this.communityRepo.find({
+      where: { normalizedName: normalized, status: Not(CommunityLocationStatus.REJECTED) },
     });
+    const existingByProximity = await this.communityRepo
+      .createQueryBuilder('cl')
+      .where('cl.status != :rejected', { rejected: CommunityLocationStatus.REJECTED })
+      .andWhere('cl.lat BETWEEN :latMin AND :latMax', { latMin: dto.lat - DELTA, latMax: dto.lat + DELTA })
+      .andWhere('cl.lng BETWEEN :lngMin AND :lngMax', { lngMin: dto.lng - DELTA, lngMax: dto.lng + DELTA })
+      .getMany();
+
+    // Unir os dois conjuntos (sem duplicatas) e filtrar pelo raio exacto
+    const candidates = [...existingByName];
+    for (const e of existingByProximity) {
+      if (!candidates.find(c => c.id === e.id)) candidates.push(e);
+    }
 
     // Verificar também por proximidade geográfica
-    const nearby = existing.find(e =>
+    const nearby = candidates.find(e =>
       distanceKm(Number(e.lat), Number(e.lng), dto.lat, dto.lng) < DEDUP_RADIUS_KM,
     );
 
