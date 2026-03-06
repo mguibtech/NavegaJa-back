@@ -27,12 +27,45 @@ export class WeatherService {
   private readonly owmUrl   = 'https://api.openweathermap.org/data/2.5';
   private readonly cacheTime = 1800; // 30 min
 
-  private readonly regions = {
-    manaus:      { lat: -3.119,  lng: -60.0217, name: 'Manaus' },
-    parintins:   { lat: -2.6287, lng: -56.7358, name: 'Parintins' },
-    santarem:    { lat: -2.4419, lng: -54.7082, name: 'Santarém' },
-    itacoatiara: { lat: -3.1430, lng: -58.4444, name: 'Itacoatiara' },
-    manacapuru:  { lat: -3.2999, lng: -60.6203, name: 'Manacapuru' },
+  private readonly regions: Record<string, { lat: number; lng: number; name: string }> = {
+    manaus:         { lat: -3.1190,  lng: -60.0217, name: 'Manaus' },
+    parintins:      { lat: -2.6287,  lng: -56.7358, name: 'Parintins' },
+    santarem:       { lat: -2.4419,  lng: -54.7082, name: 'Santarém' },
+    itacoatiara:    { lat: -3.1430,  lng: -58.4444, name: 'Itacoatiara' },
+    manacapuru:     { lat: -3.2999,  lng: -60.6203, name: 'Manacapuru' },
+    manaquiri:      { lat: -3.4381,  lng: -60.4547, name: 'Manaquiri' },
+    iranduba:       { lat: -3.2833,  lng: -60.1833, name: 'Iranduba' },
+    careiro:        { lat: -3.7333,  lng: -60.3833, name: 'Careiro' },
+    autazes:        { lat: -3.5781,  lng: -59.1300, name: 'Autazes' },
+    borba:          { lat: -4.3881,  lng: -59.5942, name: 'Borba' },
+    manicore:       { lat: -5.8167,  lng: -61.3000, name: 'Manicoré' },
+    tefe:           { lat: -3.3667,  lng: -64.7167, name: 'Tefé' },
+    coari:          { lat: -4.0861,  lng: -63.1408, name: 'Coari' },
+    codajas:        { lat: -3.8383,  lng: -62.0597, name: 'Codajás' },
+    anori:          { lat: -3.7667,  lng: -61.6500, name: 'Anori' },
+    alvaraes:       { lat: -3.2167,  lng: -64.8000, name: 'Alvarães' },
+    fonte_boa:      { lat: -2.5108,  lng: -66.0919, name: 'Fonte Boa' },
+    jutai:          { lat: -2.7472,  lng: -66.7717, name: 'Jutal' },
+    labrea:         { lat: -7.2594,  lng: -64.7969, name: 'Lábrea' },
+    novo_aripuana:  { lat: -5.1206,  lng: -60.3783, name: 'Novo Aripuanã' },
+    apui:           { lat: -7.1897,  lng: -59.8894, name: 'Apuí' },
+    boca_do_acre:   { lat: -8.7508,  lng: -67.3983, name: 'Boca do Acre' },
+    benjamin_constant: { lat: -4.3778, lng: -70.0294, name: 'Benjamin Constant' },
+    tabatinga:      { lat: -4.2561,  lng: -69.9394, name: 'Tabatinga' },
+    sao_gabriel:    { lat: -0.1303,  lng: -67.0892, name: 'São Gabriel da Cachoeira' },
+    barcelos:       { lat: -0.9769,  lng: -62.9236, name: 'Barcelos' },
+    novo_airao:     { lat: -2.6167,  lng: -60.9333, name: 'Novo Airão' },
+    presidente_figueiredo: { lat: -2.0231, lng: -60.0244, name: 'Presidente Figueiredo' },
+    maues:          { lat: -3.3833,  lng: -57.7167, name: 'Maués' },
+    barreirinha:    { lat: -2.7878,  lng: -57.0556, name: 'Barreirinha' },
+    nhamunda:       { lat: -2.1839,  lng: -56.7133, name: 'Nhamundá' },
+    urucara:        { lat: -2.5319,  lng: -57.7536, name: 'Urucará' },
+    nova_olinda:    { lat: -3.8908,  lng: -59.0936, name: 'Nova Olinda do Norte' },
+    rio_preto:      { lat: -0.8819,  lng: -59.9906, name: 'Rio Preto da Eva' },
+    carauari:       { lat: -4.8822,  lng: -66.8967, name: 'Carauari' },
+    eirunepe:       { lat: -6.6597,  lng: -69.8742, name: 'Eirunepé' },
+    envira:         { lat: -7.4428,  lng: -70.0253, name: 'Envira' },
+    ipixuna:        { lat: -7.0458,  lng: -71.6997, name: 'Ipixuna' },
   };
 
   private readonly riverStations = {
@@ -91,21 +124,27 @@ export class WeatherService {
     return this.fetchOpenMeteoCurrent(lat, lng, region, cacheKey);
   }
 
+  private resolveRegion(regionKey: string): { lat: number; lng: number; name: string } {
+    const key = regionKey.toLowerCase().trim().replace(/\s+/g, '_');
+    if (this.regions[key]) return this.regions[key];
+    // Busca parcial (ex: "nova olinda" encontra "nova_olinda")
+    const partial = Object.entries(this.regions).find(([k]) => k.includes(key) || key.includes(k));
+    if (partial) return partial[1];
+    throw new NotFoundException(`Região "${regionKey}" não encontrada. Regiões disponíveis: ${Object.keys(this.regions).join(', ')}`);
+  }
+
   async getRegionWeather(regionKey: string): Promise<CurrentWeatherDto> {
-    const region = this.regions[regionKey.toLowerCase() as keyof typeof this.regions];
-    if (!region) throw new Error(`Região "${regionKey}" não encontrada`);
+    const region = this.resolveRegion(regionKey);
     return this.getCurrentWeather(region.lat, region.lng, region.name);
   }
 
   async getRegionForecast(regionKey: string): Promise<WeatherForecastDto> {
-    const region = this.regions[regionKey.toLowerCase() as keyof typeof this.regions];
-    if (!region) throw new Error(`Região "${regionKey}" não encontrada`);
+    const region = this.resolveRegion(regionKey);
     return this.getForecast(region.lat, region.lng, region.name);
   }
 
   async getRegionAlerts(regionKey: string): Promise<{ region: string; alerts: string[]; isSafe: boolean; safetyScore: number; recommendations: string[] }> {
-    const region = this.regions[regionKey.toLowerCase() as keyof typeof this.regions];
-    if (!region) throw new Error(`Região "${regionKey}" não encontrada`);
+    const region = this.resolveRegion(regionKey);
     const safety = await this.evaluateNavigationSafety(region.lat, region.lng);
     return {
       region: region.name,
