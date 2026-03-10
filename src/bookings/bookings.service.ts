@@ -1,11 +1,23 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, LessThan } from 'typeorm';
-import { Booking, BookingStatus, PaymentStatus, PaymentMethod } from './booking.entity';
+import { Repository, In, LessThan, FindOptionsWhere } from 'typeorm';
+import {
+  Booking,
+  BookingStatus,
+  PaymentStatus,
+  PaymentMethod,
+} from './booking.entity';
 import { Trip, TripStatus } from '../trips/trip.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { ChildPassengerDto } from './dto/passenger.dto';
 import { GamificationService } from '../gamification/gamification.service';
+import { PdfStream } from '../pdf/pdf.types';
 import { PointAction } from '../gamification/point-transaction.entity';
 import { KM_BLOCK } from '../gamification/km-transaction.entity';
 import { CouponsService } from '../coupons/coupons.service';
@@ -51,9 +63,11 @@ export class BookingsService {
     const MAX_FREE_CHILDREN = 3;
     const childrenList = children || [];
     if (childrenList.length > quantity) {
-      throw new BadRequestException('Número de crianças não pode exceder o total de assentos.');
+      throw new BadRequestException(
+        'Número de crianças não pode exceder o total de assentos.',
+      );
     }
-    const freeChildrenCount = childrenList.filter(c => c.age <= 9).length;
+    const freeChildrenCount = childrenList.filter((c) => c.age <= 9).length;
     if (freeChildrenCount > MAX_FREE_CHILDREN) {
       throw new BadRequestException(
         `Máximo de ${MAX_FREE_CHILDREN} crianças grátis por reserva. Para grupos maiores, entre em contato com o capitão.`,
@@ -79,7 +93,11 @@ export class BookingsService {
     // 2. Cupom promocional
     let couponData = null;
     if (couponCode) {
-      const validation = await this.couponsService.validate(couponCode, passengerId, priceAfterTripDiscount);
+      const validation = await this.couponsService.validate(
+        couponCode,
+        passengerId,
+        priceAfterTripDiscount,
+      );
       if (validation.valid && validation.discount) {
         couponDiscount = validation.discount;
         couponData = validation.coupon;
@@ -89,7 +107,8 @@ export class BookingsService {
     const priceAfterCoupon = priceAfterTripDiscount - couponDiscount;
 
     // 3. Desconto de gamificação (nível de fidelidade)
-    const userDiscount = await this.gamificationService.getUserDiscount(passengerId);
+    const userDiscount =
+      await this.gamificationService.getUserDiscount(passengerId);
     if (userDiscount > 0) {
       loyaltyDiscount = (priceAfterCoupon * userDiscount) / 100;
     }
@@ -99,7 +118,9 @@ export class BookingsService {
     // 4. Desconto de km (milhas fluviais) — cada bloco de 500 km = R$25
     if (redeemKm && redeemKm > 0) {
       if (redeemKm % KM_BLOCK !== 0) {
-        throw new BadRequestException(`Km deve ser múltiplo de ${KM_BLOCK}. Ex: 500, 1000, 1500...`);
+        throw new BadRequestException(
+          `Km deve ser múltiplo de ${KM_BLOCK}. Ex: 500, 1000, 1500...`,
+        );
       }
       if (user.redeemableKm < redeemKm) {
         throw new BadRequestException(
@@ -111,7 +132,12 @@ export class BookingsService {
     }
 
     const finalPrice = priceAfterLoyalty - kmDiscount;
-    const totalDiscount = childrenDiscount + tripDiscount + couponDiscount + loyaltyDiscount + kmDiscount;
+    const totalDiscount =
+      childrenDiscount +
+      tripDiscount +
+      couponDiscount +
+      loyaltyDiscount +
+      kmDiscount;
 
     return {
       basePrice,
@@ -131,11 +157,34 @@ export class BookingsService {
       totalDiscount,
       finalPrice: Math.max(0, finalPrice),
       discountsApplied: [
-        freeChildrenCount > 0 && { type: 'children', label: `${freeChildrenCount} criança(s) grátis (≤ 9 anos)`, amount: childrenDiscount },
-        trip.discount > 0 && { type: 'trip', label: 'Promoção Especial', percent: trip.discount, amount: tripDiscount },
-        couponData && { type: 'coupon', code: couponData.code, label: couponData.description || 'Cupom', amount: couponDiscount },
-        userDiscount > 0 && { type: 'loyalty', level: user.level, percent: userDiscount, amount: loyaltyDiscount },
-        kmDiscount > 0 && { type: 'km', label: `${redeemKm} Milhas Fluviais`, amount: kmDiscount },
+        freeChildrenCount > 0 && {
+          type: 'children',
+          label: `${freeChildrenCount} criança(s) grátis (≤ 9 anos)`,
+          amount: childrenDiscount,
+        },
+        trip.discount > 0 && {
+          type: 'trip',
+          label: 'Promoção Especial',
+          percent: trip.discount,
+          amount: tripDiscount,
+        },
+        couponData && {
+          type: 'coupon',
+          code: couponData.code,
+          label: couponData.description || 'Cupom',
+          amount: couponDiscount,
+        },
+        userDiscount > 0 && {
+          type: 'loyalty',
+          level: user.level,
+          percent: userDiscount,
+          amount: loyaltyDiscount,
+        },
+        kmDiscount > 0 && {
+          type: 'km',
+          label: `${redeemKm} Milhas Fluviais`,
+          amount: kmDiscount,
+        },
       ].filter(Boolean),
     };
   }
@@ -146,7 +195,9 @@ export class BookingsService {
 
     const quantity = dto.quantity;
     if (trip.availableSeats < quantity) {
-      throw new BadRequestException(`Apenas ${trip.availableSeats} assentos disponíveis`);
+      throw new BadRequestException(
+        `Apenas ${trip.availableSeats} assentos disponíveis`,
+      );
     }
 
     // Verificar se já existe booking ativo deste passageiro nesta viagem
@@ -154,7 +205,11 @@ export class BookingsService {
       where: {
         passengerId,
         tripId: dto.tripId,
-        status: In([BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]),
+        status: In([
+          BookingStatus.PENDING,
+          BookingStatus.CONFIRMED,
+          BookingStatus.CHECKED_IN,
+        ]),
       },
     });
     if (existingBooking) {
@@ -166,13 +221,18 @@ export class BookingsService {
     // Validar CPFs dos passageiros adicionais
     if (dto.passengers?.length) {
       // CPFs duplicados entre os extras
-      const extraCpfs = dto.passengers.map(p => p.cpf);
+      const extraCpfs = dto.passengers.map((p) => p.cpf);
       if (new Set(extraCpfs).size !== extraCpfs.length) {
-        throw new BadRequestException('Há CPFs duplicados entre os passageiros adicionais.');
+        throw new BadRequestException(
+          'Há CPFs duplicados entre os passageiros adicionais.',
+        );
       }
 
       // CPF de extra igual ao do passageiro principal
-      const mainUser = await this.usersRepo.findOne({ where: { id: passengerId }, select: ['cpf'] });
+      const mainUser = await this.usersRepo.findOne({
+        where: { id: passengerId },
+        select: ['cpf'],
+      });
       if (mainUser?.cpf && extraCpfs.includes(mainUser.cpf)) {
         throw new BadRequestException(
           'O CPF do passageiro principal não pode constar nos passageiros adicionais.',
@@ -181,7 +241,14 @@ export class BookingsService {
     }
 
     // Calcular preço com descontos (inclui km e crianças grátis se informados)
-    const priceBreakdown = await this.calculatePrice(passengerId, dto.tripId, quantity, dto.couponCode, dto.redeemKm, dto.children);
+    const priceBreakdown = await this.calculatePrice(
+      passengerId,
+      dto.tripId,
+      quantity,
+      dto.couponCode,
+      dto.redeemKm,
+      dto.children,
+    );
     const totalPrice = priceBreakdown.finalPrice;
 
     // Determinar status inicial baseado no método de pagamento
@@ -195,7 +262,10 @@ export class BookingsService {
     }
 
     // Pagamento com cartão: confirma direto (simulado - gateway futuro)
-    if (dto.paymentMethod === PaymentMethod.CREDIT_CARD || dto.paymentMethod === PaymentMethod.DEBIT_CARD) {
+    if (
+      dto.paymentMethod === PaymentMethod.CREDIT_CARD ||
+      dto.paymentMethod === PaymentMethod.DEBIT_CARD
+    ) {
       initialStatus = BookingStatus.CONFIRMED;
       initialPaymentStatus = PaymentStatus.PAID; // Simulado
     }
@@ -213,7 +283,9 @@ export class BookingsService {
       kmRedeemed: priceBreakdown.kmRedeemed,
       kmDiscount: priceBreakdown.kmDiscount,
       childrenCount: priceBreakdown.freeChildrenCount,
-      children: priceBreakdown.children?.length ? priceBreakdown.children : null,
+      children: priceBreakdown.children?.length
+        ? priceBreakdown.children
+        : null,
       extraPassengers: dto.passengers?.length ? dto.passengers : null,
     });
 
@@ -250,7 +322,11 @@ export class BookingsService {
 
     // Debitar km se foram resgatados
     if (priceBreakdown.kmRedeemed > 0) {
-      await this.gamificationService.deductKm(passengerId, priceBreakdown.kmRedeemed, saved.id);
+      await this.gamificationService.deductKm(
+        passengerId,
+        priceBreakdown.kmRedeemed,
+        saved.id,
+      );
     }
 
     // Incrementar uso do cupom se foi aplicado
@@ -265,7 +341,11 @@ export class BookingsService {
       await this.notificationsService.sendToUser(passengerId, {
         title: '✅ Reserva confirmada!',
         body: `Sua viagem ${route} está confirmada. Boa viagem!`,
-        data: { type: 'booking_confirmed', bookingId: saved.id, tripId: trip.id },
+        data: {
+          type: 'booking_confirmed',
+          bookingId: saved.id,
+          tripId: trip.id,
+        },
       });
     }
     await this.notificationsService.sendToUser(trip.captainId, {
@@ -274,27 +354,33 @@ export class BookingsService {
       data: { type: 'new_booking', bookingId: saved.id, tripId: trip.id },
     });
 
-    // Adicionar breakdown de preços na resposta
-    (saved as any).priceBreakdown = priceBreakdown;
-
     // Adicionar aviso de cheia (informativo — não bloqueia a reserva)
     let floodWarning = false;
     let floodSeverity = 'NO_FLOODING';
     try {
-      const flood = await this.floodService.getFloodStatus(-3.119, -60.0217, 100);
+      const flood = await this.floodService.getFloodStatus(
+        -3.119,
+        -60.0217,
+        100,
+      );
       floodSeverity = flood.severity;
-      floodWarning = flood.severity === 'SEVERE' || flood.severity === 'EXTREME';
-    } catch (_) {
+      floodWarning =
+        flood.severity === 'SEVERE' || flood.severity === 'EXTREME';
+    } catch {
       // Erro na API de cheias não bloqueia a reserva
     }
-    (saved as any).floodWarning = floodWarning;
-    (saved as any).floodSeverity = floodSeverity;
-
-    return saved;
+    return Object.assign(saved, {
+      priceBreakdown,
+      floodWarning,
+      floodSeverity,
+    });
   }
 
-  async findByPassenger(passengerId: string, status?: string): Promise<Booking[]> {
-    const where: any = { passengerId };
+  async findByPassenger(
+    passengerId: string,
+    status?: string,
+  ): Promise<Booking[]> {
+    const where: FindOptionsWhere<Booking> = { passengerId };
 
     if (status === 'active') {
       where.status = In([BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]);
@@ -314,7 +400,13 @@ export class BookingsService {
   async findById(id: string): Promise<Booking> {
     const booking = await this.bookingsRepo.findOne({
       where: { id },
-      relations: ['trip', 'trip.route', 'trip.captain', 'trip.boat', 'passenger'],
+      relations: [
+        'trip',
+        'trip.route',
+        'trip.captain',
+        'trip.boat',
+        'passenger',
+      ],
     });
     if (!booking) throw new NotFoundException('Reserva não encontrada');
     return booking;
@@ -344,9 +436,9 @@ export class BookingsService {
     const route = trip.route || {
       originName: trip.origin,
       destinationName: trip.destination,
-      originLat: -3.1190,  // Default Manaus
+      originLat: -3.119, // Default Manaus
       originLng: -60.0217,
-      destinationLat: -2.6286,  // Default Parintins (caso comum)
+      destinationLat: -2.6286, // Default Parintins (caso comum)
       destinationLng: -56.7356,
       distanceKm: 369,
       durationMin: 360,
@@ -368,10 +460,15 @@ export class BookingsService {
       case TripStatus.IN_PROGRESS:
         progress = 50;
         if (trip.estimatedArrivalAt && trip.departureAt) {
-          const totalDuration = new Date(trip.estimatedArrivalAt).getTime() - new Date(trip.departureAt).getTime();
+          const totalDuration =
+            new Date(trip.estimatedArrivalAt).getTime() -
+            new Date(trip.departureAt).getTime();
           const elapsed = Date.now() - new Date(trip.departureAt).getTime();
           if (totalDuration > 0) {
-            progress = Math.min(95, Math.round((elapsed / totalDuration) * 100));
+            progress = Math.min(
+              95,
+              Math.round((elapsed / totalDuration) * 100),
+            );
             if (progress < 20) progress = 20;
           }
         }
@@ -391,9 +488,11 @@ export class BookingsService {
         break;
       case TripStatus.CANCELLED:
         progress = 0;
-        timeline.push(
-          { status: 'cancelled', label: 'Viagem cancelada', active: true },
-        );
+        timeline.push({
+          status: 'cancelled',
+          label: 'Viagem cancelada',
+          active: true,
+        });
         break;
     }
 
@@ -459,8 +558,13 @@ export class BookingsService {
     }
 
     // Só devolve assentos se estava CONFIRMED (pagamento confirmado)
-    if (booking.status === BookingStatus.CONFIRMED || booking.status === BookingStatus.CHECKED_IN) {
-      const trip = await this.tripsRepo.findOne({ where: { id: booking.tripId } });
+    if (
+      booking.status === BookingStatus.CONFIRMED ||
+      booking.status === BookingStatus.CHECKED_IN
+    ) {
+      const trip = await this.tripsRepo.findOne({
+        where: { id: booking.tripId },
+      });
       if (trip) {
         trip.availableSeats += booking.seats;
         await this.tripsRepo.save(trip);
@@ -478,7 +582,11 @@ export class BookingsService {
 
     // Devolver km se foram resgatados nesta booking
     if (booking.kmRedeemed > 0) {
-      await this.gamificationService.refundKm(booking.passengerId, booking.kmRedeemed, booking.id);
+      await this.gamificationService.refundKm(
+        booking.passengerId,
+        booking.kmRedeemed,
+        booking.id,
+      );
     }
 
     // Notificar passageiro
@@ -494,7 +602,9 @@ export class BookingsService {
   async complete(bookingId: string): Promise<Booking> {
     const booking = await this.findById(bookingId); // já carrega trip.route
     if (booking.status !== BookingStatus.CHECKED_IN) {
-      throw new BadRequestException('Reserva precisa estar em check-in para ser concluída');
+      throw new BadRequestException(
+        'Reserva precisa estar em check-in para ser concluída',
+      );
     }
 
     booking.status = BookingStatus.COMPLETED;
@@ -515,11 +625,19 @@ export class BookingsService {
 
     // Converte indicação pendente (dá 50pts ao quem indicou este passageiro)
     await this.gamificationService.convertReferral(booking.passengerId);
+    await this.gamificationService.awardBoatOwnerPassengerCompleted(
+      booking.trip?.boat?.ownerId,
+      booking.id,
+    );
 
     // Credita km (milhas fluviais) com base na distância da rota
-    const distanceKm = Math.round(Number((booking.trip as any)?.route?.distanceKm) || 0);
+    const distanceKm = Math.round(Number(booking.trip?.route?.distanceKm ?? 0));
     if (distanceKm > 0) {
-      await this.gamificationService.creditKm(booking.passengerId, distanceKm, booking.id);
+      await this.gamificationService.creditKm(
+        booking.passengerId,
+        distanceKm,
+        booking.id,
+      );
     }
 
     return saved;
@@ -529,7 +647,11 @@ export class BookingsService {
    * Confirma pagamento PIX manualmente (admin/capitão)
    * Similar ao padrão do Shipments (shipments.service.ts:388-406)
    */
-  async confirmPayment(bookingId: string, confirmedBy?: string, confirmedByRole?: string): Promise<Booking> {
+  async confirmPayment(
+    bookingId: string,
+    confirmedBy?: string,
+    confirmedByRole?: string,
+  ): Promise<Booking> {
     // Capitão não verificado não pode confirmar pagamentos
     if (confirmedByRole === 'captain' && confirmedBy) {
       const captain = await this.usersRepo.findOne({
@@ -555,7 +677,10 @@ export class BookingsService {
     }
 
     // Verificar se PIX expirou
-    if (booking.pixExpiresAt && this.pixService.isExpired(booking.pixExpiresAt)) {
+    if (
+      booking.pixExpiresAt &&
+      this.pixService.isExpired(booking.pixExpiresAt)
+    ) {
       throw new BadRequestException('PIX expirado. Gere uma nova reserva.');
     }
 
@@ -572,7 +697,9 @@ export class BookingsService {
     await this.bookingsRepo.save(saved);
 
     // Reduzir assentos disponíveis AGORA
-    const trip = await this.tripsRepo.findOne({ where: { id: booking.tripId } });
+    const trip = await this.tripsRepo.findOne({
+      where: { id: booking.tripId },
+    });
     if (trip) {
       trip.availableSeats -= booking.seats;
       await this.tripsRepo.save(trip);
@@ -602,7 +729,9 @@ export class BookingsService {
       totalPrice: booking.totalPrice,
       pixPaidAt: booking.pixPaidAt,
       pixExpiresAt: booking.pixExpiresAt,
-      isExpired: booking.pixExpiresAt ? this.pixService.isExpired(booking.pixExpiresAt) : false,
+      isExpired: booking.pixExpiresAt
+        ? this.pixService.isExpired(booking.pixExpiresAt)
+        : false,
     };
   }
 
@@ -616,7 +745,11 @@ export class BookingsService {
     const bookings = await this.bookingsRepo.find({
       where: {
         tripId,
-        status: In([BookingStatus.PENDING, BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]),
+        status: In([
+          BookingStatus.PENDING,
+          BookingStatus.CONFIRMED,
+          BookingStatus.CHECKED_IN,
+        ]),
       },
     });
 
@@ -635,7 +768,7 @@ export class BookingsService {
         tripId,
         status: In([BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN]),
       },
-      relations: ['trip', 'trip.route'],
+      relations: ['trip', 'trip.route', 'trip.boat'],
     });
 
     for (const booking of bookings) {
@@ -652,11 +785,21 @@ export class BookingsService {
         booking.passengerId,
         booking.id,
       );
+      await this.gamificationService.awardBoatOwnerPassengerCompleted(
+        booking.trip?.boat?.ownerId,
+        booking.id,
+      );
 
       // Creditar km da viagem
-      const distanceKm = Math.round(Number((booking.trip as any)?.route?.distanceKm) || 0);
+      const distanceKm = Math.round(
+        Number(booking.trip?.route?.distanceKm ?? 0),
+      );
       if (distanceKm > 0) {
-        await this.gamificationService.creditKm(booking.passengerId, distanceKm, booking.id);
+        await this.gamificationService.creditKm(
+          booking.passengerId,
+          distanceKm,
+          booking.id,
+        );
       }
     }
   }
@@ -664,7 +807,11 @@ export class BookingsService {
   /**
    * Gera bilhete de embarque em PDF
    */
-  async generateTicketPdf(bookingId: string, userId: string, userRole: string): Promise<any> {
+  async generateTicketPdf(
+    bookingId: string,
+    userId: string,
+    userRole: string,
+  ): Promise<PdfStream> {
     const booking = await this.bookingsRepo.findOne({
       where: { id: bookingId },
       relations: ['trip', 'trip.boat', 'trip.captain', 'passenger'],
@@ -695,7 +842,7 @@ export class BookingsService {
       captainName: captain?.name || 'Capitão',
       captainRating: Number(captain?.rating) || 5.0,
       boatName: boat?.name || 'Embarcação',
-      boatType: (boat as any)?.type || '',
+      boatType: boat?.type || '',
       seats: booking.seats,
       totalPrice: Number(booking.totalPrice),
       paymentStatus: booking.paymentStatus,

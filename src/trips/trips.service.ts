@@ -1021,6 +1021,10 @@ export class TripsService {
         tripId,
         ShipmentStatus.ARRIVED,
       );
+      await this.gamificationService.awardBoatOwnerTripCompleted(
+        trip.boat?.ownerId,
+        trip.id,
+      );
     }
 
     // Incluir weatherWarning no response quando capitão inicia viagem com alerta

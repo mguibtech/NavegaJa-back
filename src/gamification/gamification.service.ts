@@ -1,12 +1,24 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThanOrEqual } from 'typeorm';
 import {
-  PointTransaction, PointAction, LoyaltyLevel,
-  LEVEL_THRESHOLDS, POINTS_MAP,
+  PointTransaction,
+  PointAction,
+  LoyaltyLevel,
+  LEVEL_THRESHOLDS,
+  POINTS_MAP,
 } from './point-transaction.entity';
 import { Referral, ReferralStatus } from './referral.entity';
-import { KmTransaction, KmTransactionType, KM_BLOCK, DISCOUNT_PER_BLOCK } from './km-transaction.entity';
+import {
+  KmTransaction,
+  KmTransactionType,
+  KM_BLOCK,
+  DISCOUNT_PER_BLOCK,
+} from './km-transaction.entity';
 import { User, UserRole } from '../users/user.entity';
 
 @Injectable()
@@ -38,7 +50,7 @@ export class GamificationService {
       referenceId: referenceId || undefined,
     });
 
-    const saved = await this.pointsRepo.save(transaction) as PointTransaction;
+    const saved = await this.pointsRepo.save(transaction);
 
     // Atualiza totalPoints atomicamente
     await this.usersRepo.increment({ id: userId }, 'totalPoints', points);
@@ -47,12 +59,49 @@ export class GamificationService {
     const user = await this.usersRepo.findOne({ where: { id: userId } });
     if (user) {
       const newLevel = this.calculateLevel(user.totalPoints);
-      if (user.level !== newLevel) {
+      const currentLevel = user.level as LoyaltyLevel;
+      if (currentLevel !== newLevel) {
         await this.usersRepo.update(userId, { level: newLevel });
       }
     }
 
     return saved;
+  }
+
+  async awardBoatOwnerTripCompleted(
+    ownerId: string | null | undefined,
+    tripId: string,
+  ): Promise<PointTransaction | null> {
+    if (!ownerId) return null;
+    return this.awardPointsOnce(
+      ownerId,
+      PointAction.BOAT_OWNER_TRIP_COMPLETED,
+      tripId,
+    );
+  }
+
+  async awardBoatOwnerPassengerCompleted(
+    ownerId: string | null | undefined,
+    bookingId: string,
+  ): Promise<PointTransaction | null> {
+    if (!ownerId) return null;
+    return this.awardPointsOnce(
+      ownerId,
+      PointAction.BOAT_OWNER_PASSENGER_COMPLETED,
+      bookingId,
+    );
+  }
+
+  async awardBoatOwnerShipmentDelivered(
+    ownerId: string | null | undefined,
+    shipmentId: string,
+  ): Promise<PointTransaction | null> {
+    if (!ownerId) return null;
+    return this.awardPointsOnce(
+      ownerId,
+      PointAction.BOAT_OWNER_SHIPMENT_DELIVERED,
+      shipmentId,
+    );
   }
 
   async checkFirstTripOfMonthBonus(
@@ -81,8 +130,9 @@ export class GamificationService {
     const user = await this.usersRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
-    const levelInfo = LEVEL_THRESHOLDS.find(l => user.totalPoints >= l.minPoints)
-      || LEVEL_THRESHOLDS[LEVEL_THRESHOLDS.length - 1];
+    const levelInfo =
+      LEVEL_THRESHOLDS.find((l) => user.totalPoints >= l.minPoints) ||
+      LEVEL_THRESHOLDS[LEVEL_THRESHOLDS.length - 1];
 
     const nextLevel = this.getNextLevel(user.totalPoints);
 
@@ -139,8 +189,9 @@ export class GamificationService {
     const user = await this.usersRepo.findOne({ where: { id: userId } });
     if (!user) return 0;
 
-    const levelInfo = LEVEL_THRESHOLDS.find(l => user.totalPoints >= l.minPoints)
-      || LEVEL_THRESHOLDS[LEVEL_THRESHOLDS.length - 1];
+    const levelInfo =
+      LEVEL_THRESHOLDS.find((l) => user.totalPoints >= l.minPoints) ||
+      LEVEL_THRESHOLDS[LEVEL_THRESHOLDS.length - 1];
     return levelInfo.discount;
   }
 
@@ -148,13 +199,18 @@ export class GamificationService {
    * Registra indicação quando novo usuário se cadastra com código de convite.
    * Pontos são dados apenas quando o indicado conclui sua 1ª viagem (convertReferral).
    */
-  async processReferral(referralCode: string, newUserId: string): Promise<void> {
+  async processReferral(
+    referralCode: string,
+    newUserId: string,
+  ): Promise<void> {
     const referrer = await this.usersRepo.findOne({ where: { referralCode } });
     if (!referrer) return;
     if (referrer.id === newUserId) return; // não pode se auto-indicar
 
     // Verificar se já existe registro de indicação para este usuário
-    const existing = await this.referralsRepo.findOne({ where: { referredId: newUserId } });
+    const existing = await this.referralsRepo.findOne({
+      where: { referredId: newUserId },
+    });
     if (existing) return;
 
     const referral = this.referralsRepo.create({
@@ -171,7 +227,11 @@ export class GamificationService {
    */
   async convertReferral(completedUserId: string): Promise<void> {
     const referral = await this.referralsRepo.findOne({
-      where: { referredId: completedUserId, status: ReferralStatus.PENDING, pointsAwarded: false },
+      where: {
+        referredId: completedUserId,
+        status: ReferralStatus.PENDING,
+        pointsAwarded: false,
+      },
     });
     if (!referral) return;
 
@@ -181,14 +241,21 @@ export class GamificationService {
     await this.referralsRepo.save(referral);
 
     // Dar pontos ao quem indicou
-    await this.awardPoints(referral.referrerId, PointAction.REFERRAL, completedUserId);
+    await this.awardPoints(
+      referral.referrerId,
+      PointAction.REFERRAL,
+      completedUserId,
+    );
   }
 
   /**
    * Estatísticas de indicações do usuário
    */
   async getReferralStats(userId: string) {
-    const user = await this.usersRepo.findOne({ where: { id: userId }, select: ['id', 'referralCode'] });
+    const user = await this.usersRepo.findOne({
+      where: { id: userId },
+      select: ['id', 'referralCode'],
+    });
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
     const referrals = await this.referralsRepo.find({
@@ -198,14 +265,16 @@ export class GamificationService {
     });
 
     const totalReferred = referrals.length;
-    const totalConverted = referrals.filter(r => r.status === ReferralStatus.CONVERTED).length;
+    const totalConverted = referrals.filter(
+      (r) => r.status === ReferralStatus.CONVERTED,
+    ).length;
 
     return {
       referralCode: user.referralCode,
       totalReferred,
       totalConverted,
       pendingConversions: totalReferred - totalConverted,
-      list: referrals.map(r => ({
+      list: referrals.map((r) => ({
         id: r.id,
         referredName: r.referred?.name || 'Usuário',
         referredAvatarUrl: r.referred?.avatarUrl || null,
@@ -274,11 +343,7 @@ export class GamificationService {
   /**
    * Credita km ao usuário ao completar uma viagem.
    */
-  async creditKm(
-    userId: string,
-    km: number,
-    bookingId: string,
-  ): Promise<void> {
+  async creditKm(userId: string, km: number, bookingId: string): Promise<void> {
     if (!km || km <= 0) return;
 
     const tx = this.kmRepo.create({
@@ -338,7 +403,7 @@ export class GamificationService {
       discountPerBlock: DISCOUNT_PER_BLOCK,
       availableBlocks: blocks,
       maxDiscount: blocks * DISCOUNT_PER_BLOCK,
-      history: history.map(t => ({
+      history: history.map((t) => ({
         id: t.id,
         km: t.km,
         type: t.type,
@@ -367,7 +432,7 @@ export class GamificationService {
   }
 
   private getDescription(action: PointAction): string {
-    const descriptions: Record<PointAction, string> = {
+    const descriptions: Partial<Record<PointAction, string>> = {
       [PointAction.BOOKING_COMPLETED]: 'Viagem concluída',
       [PointAction.SHIPMENT_DELIVERED]: 'Encomenda entregue',
       [PointAction.CARGO_DELIVERED]: 'Carga entregue',
@@ -375,6 +440,27 @@ export class GamificationService {
       [PointAction.FIRST_TRIP_MONTH]: 'Bônus primeira viagem do mês',
       [PointAction.REFERRAL]: 'Indicação de amigo',
     };
-    return descriptions[action];
+    if (action === PointAction.BOAT_OWNER_TRIP_COMPLETED) {
+      return 'Bonus do dono por viagem concluida no barco';
+    }
+    if (action === PointAction.BOAT_OWNER_PASSENGER_COMPLETED) {
+      return 'Bonus do dono por passageiro transportado no barco';
+    }
+    if (action === PointAction.BOAT_OWNER_SHIPMENT_DELIVERED) {
+      return 'Bonus do dono por encomenda entregue no barco';
+    }
+    return descriptions[action] || 'TransaÃ§Ã£o de pontos';
+  }
+
+  private async awardPointsOnce(
+    userId: string,
+    action: PointAction,
+    referenceId: string,
+  ): Promise<PointTransaction | null> {
+    const existing = await this.pointsRepo.findOne({
+      where: { userId, action, referenceId },
+    });
+    if (existing) return null;
+    return this.awardPoints(userId, action, referenceId);
   }
 }

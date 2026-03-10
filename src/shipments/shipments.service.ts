@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as QRCode from 'qrcode';
@@ -7,10 +12,13 @@ import { PaymentMethod } from '../common/enums/payment-method.enum';
 import { PaidBy } from '../common/enums/paid-by.enum';
 import { ShipmentTimeline } from './shipment-timeline.entity';
 import { Trip } from '../trips/trip.entity';
-import { Coupon } from '../coupons/coupon.entity';
+import { Coupon, CouponType } from '../coupons/coupon.entity';
 import { User } from '../users/user.entity';
 import { CreateShipmentDto } from './dto/create-shipment.dto';
-import { CalculatePriceDto, CalculatePriceResponseDto } from './dto/calculate-price.dto';
+import {
+  CalculatePriceDto,
+  CalculatePriceResponseDto,
+} from './dto/calculate-price.dto';
 import { GamificationService } from '../gamification/gamification.service';
 import { PointAction } from '../gamification/point-transaction.entity';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -33,7 +41,7 @@ export class ShipmentsService {
     private gamificationService: GamificationService,
     private notificationsService: NotificationsService,
   ) {
-    this.initializeSequence();
+    void this.initializeSequence();
   }
 
   private async initializeSequence() {
@@ -82,19 +90,27 @@ export class ShipmentsService {
   /**
    * Calcula peso volumétrico: (comprimento × largura × altura) / 6000
    */
-  private calculateVolumetricWeight(length: number, width: number, height: number): number {
+  private calculateVolumetricWeight(
+    length: number,
+    width: number,
+    height: number,
+  ): number {
     return (length * width * height) / 6000;
   }
 
   /**
    * Calcula preço da encomenda com peso volumétrico e desconto de cupom
    */
-  async calculatePrice(dto: CalculatePriceDto): Promise<CalculatePriceResponseDto> {
+  async calculatePrice(
+    dto: CalculatePriceDto,
+  ): Promise<CalculatePriceResponseDto> {
     const trip = await this.tripsRepo.findOne({ where: { id: dto.tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
 
     if (trip.cargoPriceKg === null || trip.cargoPriceKg === undefined) {
-      throw new BadRequestException('Esta viagem não aceita encomendas (preço de carga não definido pelo capitão)');
+      throw new BadRequestException(
+        'Esta viagem não aceita encomendas (preço de carga não definido pelo capitão)',
+      );
     }
     const pricePerKg = Number(trip.cargoPriceKg);
 
@@ -150,7 +166,7 @@ export class ShipmentsService {
 
         // Aplica desconto se todas as validações passarem
         if (isValidDate && isValidRoute && isValidWeight) {
-          if (coupon.type === 'percentage') {
+          if (coupon.type === CouponType.PERCENTAGE) {
             couponDiscount = (basePrice * coupon.value) / 100;
           } else {
             couponDiscount = coupon.value;
@@ -271,7 +287,7 @@ export class ShipmentsService {
         // Rollback da encomenda se não houver carga suficiente
         await this.shipmentsRepo.delete(saved.id);
         throw new BadRequestException(
-          `Carga insuficiente. Disponível: ${trip.availableCargoKg}kg, Necessário: ${chargedWeight}kg`
+          `Carga insuficiente. Disponível: ${trip.availableCargoKg}kg, Necessário: ${chargedWeight}kg`,
         );
       }
 
@@ -286,10 +302,15 @@ export class ShipmentsService {
     await this.shipmentsRepo.update(saved.id, { qrCode });
 
     // Evento inicial na timeline
-    const initialEvent = paidBy === PaidBy.RECIPIENT
-      ? 'Encomenda criada — frete a cobrar do destinatário na entrega'
-      : 'Encomenda criada e aguardando confirmação de pagamento';
-    await this.createTimelineEvent(saved.id, ShipmentStatus.PENDING, initialEvent);
+    const initialEvent =
+      paidBy === PaidBy.RECIPIENT
+        ? 'Encomenda criada — frete a cobrar do destinatário na entrega'
+        : 'Encomenda criada e aguardando confirmação de pagamento';
+    await this.createTimelineEvent(
+      saved.id,
+      ShipmentStatus.PENDING,
+      initialEvent,
+    );
 
     // Notificar destinatário se tiver conta no app (busca por telefone)
     await this.notifyRecipient(saved, senderId);
@@ -301,28 +322,34 @@ export class ShipmentsService {
    * Notifica o destinatário se ele tiver conta no app (lookup por telefone).
    * Também armazena recipientUserId para notificações futuras.
    */
-  private async notifyRecipient(shipment: Shipment, senderId: string): Promise<void> {
+  private async notifyRecipient(
+    shipment: Shipment,
+    senderId: string,
+  ): Promise<void> {
     const recipientUser = await this.usersRepo.findOne({
       where: { phone: shipment.recipientPhone },
-      select: ['id', 'name', 'fcmToken'] as any,
+      select: ['id', 'name', 'fcmToken'],
     });
 
     if (!recipientUser) return;
 
     // Guardar ID para notificações futuras (out-for-delivery, etc.)
-    await this.shipmentsRepo.update(shipment.id, { recipientUserId: recipientUser.id });
+    await this.shipmentsRepo.update(shipment.id, {
+      recipientUserId: recipientUser.id,
+    });
     shipment.recipientUserId = recipientUser.id;
 
     const sender = await this.usersRepo.findOne({
       where: { id: senderId },
-      select: ['id', 'name'] as any,
+      select: ['id', 'name'],
     });
-    const senderName = (sender as any)?.name || 'Alguém';
+    const senderName = sender?.name || 'Alguém';
     const price = Number(shipment.totalPrice).toFixed(2);
 
-    const body = shipment.paidBy === PaidBy.RECIPIENT
-      ? `${senderName} enviou uma encomenda para você. Valor a pagar na entrega: R$ ${price}`
-      : `${senderName} enviou uma encomenda para você! Rastreie pelo código ${shipment.trackingCode}`;
+    const body =
+      shipment.paidBy === PaidBy.RECIPIENT
+        ? `${senderName} enviou uma encomenda para você. Valor a pagar na entrega: R$ ${price}`
+        : `${senderName} enviou uma encomenda para você! Rastreie pelo código ${shipment.trackingCode}`;
 
     await this.notificationsService.sendToUser(recipientUser.id, {
       title: '📦 Você tem uma encomenda!',
@@ -353,8 +380,14 @@ export class ShipmentsService {
     if (!shipment) throw new NotFoundException('Encomenda não encontrada');
 
     // Verificação de segurança: só o remetente ou capitão da viagem podem ver
-    if (userId && shipment.senderId !== userId && shipment.trip.captainId !== userId) {
-      throw new BadRequestException('Você não tem permissão para ver esta encomenda');
+    if (
+      userId &&
+      shipment.senderId !== userId &&
+      shipment.trip.captainId !== userId
+    ) {
+      throw new BadRequestException(
+        'Você não tem permissão para ver esta encomenda',
+      );
     }
 
     return shipment;
@@ -376,7 +409,11 @@ export class ShipmentsService {
     });
   }
 
-  async updateStatus(id: string, status: ShipmentStatus, userId?: string): Promise<Shipment> {
+  async updateStatus(
+    id: string,
+    status: ShipmentStatus,
+    userId?: string,
+  ): Promise<Shipment> {
     const shipment = await this.shipmentsRepo.findOne({ where: { id } });
     if (!shipment) throw new NotFoundException('Encomenda não encontrada');
 
@@ -410,7 +447,10 @@ export class ShipmentsService {
    * @deprecated Usar validateDelivery() ao invés - mantido para compatibilidade
    */
   async deliver(id: string, deliveryPhotoUrl?: string): Promise<Shipment> {
-    const shipment = await this.shipmentsRepo.findOne({ where: { id } });
+    const shipment = await this.shipmentsRepo.findOne({
+      where: { id },
+      relations: ['trip', 'trip.boat'],
+    });
     if (!shipment) throw new NotFoundException('Encomenda não encontrada');
 
     shipment.status = ShipmentStatus.DELIVERED;
@@ -428,6 +468,10 @@ export class ShipmentsService {
     await this.gamificationService.awardPoints(
       shipment.senderId,
       PointAction.SHIPMENT_DELIVERED,
+      shipment.id,
+    );
+    await this.gamificationService.awardBoatOwnerShipmentDelivered(
+      shipment.trip?.boat?.ownerId,
       shipment.id,
     );
 
@@ -461,7 +505,9 @@ export class ShipmentsService {
     }
 
     if (shipment.status !== ShipmentStatus.PENDING) {
-      throw new BadRequestException('Só é possível confirmar pagamento de encomendas pendentes');
+      throw new BadRequestException(
+        'Só é possível confirmar pagamento de encomendas pendentes',
+      );
     }
 
     shipment.status = ShipmentStatus.PAID;
@@ -480,8 +526,13 @@ export class ShipmentsService {
    * Confirma pagamento via webhook do gateway (Pix, cartão, etc.)
    * Chamado pelo sistema, sem verificação de ownership
    */
-  async confirmPaymentByWebhook(trackingCode: string, gatewayRef?: string): Promise<Shipment> {
-    const shipment = await this.shipmentsRepo.findOne({ where: { trackingCode } });
+  async confirmPaymentByWebhook(
+    trackingCode: string,
+    gatewayRef?: string,
+  ): Promise<Shipment> {
+    const shipment = await this.shipmentsRepo.findOne({
+      where: { trackingCode },
+    });
     if (!shipment) throw new NotFoundException('Encomenda não encontrada');
 
     if (shipment.status !== ShipmentStatus.PENDING) {
@@ -501,7 +552,11 @@ export class ShipmentsService {
     await this.notificationsService.sendToUser(saved.senderId, {
       title: '✅ Pagamento confirmado!',
       body: `Seu pagamento da encomenda ${saved.trackingCode} foi confirmado.`,
-      data: { type: 'shipment_paid', shipmentId: saved.id, trackingCode: saved.trackingCode },
+      data: {
+        type: 'shipment_paid',
+        shipmentId: saved.id,
+        trackingCode: saved.trackingCode,
+      },
     });
 
     return saved;
@@ -542,9 +597,10 @@ export class ShipmentsService {
     // Cash ou frete a cobrar: aceita PENDING (pagamento é feito na entrega/coleta)
     const isCash = shipment.paymentMethod === PaymentMethod.CASH;
     const isRecipientPays = shipment.paidBy === PaidBy.RECIPIENT;
-    const validStatuses = (isCash || isRecipientPays)
-      ? [ShipmentStatus.PENDING, ShipmentStatus.PAID]
-      : [ShipmentStatus.PAID];
+    const validStatuses =
+      isCash || isRecipientPays
+        ? [ShipmentStatus.PENDING, ShipmentStatus.PAID]
+        : [ShipmentStatus.PAID];
 
     if (!validStatuses.includes(shipment.status)) {
       throw new BadRequestException(
@@ -575,7 +631,11 @@ export class ShipmentsService {
     await this.notificationsService.sendToUser(saved.senderId, {
       title: '📦 Encomenda coletada!',
       body: `Sua encomenda ${saved.trackingCode} foi coletada pelo capitão.`,
-      data: { type: 'shipment_collected', shipmentId: saved.id, trackingCode: saved.trackingCode },
+      data: {
+        type: 'shipment_collected',
+        shipmentId: saved.id,
+        trackingCode: saved.trackingCode,
+      },
     });
 
     return saved;
@@ -596,7 +656,9 @@ export class ShipmentsService {
     }
 
     if (shipment.status !== ShipmentStatus.ARRIVED) {
-      throw new BadRequestException('A encomenda precisa ter chegado ao destino primeiro');
+      throw new BadRequestException(
+        'A encomenda precisa ter chegado ao destino primeiro',
+      );
     }
 
     shipment.status = ShipmentStatus.OUT_FOR_DELIVERY;
@@ -614,15 +676,20 @@ export class ShipmentsService {
     await this.notificationsService.sendToUser(saved.senderId, {
       title: '🚚 Saiu para entrega!',
       body: `Sua encomenda ${saved.trackingCode} está a caminho do destinatário.`,
-      data: { type: 'shipment_out_for_delivery', shipmentId: saved.id, trackingCode: saved.trackingCode },
+      data: {
+        type: 'shipment_out_for_delivery',
+        shipmentId: saved.id,
+        trackingCode: saved.trackingCode,
+      },
     });
 
     // Notificar destinatário se tiver conta no app
     if (saved.recipientUserId) {
       const price = Number(saved.totalPrice).toFixed(2);
-      const body = saved.paidBy === PaidBy.RECIPIENT
-        ? `Sua encomenda está chegando! Tenha R$ ${price} em mãos para o capitão.`
-        : `Sua encomenda ${saved.trackingCode} está a caminho!`;
+      const body =
+        saved.paidBy === PaidBy.RECIPIENT
+          ? `Sua encomenda está chegando! Tenha R$ ${price} em mãos para o capitão.`
+          : `Sua encomenda ${saved.trackingCode} está a caminho!`;
 
       await this.notificationsService.sendToUser(saved.recipientUserId, {
         title: '🚚 Encomenda a caminho!',
@@ -648,16 +715,26 @@ export class ShipmentsService {
     trackingCode: string,
     validationCode: string,
     deliveryPhotoUrl?: string,
-  ): Promise<{ shipment: Shipment; message: string; navegaCoinsEarned: number }> {
+  ): Promise<{
+    shipment: Shipment;
+    message: string;
+    navegaCoinsEarned: number;
+  }> {
     const shipment = await this.shipmentsRepo.findOne({
       where: { trackingCode },
-      relations: ['trip'],
+      relations: ['trip', 'trip.boat'],
     });
     if (!shipment) throw new NotFoundException('Encomenda não encontrada');
 
     // Validar status (pode estar ARRIVED ou OUT_FOR_DELIVERY)
-    if (![ShipmentStatus.ARRIVED, ShipmentStatus.OUT_FOR_DELIVERY].includes(shipment.status)) {
-      throw new BadRequestException('Esta encomenda ainda não está disponível para entrega');
+    if (
+      ![ShipmentStatus.ARRIVED, ShipmentStatus.OUT_FOR_DELIVERY].includes(
+        shipment.status,
+      )
+    ) {
+      throw new BadRequestException(
+        'Esta encomenda ainda não está disponível para entrega',
+      );
     }
 
     // Validar código
@@ -683,6 +760,10 @@ export class ShipmentsService {
       PointAction.SHIPMENT_DELIVERED,
       shipment.id,
     );
+    await this.gamificationService.awardBoatOwnerShipmentDelivered(
+      shipment.trip?.boat?.ownerId,
+      shipment.id,
+    );
 
     const navegaCoinsEarned = coinTransaction.points;
 
@@ -690,7 +771,11 @@ export class ShipmentsService {
     await this.notificationsService.sendToUser(saved.senderId, {
       title: '✅ Encomenda entregue!',
       body: `Sua encomenda ${saved.trackingCode} foi entregue com sucesso!`,
-      data: { type: 'shipment_delivered', shipmentId: saved.id, trackingCode: saved.trackingCode },
+      data: {
+        type: 'shipment_delivered',
+        shipmentId: saved.id,
+        trackingCode: saved.trackingCode,
+      },
     });
 
     // Notificar destinatário (se tiver conta) com confirmação
@@ -698,7 +783,11 @@ export class ShipmentsService {
       await this.notificationsService.sendToUser(saved.recipientUserId, {
         title: '✅ Encomenda recebida!',
         body: `Entrega da encomenda ${saved.trackingCode} confirmada. Obrigado!`,
-        data: { type: 'shipment_delivered', shipmentId: saved.id, trackingCode: saved.trackingCode },
+        data: {
+          type: 'shipment_delivered',
+          shipmentId: saved.id,
+          trackingCode: saved.trackingCode,
+        },
       });
     }
 
@@ -712,12 +801,19 @@ export class ShipmentsService {
   /**
    * Atualizar status de todas encomendas de uma viagem (chamado quando trip muda status)
    */
-  async updateShipmentsByTrip(tripId: string, newStatus: ShipmentStatus): Promise<void> {
+  async updateShipmentsByTrip(
+    tripId: string,
+    newStatus: ShipmentStatus,
+  ): Promise<void> {
     const shipments = await this.shipmentsRepo.find({ where: { tripId } });
 
     for (const shipment of shipments) {
       // Só atualizar se não foi cancelada ou já entregue
-      if ([ShipmentStatus.CANCELLED, ShipmentStatus.DELIVERED].includes(shipment.status)) {
+      if (
+        [ShipmentStatus.CANCELLED, ShipmentStatus.DELIVERED].includes(
+          shipment.status,
+        )
+      ) {
         continue;
       }
 
@@ -729,10 +825,12 @@ export class ShipmentsService {
         [ShipmentStatus.PAID]: 'Status atualizado automaticamente',
         [ShipmentStatus.COLLECTED]: 'Status atualizado automaticamente',
         [ShipmentStatus.IN_TRANSIT]: 'Viagem iniciada - Encomenda em trânsito',
-        [ShipmentStatus.ARRIVED]: 'Viagem chegou ao destino - Aguardando entrega',
+        [ShipmentStatus.ARRIVED]:
+          'Viagem chegou ao destino - Aguardando entrega',
         [ShipmentStatus.OUT_FOR_DELIVERY]: 'Status atualizado automaticamente',
         [ShipmentStatus.DELIVERED]: 'Status atualizado automaticamente',
-        [ShipmentStatus.CANCELLED]: 'Viagem cancelada - Encomenda cancelada automaticamente',
+        [ShipmentStatus.CANCELLED]:
+          'Viagem cancelada - Encomenda cancelada automaticamente',
       };
 
       await this.createTimelineEvent(
@@ -746,25 +844,41 @@ export class ShipmentsService {
         await this.notificationsService.sendToUser(shipment.senderId, {
           title: '🚢 Encomenda em trânsito!',
           body: `Sua encomenda ${shipment.trackingCode} está a caminho do destino.`,
-          data: { type: 'shipment_in_transit', shipmentId: shipment.id, trackingCode: shipment.trackingCode },
+          data: {
+            type: 'shipment_in_transit',
+            shipmentId: shipment.id,
+            trackingCode: shipment.trackingCode,
+          },
         });
       } else if (newStatus === ShipmentStatus.ARRIVED) {
         await this.notificationsService.sendToUser(shipment.senderId, {
           title: '📍 Encomenda chegou ao destino!',
           body: `Sua encomenda ${shipment.trackingCode} chegou. Em breve será entregue.`,
-          data: { type: 'shipment_arrived', shipmentId: shipment.id, trackingCode: shipment.trackingCode },
+          data: {
+            type: 'shipment_arrived',
+            shipmentId: shipment.id,
+            trackingCode: shipment.trackingCode,
+          },
         });
       } else if (newStatus === ShipmentStatus.CANCELLED) {
         await this.notificationsService.sendToUser(shipment.senderId, {
           title: '❌ Encomenda cancelada',
           body: `Sua encomenda ${shipment.trackingCode} foi cancelada porque a viagem foi cancelada.`,
-          data: { type: 'shipment_cancelled', shipmentId: shipment.id, trackingCode: shipment.trackingCode },
+          data: {
+            type: 'shipment_cancelled',
+            shipmentId: shipment.id,
+            trackingCode: shipment.trackingCode,
+          },
         });
       }
     }
   }
 
-  async cancel(id: string, senderId: string, reason?: string): Promise<Shipment> {
+  async cancel(
+    id: string,
+    senderId: string,
+    reason?: string,
+  ): Promise<Shipment> {
     const shipment = await this.shipmentsRepo.findOne({
       where: { id },
       relations: ['trip'],
@@ -772,11 +886,15 @@ export class ShipmentsService {
     if (!shipment) throw new NotFoundException('Encomenda não encontrada');
 
     if (shipment.senderId !== senderId) {
-      throw new BadRequestException('Você não tem permissão para cancelar esta encomenda');
+      throw new BadRequestException(
+        'Você não tem permissão para cancelar esta encomenda',
+      );
     }
 
     if (shipment.status === ShipmentStatus.DELIVERED) {
-      throw new BadRequestException('Não é possível cancelar uma encomenda já entregue');
+      throw new BadRequestException(
+        'Não é possível cancelar uma encomenda já entregue',
+      );
     }
 
     if (shipment.status === ShipmentStatus.CANCELLED) {
@@ -787,14 +905,17 @@ export class ShipmentsService {
     const saved = await this.shipmentsRepo.save(shipment);
 
     // Devolver carga disponível na viagem (se trip tiver cargo tracking)
-    if (shipment.trip?.availableCargoKg !== null && shipment.trip?.availableCargoKg !== undefined) {
+    if (
+      shipment.trip?.availableCargoKg !== null &&
+      shipment.trip?.availableCargoKg !== undefined
+    ) {
       // Recalcular peso cobrado
       let volumetricWeight = 0;
       if (shipment.length && shipment.width && shipment.height) {
         volumetricWeight = this.calculateVolumetricWeight(
           shipment.length,
           shipment.width,
-          shipment.height
+          shipment.height,
         );
       }
       const chargedWeight = Math.max(shipment.weight, volumetricWeight);
