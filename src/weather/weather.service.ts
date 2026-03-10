@@ -11,6 +11,7 @@ import { Trip, TripStatus } from '../trips/trip.entity';
 import { Booking, BookingStatus } from '../bookings/booking.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { FloodService } from './flood.service';
+import { geocodeCity } from '../trips/city-coords';
 import {
   CurrentWeatherDto,
   ForecastDayDto,
@@ -127,10 +128,18 @@ export class WeatherService {
   private resolveRegion(regionKey: string): { lat: number; lng: number; name: string } {
     const key = regionKey.toLowerCase().trim().replace(/\s+/g, '_');
     if (this.regions[key]) return this.regions[key];
+
     // Busca parcial (ex: "nova olinda" encontra "nova_olinda")
     const partial = Object.entries(this.regions).find(([k]) => k.includes(key) || key.includes(k));
     if (partial) return partial[1];
-    throw new NotFoundException(`Região "${regionKey}" não encontrada. Regiões disponíveis: ${Object.keys(this.regions).join(', ')}`);
+
+    // Fallback: geocodificar pelo nome usando lookup de cidades/comunidades do Amazonas
+    const coords = geocodeCity(regionKey);
+    if (coords) return { lat: coords.lat, lng: coords.lng, name: regionKey };
+
+    // Último recurso: Manaus (região central do Amazonas)
+    this.logger.warn(`Região "${regionKey}" não mapeada — usando Manaus como fallback`);
+    return { ...this.regions['manaus'], name: `${regionKey} (região de Manaus)` };
   }
 
   async getRegionWeather(regionKey: string): Promise<CurrentWeatherDto> {
@@ -348,8 +357,9 @@ export class WeatherService {
 
     const stationInfo = Object.values(this.riverStations).find(s => s.code === stationCode);
 
-    // Tenta os últimos 3 dias (ANA publica com atraso de 1-2 dias)
-    for (let daysBack = 0; daysBack <= 3; daysBack++) {
+    // Tenta os últimos 2 dias (ANA publica com atraso de 1-2 dias)
+    // Timeout curto (3s) para não bloquear o cliente — cai rapidamente no fallback sazonal
+    for (let daysBack = 0; daysBack <= 2; daysBack++) {
       try {
         const date    = new Date();
         date.setDate(date.getDate() - daysBack);
@@ -359,7 +369,7 @@ export class WeatherService {
           this.anaProxyUrl,
           {
             params: { CodEstacao: stationCode, DataInicio: dateStr, DataFim: dateStr, tipoDados: 3, nivelConsistencia: 1 },
-            timeout: 8000,
+            timeout: 3000,
             responseType: 'text',
             headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/xml, text/xml' },
           },
@@ -418,12 +428,25 @@ export class WeatherService {
   }
 
   async getAllRiverLevels(): Promise<RiverLevelDto[]> {
-    const results = await Promise.allSettled(
-      Object.values(this.riverStations).map(s => this.getRiverLevel(s.code)),
+    const timeout = <T>(ms: number, fallback: T): Promise<T> =>
+      new Promise(resolve => setTimeout(() => resolve(fallback), ms));
+
+    const results = await Promise.all(
+      Object.values(this.riverStations).map(async s => {
+        try {
+          // Garante que uma estação nunca trava o endpoint por mais de 12s
+          const level = await Promise.race([
+            this.getRiverLevel(s.code),
+            timeout(12000, null as unknown as RiverLevelDto),
+          ]);
+          return level;
+        } catch {
+          return null;
+        }
+      }),
     );
-    return results
-      .filter((r): r is PromiseFulfilledResult<RiverLevelDto> => r.status === 'fulfilled')
-      .map(r => r.value);
+
+    return results.filter((r): r is RiverLevelDto => r !== null);
   }
 
   // ─── OpenWeatherMap ──────────────────────────────────────────────────────────

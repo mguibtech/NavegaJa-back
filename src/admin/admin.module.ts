@@ -13,6 +13,7 @@ import { Review } from '../reviews/review.entity';
 import { Boat } from '../boats/boat.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { LocationsModule } from '../locations/locations.module';
+import { GamificationModule } from '../gamification/gamification.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { LocationsModule } from '../locations/locations.module';
     ]),
     NotificationsModule,
     LocationsModule,
+    GamificationModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

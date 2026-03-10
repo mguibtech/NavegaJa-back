@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException }
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, Between, IsNull } from 'typeorm';
 import { NotificationsService } from '../notifications/notifications.service';
+import { GamificationService } from '../gamification/gamification.service';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole, KycStatus } from '../users/user.entity';
 import { Trip, TripStatus } from '../trips/trip.entity';
@@ -18,7 +19,7 @@ export class AdminService {
   // Campos seguros do capitão — nunca expor passwordHash/fcmToken/resetCode
   private static readonly CAPTAIN_SAFE_FIELDS = [
     'captain.id', 'captain.name', 'captain.phone', 'captain.role', 'captain.email',
-    'captain.avatarUrl', 'captain.rating', 'captain.captainRating', 'captain.isActive',
+    'captain.avatarUrl', 'captain.rating', 'captain.rating', 'captain.isActive',
     'captain.city', 'captain.state', 'captain.isVerified', 'captain.createdAt',
   ];
 
@@ -47,6 +48,7 @@ export class AdminService {
     @InjectRepository(Boat)
     private boatsRepo: Repository<Boat>,
     private notificationsService: NotificationsService,
+    private gamificationService: GamificationService,
   ) {}
 
   // ==================== USUÁRIOS ====================
@@ -455,6 +457,64 @@ export class AdminService {
     await this.shipmentsRepo.save(shipment);
 
     return shipment;
+  }
+
+  // ==================== RECEITA POR PERÍODO ====================
+
+  async getRevenueChart(period: '7d' | '30d' | '90d' = '30d') {
+    const days = period === '7d' ? 7 : period === '30d' ? 30 : 90;
+    const labels: string[] = [];
+    const bookingsRevenue: number[] = [];
+    const shipmentsRevenue: number[] = [];
+    const total: number[] = [];
+
+    for (let i = days - 1; i >= 0; i--) {
+      const start = new Date();
+      start.setDate(start.getDate() - i);
+      start.setHours(0, 0, 0, 0);
+
+      const end = new Date(start);
+      end.setHours(23, 59, 59, 999);
+
+      labels.push(
+        `${String(start.getDate()).padStart(2, '0')}/${String(start.getMonth() + 1).padStart(2, '0')}`,
+      );
+
+      const [bRow, sRow] = await Promise.all([
+        this.bookingsRepo
+          .createQueryBuilder('b')
+          .select('COALESCE(SUM(b.total_price), 0)', 'revenue')
+          .where('b.created_at BETWEEN :start AND :end', { start, end })
+          .getRawOne(),
+        this.shipmentsRepo
+          .createQueryBuilder('s')
+          .select('COALESCE(SUM(s.total_price), 0)', 'revenue')
+          .where('s.created_at BETWEEN :start AND :end', { start, end })
+          .getRawOne(),
+      ]);
+
+      const b = Number(bRow?.revenue || 0);
+      const s = Number(sRow?.revenue || 0);
+      bookingsRevenue.push(Number(b.toFixed(2)));
+      shipmentsRevenue.push(Number(s.toFixed(2)));
+      total.push(Number((b + s).toFixed(2)));
+    }
+
+    const sumBookings = Number(bookingsRevenue.reduce((a, c) => a + c, 0).toFixed(2));
+    const sumShipments = Number(shipmentsRevenue.reduce((a, c) => a + c, 0).toFixed(2));
+
+    return {
+      period,
+      labels,
+      bookings: bookingsRevenue,
+      shipments: shipmentsRevenue,
+      total,
+      totals: {
+        bookings: sumBookings,
+        shipments: sumShipments,
+        combined: Number((sumBookings + sumShipments).toFixed(2)),
+      },
+    };
   }
 
   // ==================== GRÁFICO POR DIA ====================
@@ -1504,6 +1564,64 @@ export class AdminService {
           link: `/admin/trips/${t.id}`,
         })),
       },
+    };
+  }
+
+  // ==================== GAMIFICATION (ADMIN) ====================
+
+  async getAdminGamificationStats() {
+    const leaderboard = await this.gamificationService.getLeaderboard(10);
+
+    // Distribuição por nível
+    const [marinheiro, navegador, capitao, almirante] = await Promise.all([
+      this.usersRepo.count({ where: { level: 'Marinheiro' as any } }),
+      this.usersRepo.count({ where: { level: 'Navegador' as any } }),
+      this.usersRepo.count({ where: { level: 'Capitão' as any } }),
+      this.usersRepo.count({ where: { level: 'Almirante' as any } }),
+    ]);
+
+    // Total de NavegaCoins distribuídos e por acção
+    const totalPointsRow = await this.usersRepo
+      .createQueryBuilder('u')
+      .select('COALESCE(SUM(u.total_points), 0)', 'total')
+      .getRawOne();
+
+    const totalKmRow = await this.usersRepo
+      .createQueryBuilder('u')
+      .select('COALESCE(SUM(u.total_km_traveled), 0)', 'total')
+      .getRawOne();
+
+    // Referrals: total, convertidos, pendentes
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const monthAgo = new Date(today);
+    monthAgo.setMonth(monthAgo.getMonth() - 1);
+
+    const [totalUsers, newToday, newThisWeek, newThisMonth] = await Promise.all([
+      this.usersRepo.count({ where: [{ role: UserRole.PASSENGER }, { role: UserRole.CAPTAIN }] }),
+      this.usersRepo.count({ where: [{ role: UserRole.PASSENGER, createdAt: MoreThan(today) }, { role: UserRole.CAPTAIN, createdAt: MoreThan(today) }] }),
+      this.usersRepo.count({ where: [{ role: UserRole.PASSENGER, createdAt: MoreThan(weekAgo) }, { role: UserRole.CAPTAIN, createdAt: MoreThan(weekAgo) }] }),
+      this.usersRepo.count({ where: [{ role: UserRole.PASSENGER, createdAt: MoreThan(monthAgo) }, { role: UserRole.CAPTAIN, createdAt: MoreThan(monthAgo) }] }),
+    ]);
+
+    return {
+      overview: {
+        totalNavegaCoinsDistributed: Number(totalPointsRow?.total || 0),
+        totalKmTraveled: Number(totalKmRow?.total || 0),
+        totalEligibleUsers: totalUsers,
+        newUsersToday: newToday,
+        newUsersThisWeek: newThisWeek,
+        newUsersThisMonth: newThisMonth,
+      },
+      levelDistribution: {
+        Marinheiro: marinheiro,
+        Navegador: navegador,
+        Capitão: capitao,
+        Almirante: almirante,
+      },
+      leaderboard,
     };
   }
 

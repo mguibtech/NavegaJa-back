@@ -325,6 +325,31 @@ export class AdminController {
     return this.adminService.getDashboardOverview();
   }
 
+  @Get('dashboard/revenue')
+  @ApiOperation({
+    summary: 'Receita diária por período (Admin)',
+    description: 'Retorna receita de bookings + encomendas agrupada por dia para o período seleccionado',
+  })
+  @ApiQuery({ name: 'period', required: false, enum: ['7d', '30d', '90d'], example: '30d' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        period: '30d',
+        labels: ['01/03', '02/03'],
+        bookings: [1200.00, 850.50],
+        shipments: [340.00, 120.00],
+        total: [1540.00, 970.50],
+        totals: { bookings: 2050.50, shipments: 460.00, combined: 2510.50 },
+      },
+    },
+  })
+  getDashboardRevenue(@Query('period') period: '7d' | '30d' | '90d' = '30d') {
+    const validPeriods = ['7d', '30d', '90d'];
+    if (!validPeriods.includes(period)) period = '30d';
+    return this.adminService.getRevenueChart(period);
+  }
+
   @Get('dashboard/chart')
   @ApiOperation({
     summary: 'Dados do gráfico por dia (Admin)',
@@ -343,6 +368,27 @@ export class AdminController {
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 50 })
   getRecentActivity(@Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number) {
     return this.adminService.getRecentActivity(limit);
+  }
+
+  // ==================== GAMIFICATION ====================
+
+  @Get('gamification')
+  @ApiOperation({
+    summary: 'Estatísticas de gamificação (Admin)',
+    description: 'Visão geral de NavegaCoins, km, níveis e leaderboard',
+  })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        overview: { totalNavegaCoinsDistributed: 15420, totalKmTraveled: 82340, totalEligibleUsers: 145, newUsersToday: 3, newUsersThisWeek: 18, newUsersThisMonth: 64 },
+        levelDistribution: { Marinheiro: 95, Navegador: 38, Capitão: 10, Almirante: 2 },
+        leaderboard: [{ position: 1, id: 'uuid', name: 'João', totalPoints: 2400, level: 'Almirante' }],
+      },
+    },
+  })
+  getAdminGamification() {
+    return this.adminService.getAdminGamificationStats();
   }
 
   // ==================== SEGURANÇA ====================

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual, Between, In } from 'typeorm';
+import { Repository, MoreThanOrEqual, Between, In, LessThan } from 'typeorm';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { Trip, TripStatus } from './trip.entity';
 import { geocodeCity } from './city-coords';
 import { CreateTripDto, UpdateTripStatusDto, UpdateLocationDto } from './dto/trip.dto';
@@ -788,12 +789,15 @@ export class TripsService {
 
   async getPopularDestinations() {
     // COALESCE: se trip.origin for vazio (seed antigo), usa route.origin_name como fallback
+    const now = new Date();
+
     const popularOrigins = await this.tripsRepo
       .createQueryBuilder('trip')
       .leftJoin('trip.route', 'route')
       .select(`COALESCE(NULLIF(trip.origin, ''), route.origin_name)`, 'city')
       .addSelect('COUNT(*)', 'count')
       .where('trip.status = :status', { status: TripStatus.SCHEDULED })
+      .andWhere('trip.departure_at >= :now', { now })
       .andWhere(`COALESCE(NULLIF(trip.origin, ''), route.origin_name) IS NOT NULL`)
       .groupBy(`COALESCE(NULLIF(trip.origin, ''), route.origin_name)`)
       .orderBy('count', 'DESC')
@@ -806,6 +810,7 @@ export class TripsService {
       .select(`COALESCE(NULLIF(trip.destination, ''), route.destination_name)`, 'city')
       .addSelect('COUNT(*)', 'count')
       .where('trip.status = :status', { status: TripStatus.SCHEDULED })
+      .andWhere('trip.departure_at >= :now', { now })
       .andWhere(`COALESCE(NULLIF(trip.destination, ''), route.destination_name) IS NOT NULL`)
       .groupBy(`COALESCE(NULLIF(trip.destination, ''), route.destination_name)`)
       .orderBy('count', 'DESC')
@@ -822,6 +827,7 @@ export class TripsService {
       .addSelect('MIN(trip.price)', 'minPrice')
       .addSelect('AVG(trip.price)', 'avgPrice')
       .where('trip.status = :status', { status: TripStatus.SCHEDULED })
+      .andWhere('trip.departure_at >= :now', { now })
       .groupBy(`COALESCE(NULLIF(trip.origin, ''), route.origin_name), COALESCE(NULLIF(trip.destination, ''), route.destination_name), route.id`)
       .orderBy('count', 'DESC')
       .limit(10)
@@ -845,5 +851,32 @@ export class TripsService {
         avgPrice: parseFloat(item.avgPrice),
       })),
     };
+  }
+
+  /**
+   * Auto-cancela viagens SCHEDULED cuja data de partida já passou há mais de 2 horas.
+   * Roda a cada 15 minutos.
+   */
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async autoCancelExpiredTrips() {
+    const grace = new Date();
+    grace.setHours(grace.getHours() - 2); // 2h de tolerância
+
+    const expired = await this.tripsRepo.find({
+      where: {
+        status: TripStatus.SCHEDULED,
+        departureAt: LessThan(grace),
+      },
+    });
+
+    for (const trip of expired) {
+      trip.status = TripStatus.CANCELLED;
+      await this.tripsRepo.save(trip);
+      console.log(`Trip ${trip.id} auto-cancelada (partida expirada: ${trip.departureAt})`);
+    }
+
+    if (expired.length > 0) {
+      console.log(`[Cron] ${expired.length} viagem(ns) auto-cancelada(s) por expiração.`);
+    }
   }
 }
