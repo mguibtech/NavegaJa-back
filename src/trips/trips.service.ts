@@ -1,10 +1,29 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual, Between, In, LessThan } from 'typeorm';
+import {
+  Repository,
+  MoreThanOrEqual,
+  Between,
+  In,
+  LessThan,
+  FindOperator,
+  FindOptionsWhere,
+} from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Trip, TripStatus } from './trip.entity';
 import { geocodeCity } from './city-coords';
-import { CreateTripDto, UpdateTripStatusDto, UpdateLocationDto } from './dto/trip.dto';
+import {
+  CreateTripDto,
+  UpdateTripStatusDto,
+  UpdateLocationDto,
+} from './dto/trip.dto';
 import { ShipmentsService } from '../shipments/shipments.service';
 import { ShipmentStatus } from '../shipments/shipment.entity';
 import { SafetyService } from '../safety/safety.service';
@@ -15,14 +34,65 @@ import { BookingsService } from '../bookings/bookings.service';
 import { PdfService } from '../pdf/pdf.service';
 import { BoatStaffService } from '../boat-staff/boat-staff.service';
 import { LocationsService } from '../locations/locations.service';
+import { GamificationService } from '../gamification/gamification.service';
+import { PdfStream } from '../pdf/pdf.types';
 import { Boat } from '../boats/boat.entity';
 import { User } from '../users/user.entity';
 import { Shipment } from '../shipments/shipment.entity';
 import { Favorite, FavoriteType } from '../favorites/favorite.entity';
-import { Booking } from '../bookings/booking.entity';
+import {
+  Booking,
+  BookingStatus,
+  PaymentStatus,
+} from '../bookings/booking.entity';
+import { ShipmentTimeline } from '../shipments/shipment-timeline.entity';
+
+export interface WeatherWarning {
+  score: number;
+  warnings: string[];
+  recommendations: string[];
+}
+
+export type TripStatusUpdateResult = Trip & {
+  weatherWarning?: WeatherWarning;
+};
 
 @Injectable()
 export class TripsService {
+  private static readonly BLOCKING_CONFLICT_STATUSES = [
+    TripStatus.SCHEDULED,
+    TripStatus.IN_PROGRESS,
+  ] as const;
+
+  private static readonly CAPTAIN_SAFE_FIELDS = [
+    'captain.id',
+    'captain.name',
+    'captain.phone',
+    'captain.role',
+    'captain.email',
+    'captain.avatarUrl',
+    'captain.rating',
+    'captain.totalTrips',
+    'captain.totalPoints',
+    'captain.level',
+    'captain.referralCode',
+    'captain.isActive',
+    'captain.passengerRating',
+    'captain.city',
+    'captain.state',
+    'captain.isVerified',
+    'captain.licensePhotoUrl',
+    'captain.certificatePhotoUrl',
+    'captain.verifiedAt',
+    'captain.createdAt',
+    'captain.updatedAt',
+  ];
+
+  private static readonly PASSENGER_SAFE_FIELDS =
+    TripsService.CAPTAIN_SAFE_FIELDS.map((field) =>
+      field.replace('captain.', 'passenger.'),
+    );
+
   constructor(
     @InjectRepository(Trip)
     private tripsRepo: Repository<Trip>,
@@ -42,12 +112,17 @@ export class TripsService {
     private floodService: FloodService,
     private notificationsService: NotificationsService,
     private bookingsService: BookingsService,
+    private gamificationService: GamificationService,
     private pdfService: PdfService,
     private boatStaffService: BoatStaffService,
     private locationsService: LocationsService,
   ) {}
 
-  async create(userId: string, dto: CreateTripDto, role?: string): Promise<Trip> {
+  async create(
+    userId: string,
+    dto: CreateTripDto,
+    role?: string,
+  ): Promise<Trip> {
     // Alias para compatibilidade interna (trip.captainId = quem criou)
     const captainId = userId;
     const departureAt = new Date(dto.departureTime);
@@ -69,7 +144,9 @@ export class TripsService {
     }
 
     // 1. Origem e destino não podem ser iguais
-    if (dto.origin.trim().toLowerCase() === dto.destination.trim().toLowerCase()) {
+    if (
+      dto.origin.trim().toLowerCase() === dto.destination.trim().toLowerCase()
+    ) {
       throw new BadRequestException('Origem e destino não podem ser iguais.');
     }
 
@@ -90,15 +167,24 @@ export class TripsService {
     // 2. Validar embarcação (deve existir e o utilizador ter acesso)
     let boat: Boat;
     if (role === 'boat_manager') {
-      const foundBoat = await this.boatsRepo.findOne({ where: { id: dto.boatId } });
+      const foundBoat = await this.boatsRepo.findOne({
+        where: { id: dto.boatId },
+      });
       if (!foundBoat) throw new NotFoundException('Embarcação não encontrada');
-      const staff = await this.boatStaffService.canManageBoat(captainId, dto.boatId);
+      const staff = await this.boatStaffService.canManageBoat(
+        captainId,
+        dto.boatId,
+      );
       if (!staff?.canCreateTrips) {
-        throw new ForbiddenException('Sem permissão para criar viagens nesta embarcação');
+        throw new ForbiddenException(
+          'Sem permissão para criar viagens nesta embarcação',
+        );
       }
       boat = foundBoat;
     } else {
-      const foundBoat = await this.boatsRepo.findOne({ where: { id: dto.boatId, ownerId: captainId } });
+      const foundBoat = await this.boatsRepo.findOne({
+        where: { id: dto.boatId, ownerId: captainId },
+      });
       if (!foundBoat) {
         throw new NotFoundException(
           'Embarcação não encontrada ou você não é o proprietário desta embarcação.',
@@ -124,19 +210,16 @@ export class TripsService {
     // 4. Verificar conflitos de horário (embarcação não pode estar em duas viagens ao mesmo tempo)
     const conflictingTrips = await this.tripsRepo
       .createQueryBuilder('trip')
-      .where('trip.boatId = :boatId', { boatId: dto.boatId })
+      .where('trip.boat_id = :boatId', { boatId: dto.boatId })
       .andWhere('trip.status IN (:...statuses)', {
-        statuses: [TripStatus.SCHEDULED, TripStatus.IN_PROGRESS],
+        statuses: [...TripsService.BLOCKING_CONFLICT_STATUSES],
       })
       .andWhere(
-        '(trip.departure_at BETWEEN :departureStart AND :departureEnd) OR ' +
-        '(trip.estimated_arrival_at BETWEEN :arrivalStart AND :arrivalEnd) OR ' +
-        '(:departureStart BETWEEN trip.departure_at AND trip.estimated_arrival_at)',
+        'trip.departure_at < :newArrivalAt AND ' +
+          'COALESCE(trip.estimated_arrival_at, trip.departure_at) > :newDepartureAt',
         {
-          departureStart: departureAt,
-          departureEnd: estimatedArrivalAt,
-          arrivalStart: departureAt,
-          arrivalEnd: estimatedArrivalAt,
+          newDepartureAt: departureAt,
+          newArrivalAt: estimatedArrivalAt,
         },
       )
       .getCount();
@@ -144,7 +227,7 @@ export class TripsService {
     if (conflictingTrips > 0) {
       throw new BadRequestException(
         'Esta embarcação já possui viagem agendada neste horário. ' +
-        'Verifique o calendário de viagens e escolha outro horário.',
+          'Verifique o calendário de viagens e escolha outro horário.',
       );
     }
 
@@ -159,7 +242,11 @@ export class TripsService {
 
     // 6. Verificar risco de cheia EXTREME (bloqueia criação da viagem)
     try {
-      const flood = await this.floodService.getFloodStatus(-3.119, -60.0217, 100);
+      const flood = await this.floodService.getFloodStatus(
+        -3.119,
+        -60.0217,
+        100,
+      );
       if (flood.severity === 'EXTREME') {
         throw new ForbiddenException(
           'Criação de viagem bloqueada: cheia extrema detectada na área. Aguarde a melhora das condições.',
@@ -185,7 +272,12 @@ export class TripsService {
       cargoPriceKg: dto.cargoPriceKg || 0,
       cargoCapacityKg: dto.cargoCapacityKg || null,
       availableCargoKg: dto.cargoCapacityKg || null, // Inicializa com capacidade total
-      ...await (async () => { const lk = geocodeCity(dto.origin); if (lk) return { originLat: lk.lat, originLng: lk.lng }; const db = await this.locationsService.findConfirmedByName(dto.origin); return db ? { originLat: db.lat, originLng: db.lng } : {}; })(),
+      ...(await (async () => {
+        const lk = geocodeCity(dto.origin);
+        if (lk) return { originLat: lk.lat, originLng: lk.lng };
+        const db = await this.locationsService.findConfirmedByName(dto.origin);
+        return db ? { originLat: db.lat, originLng: db.lng } : {};
+      })()),
     } as Partial<Trip>);
 
     const saved = await this.tripsRepo.save(trip);
@@ -195,19 +287,31 @@ export class TripsService {
 
     // Se criado por gestor, notificar o capitão dono do barco
     if (role === 'boat_manager' && boat.ownerId !== captainId) {
-      this.notificationsService.sendToUser(boat.ownerId, {
-        title: '🚢 Nova viagem criada no seu barco',
-        body: `${boat.name}: ${dto.origin} → ${dto.destination} foi agendada pelo gestor.`,
-        data: { type: 'trip_created_by_manager', tripId: saved.id, boatId: boat.id },
-      }).catch(() => {});
+      this.notificationsService
+        .sendToUser(boat.ownerId, {
+          title: '🚢 Nova viagem criada no seu barco',
+          body: `${boat.name}: ${dto.origin} → ${dto.destination} foi agendada pelo gestor.`,
+          data: {
+            type: 'trip_created_by_manager',
+            tripId: saved.id,
+            boatId: boat.id,
+          },
+        })
+        .catch(() => {});
     }
 
     return saved;
   }
 
-  private async notifyFavoriteCaptainFans(captainId: string, trip: Trip): Promise<void> {
+  private async notifyFavoriteCaptainFans(
+    captainId: string,
+    trip: Trip,
+  ): Promise<void> {
     const [captain, favorites] = await Promise.all([
-      this.usersRepo.findOne({ where: { id: captainId }, select: ['id', 'name'] }),
+      this.usersRepo.findOne({
+        where: { id: captainId },
+        select: ['id', 'name'],
+      }),
       this.favoritesRepo.find({
         where: { type: FavoriteType.CAPTAIN, captainId },
         select: ['userId'],
@@ -216,7 +320,7 @@ export class TripsService {
 
     if (!favorites.length) return;
 
-    const userIds = favorites.map(f => f.userId);
+    const userIds = favorites.map((f) => f.userId);
     const captainName = captain?.name || 'Seu capitão favorito';
 
     const departureDate = trip.departureAt.toLocaleDateString('pt-BR', {
@@ -234,7 +338,11 @@ export class TripsService {
   }
 
   async findAvailable(routeId?: string, date?: string): Promise<Trip[]> {
-    const where: any = {
+    const where: {
+      status: TripStatus;
+      routeId?: string;
+      departureAt?: FindOperator<Date>;
+    } = {
       status: TripStatus.SCHEDULED,
     };
 
@@ -269,13 +377,19 @@ export class TripsService {
   ): Promise<Trip[]> {
     // ValidationPipe({ transform:true }) converte strings não numéricas para NaN — validar aqui
     if (minPrice !== undefined && !Number.isFinite(minPrice)) {
-      throw new BadRequestException('minPrice deve ser um número inteiro válido');
+      throw new BadRequestException(
+        'minPrice deve ser um número inteiro válido',
+      );
     }
     if (maxPrice !== undefined && !Number.isFinite(maxPrice)) {
-      throw new BadRequestException('maxPrice deve ser um número inteiro válido');
+      throw new BadRequestException(
+        'maxPrice deve ser um número inteiro válido',
+      );
     }
     if (minRating !== undefined && !Number.isFinite(minRating)) {
-      throw new BadRequestException('minRating deve ser um número inteiro válido');
+      throw new BadRequestException(
+        'minRating deve ser um número inteiro válido',
+      );
     }
 
     const qb = this.tripsRepo
@@ -314,14 +428,17 @@ export class TripsService {
       // Validar se a data é válida
       if (isNaN(dayStart.getTime())) {
         throw new BadRequestException(
-          `Data inválida: "${date}". Use o formato YYYY-MM-DD (ex: 2026-02-15)`
+          `Data inválida: "${date}". Use o formato YYYY-MM-DD (ex: 2026-02-15)`,
         );
       }
 
       dayStart.setHours(0, 0, 0, 0);
       const dayEnd = new Date(date);
       dayEnd.setHours(23, 59, 59, 999);
-      qb.andWhere('trip.departure_at BETWEEN :dayStart AND :dayEnd', { dayStart, dayEnd });
+      qb.andWhere('trip.departure_at BETWEEN :dayStart AND :dayEnd', {
+        dayStart,
+        dayEnd,
+      });
     } else {
       qb.andWhere('trip.departure_at >= :now', { now: new Date() });
     }
@@ -340,20 +457,28 @@ export class TripsService {
     if (departureTime) {
       switch (departureTime) {
         case 'morning': // 06:00 - 11:59
-          qb.andWhere('EXTRACT(HOUR FROM trip.departure_at) >= 6 AND EXTRACT(HOUR FROM trip.departure_at) < 12');
+          qb.andWhere(
+            'EXTRACT(HOUR FROM trip.departure_at) >= 6 AND EXTRACT(HOUR FROM trip.departure_at) < 12',
+          );
           break;
         case 'afternoon': // 12:00 - 17:59
-          qb.andWhere('EXTRACT(HOUR FROM trip.departure_at) >= 12 AND EXTRACT(HOUR FROM trip.departure_at) < 18');
+          qb.andWhere(
+            'EXTRACT(HOUR FROM trip.departure_at) >= 12 AND EXTRACT(HOUR FROM trip.departure_at) < 18',
+          );
           break;
         case 'night': // 18:00 - 05:59
-          qb.andWhere('EXTRACT(HOUR FROM trip.departure_at) >= 18 OR EXTRACT(HOUR FROM trip.departure_at) < 6');
+          qb.andWhere(
+            'EXTRACT(HOUR FROM trip.departure_at) >= 18 OR EXTRACT(HOUR FROM trip.departure_at) < 6',
+          );
           break;
       }
     }
 
     // Filtro por avaliação mínima do capitão
     if (minRating !== undefined && minRating !== null) {
-      qb.andWhere('CAST(captain.rating AS DECIMAL) >= :minRating', { minRating });
+      qb.andWhere('CAST(captain.rating AS DECIMAL) >= :minRating', {
+        minRating,
+      });
     }
 
     qb.orderBy('trip.departure_at', 'ASC');
@@ -361,7 +486,7 @@ export class TripsService {
     return qb.getMany();
   }
 
-  async findById(id: string): Promise<any> {
+  async findById(id: string): Promise<Trip> {
     const qb = this.tripsRepo
       .createQueryBuilder('trip')
       .leftJoin('trip.captain', 'captain')
@@ -369,7 +494,7 @@ export class TripsService {
       .leftJoinAndSelect('trip.boat', 'boat')
       .leftJoinAndSelect('trip.bookings', 'bookings')
       .leftJoin('bookings.passenger', 'passenger')
-      .addSelect(TripsService.CAPTAIN_SAFE_FIELDS.map(f => f.replace('captain.', 'passenger.')))
+      .addSelect(TripsService.PASSENGER_SAFE_FIELDS)
       .where('trip.id = :id', { id });
 
     const trip = await qb.getOne();
@@ -381,8 +506,52 @@ export class TripsService {
    * Endpoint de gestão do capitão — retorna bookings + shipments com todos os dados necessários.
    * Garante que o capitão só acede à sua própria viagem.
    */
-  async findByIdForCaptain(id: string, userId: string, role?: string): Promise<any> {
-    const trip = await this.tripsRepo.findOne({ where: { id }, relations: ['boat'] });
+  async findByIdForCaptain(
+    id: string,
+    userId: string,
+    role?: string,
+  ): Promise<
+    Trip & {
+      passageiros: Array<{
+        bookingId: string;
+        status: BookingStatus;
+        paymentStatus: PaymentStatus;
+        seats: number;
+        seatNumber: number | null;
+        totalPrice: number;
+        createdAt: Date;
+        passenger: {
+          id: string;
+          name: string;
+          phone: string;
+          avatarUrl: string | null;
+          passengerRating: number | null;
+        } | null;
+      }>;
+      encomendas: Array<{
+        id: string;
+        trackingCode: string;
+        validationCode: string | null;
+        status: ShipmentStatus;
+        description: string | null;
+        weightKg: number;
+        totalPrice: number;
+        paidBy: string;
+        recipientName: string;
+        recipientPhone: string;
+        recipientAddress: string | null;
+        collectionPhotoUrl: string | null;
+        deliveryPhotoUrl: string | null;
+        createdAt: Date;
+      }>;
+      totalPassageiros: number;
+      totalEncomendas: number;
+    }
+  > {
+    const trip = await this.tripsRepo.findOne({
+      where: { id },
+      relations: ['boat'],
+    });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
     await this.assertCanManageTrip(trip, userId, role);
 
@@ -392,9 +561,18 @@ export class TripsService {
         .createQueryBuilder(Booking, 'b')
         .leftJoin('b.passenger', 'p')
         .select([
-          'b.id', 'b.status', 'b.paymentStatus',
-          'b.seats', 'b.seatNumber', 'b.totalPrice', 'b.createdAt',
-          'p.id', 'p.name', 'p.phone', 'p.avatarUrl', 'p.passengerRating',
+          'b.id',
+          'b.status',
+          'b.paymentStatus',
+          'b.seats',
+          'b.seatNumber',
+          'b.totalPrice',
+          'b.createdAt',
+          'p.id',
+          'p.name',
+          'p.phone',
+          'p.avatarUrl',
+          'p.passengerRating',
         ])
         .where('b.tripId = :id', { id })
         .getMany(),
@@ -405,7 +583,7 @@ export class TripsService {
       }),
     ]);
 
-    const passageiros = bookings.map(b => ({
+    const passageiros = bookings.map((b) => ({
       bookingId: b.id,
       status: b.status,
       paymentStatus: b.paymentStatus,
@@ -413,16 +591,18 @@ export class TripsService {
       seatNumber: b.seatNumber,
       totalPrice: Number(b.totalPrice),
       createdAt: b.createdAt,
-      passenger: b.passenger ? {
-        id: b.passenger.id,
-        name: b.passenger.name,
-        phone: b.passenger.phone,
-        avatarUrl: (b.passenger as any).avatarUrl,
-        passengerRating: (b.passenger as any).passengerRating,
-      } : null,
+      passenger: b.passenger
+        ? {
+            id: b.passenger.id,
+            name: b.passenger.name,
+            phone: b.passenger.phone,
+            avatarUrl: b.passenger.avatarUrl,
+            passengerRating: b.passenger.passengerRating,
+          }
+        : null,
     }));
 
-    const encomendas = shipments.map(s => ({
+    const encomendas = shipments.map((s) => ({
       id: s.id,
       trackingCode: s.trackingCode,
       validationCode: s.validationCode,
@@ -449,31 +629,174 @@ export class TripsService {
   }
 
   /** Verifica se userId pode gerir uma viagem (capitão = dono; boat_manager = atribuído ao barco) */
-  private async assertCanManageTrip(trip: Trip, userId: string, role?: string): Promise<void> {
+  private async assertCanManageTrip(
+    trip: Trip,
+    userId: string,
+    role?: string,
+  ): Promise<void> {
     if (role === 'boat_manager') {
-      const staff = trip.boatId ? await this.boatStaffService.canManageBoat(userId, trip.boatId) : null;
-      if (!staff) throw new ForbiddenException('Sem permissão para gerir esta viagem');
+      const staff = trip.boatId
+        ? await this.boatStaffService.canManageBoat(userId, trip.boatId)
+        : null;
+      if (!staff)
+        throw new ForbiddenException('Sem permissão para gerir esta viagem');
     } else {
-      if (trip.captainId !== userId) throw new ForbiddenException('Acesso negado');
+      if (trip.captainId !== userId)
+        throw new ForbiddenException('Acesso negado');
     }
   }
 
-  // Campos seguros do capitão/passageiro — excluem passwordHash, resetCode, fcmToken
-  private static readonly CAPTAIN_SAFE_FIELDS = [
-    'captain.id', 'captain.name', 'captain.phone', 'captain.role', 'captain.email',
-    'captain.avatarUrl', 'captain.rating', 'captain.totalTrips', 'captain.totalPoints',
-    'captain.level', 'captain.referralCode', 'captain.isActive', 'captain.passengerRating',
-    'captain.city', 'captain.state', 'captain.isVerified', 'captain.licensePhotoUrl',
-    'captain.certificatePhotoUrl', 'captain.verifiedAt', 'captain.createdAt', 'captain.updatedAt',
-  ];
+  async cancelTripWithPropagation(
+    tripId: string,
+    options: { userId?: string; role?: string; notifyBoatOwner?: boolean } = {},
+  ): Promise<Trip> {
+    const { userId, role, notifyBoatOwner = false } = options;
+
+    const result = await this.tripsRepo.manager.transaction(async (manager) => {
+      const tripRepo = manager.getRepository(Trip);
+      const bookingRepo = manager.getRepository(Booking);
+      const shipmentRepo = manager.getRepository(Shipment);
+      const timelineRepo = manager.getRepository(ShipmentTimeline);
+
+      const trip = await tripRepo.findOne({
+        where: { id: tripId },
+        relations: ['boat'],
+      });
+      if (!trip) throw new NotFoundException('Viagem não encontrada');
+
+      if (trip.status !== TripStatus.CANCELLED) {
+        trip.status = TripStatus.CANCELLED;
+        await tripRepo.save(trip);
+      }
+
+      const passengerIds = new Set<string>();
+      const bookings = await bookingRepo.find({
+        where: {
+          tripId,
+          status: In([
+            BookingStatus.PENDING,
+            BookingStatus.CONFIRMED,
+            BookingStatus.CHECKED_IN,
+          ]),
+        },
+      });
+
+      for (const booking of bookings) {
+        booking.status = BookingStatus.CANCELLED;
+        if (booking.paymentStatus === PaymentStatus.PAID) {
+          booking.paymentStatus = PaymentStatus.REFUNDED;
+        }
+        await bookingRepo.save(booking);
+        passengerIds.add(booking.passengerId);
+      }
+
+      const bookingsToRefundKm = bookings
+        .filter((booking) => booking.kmRedeemed && booking.kmRedeemed > 0)
+        .map((booking) => ({
+          id: booking.id,
+          passengerId: booking.passengerId,
+          kmRedeemed: booking.kmRedeemed,
+        }));
+
+      const shipments = await shipmentRepo.find({ where: { tripId } });
+      const shipmentsToNotify: {
+        shipmentId: string;
+        senderId: string;
+        trackingCode: string;
+      }[] = [];
+
+      for (const shipment of shipments) {
+        if (
+          [ShipmentStatus.CANCELLED, ShipmentStatus.DELIVERED].includes(
+            shipment.status,
+          )
+        ) {
+          continue;
+        }
+
+        shipment.status = ShipmentStatus.CANCELLED;
+        await shipmentRepo.save(shipment);
+
+        const timelineEvent = timelineRepo.create({
+          shipmentId: shipment.id,
+          status: ShipmentStatus.CANCELLED,
+          description: 'Viagem cancelada - Encomenda cancelada automaticamente',
+          createdBy: userId ?? undefined,
+        });
+        await timelineRepo.save(timelineEvent);
+
+        shipmentsToNotify.push({
+          shipmentId: shipment.id,
+          senderId: shipment.senderId,
+          trackingCode: shipment.trackingCode,
+        });
+      }
+
+      return {
+        trip,
+        passengerIds: Array.from(passengerIds),
+        bookingsToRefundKm,
+        shipmentsToNotify,
+        boatOwnerId: trip.boat?.ownerId ?? null,
+      };
+    });
+
+    const route = `${result.trip.origin} → ${result.trip.destination}`;
+
+    if (result.passengerIds.length > 0) {
+      await this.notificationsService.sendToUsers(result.passengerIds, {
+        title: '❌ Viagem cancelada',
+        body: `A viagem ${route} foi cancelada. A sua reserva foi automaticamente cancelada.`,
+        data: { type: 'trip_cancelled', tripId },
+      });
+    }
+
+    for (const booking of result.bookingsToRefundKm) {
+      await this.gamificationService.refundKm(
+        booking.passengerId,
+        booking.kmRedeemed,
+        booking.id,
+      );
+    }
+
+    for (const shipment of result.shipmentsToNotify) {
+      await this.notificationsService.sendToUser(shipment.senderId, {
+        title: '❌ Encomenda cancelada',
+        body: `Sua encomenda ${shipment.trackingCode} foi cancelada porque a viagem foi cancelada.`,
+        data: {
+          type: 'shipment_cancelled',
+          shipmentId: shipment.shipmentId,
+          trackingCode: shipment.trackingCode,
+        },
+      });
+    }
+
+    if (
+      notifyBoatOwner &&
+      role === 'boat_manager' &&
+      result.boatOwnerId &&
+      result.boatOwnerId !== userId
+    ) {
+      await this.notificationsService.sendToUser(result.boatOwnerId, {
+        title: '⚠️ Viagem cancelada pelo gestor',
+        body: `A viagem ${route} foi cancelada pelo gestor do seu barco.`,
+        data: { type: 'trip_cancelled_by_manager', tripId },
+      });
+    }
+
+    return result.trip;
+  }
 
   async findByCaptain(captainId: string): Promise<Trip[]> {
     // Incluir viagens criadas directamente pelo capitão + viagens nos barcos do capitão
     // criadas por boat_managers (trip.captainId = gestor, mas boat.ownerId = capitão)
-    const boats = await this.boatsRepo.find({ where: { ownerId: captainId }, select: ['id'] });
-    const boatIds = boats.map(b => b.id);
+    const boats = await this.boatsRepo.find({
+      where: { ownerId: captainId },
+      select: ['id'],
+    });
+    const boatIds = boats.map((b) => b.id);
 
-    const conditions: any[] = [{ captainId }];
+    const conditions: FindOptionsWhere<Trip>[] = [{ captainId }];
     if (boatIds.length > 0) {
       conditions.push({ boatId: In(boatIds) });
     }
@@ -486,7 +809,7 @@ export class TripsService {
 
     // Deduplicar (viagem criada pelo próprio capitão no seu barco apareceria duas vezes)
     const seen = new Set<string>();
-    return trips.filter(t => {
+    return trips.filter((t) => {
       if (seen.has(t.id)) return false;
       seen.add(t.id);
       return true;
@@ -504,7 +827,12 @@ export class TripsService {
     });
   }
 
-  async update(tripId: string, userId: string, dto: CreateTripDto, role?: string): Promise<Trip> {
+  async update(
+    tripId: string,
+    userId: string,
+    dto: CreateTripDto,
+    role?: string,
+  ): Promise<Trip> {
     const trip = await this.tripsRepo.findOne({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
     await this.assertCanManageTrip(trip, userId, role);
@@ -525,9 +853,10 @@ export class TripsService {
 
     if (dto.cargoPriceKg !== undefined) trip.cargoPriceKg = dto.cargoPriceKg;
     if (dto.cargoCapacityKg !== undefined) {
-      const usedCargo = (trip.cargoCapacityKg != null && trip.availableCargoKg != null)
-        ? trip.cargoCapacityKg - trip.availableCargoKg
-        : 0;
+      const usedCargo =
+        trip.cargoCapacityKg != null && trip.availableCargoKg != null
+          ? trip.cargoCapacityKg - trip.availableCargoKg
+          : 0;
       trip.cargoCapacityKg = dto.cargoCapacityKg;
       trip.availableCargoKg = dto.cargoCapacityKg - usedCargo;
     }
@@ -536,46 +865,51 @@ export class TripsService {
   }
 
   async delete(tripId: string, userId: string, role?: string): Promise<void> {
-    const trip = await this.tripsRepo.findOne({ where: { id: tripId }, relations: ['boat'] });
+    const trip = await this.tripsRepo.findOne({
+      where: { id: tripId },
+      relations: ['boat'],
+    });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
     await this.assertCanManageTrip(trip, userId, role);
 
-    const route = `${trip.origin} → ${trip.destination}`;
+    const hasBookings = trip.availableSeats < trip.totalSeats;
+    const hasShipments =
+      (await this.shipmentsRepo.count({ where: { tripId } })) > 0;
 
-    // Cancelar em vez de deletar se houver reservas
-    if (trip.availableSeats < trip.totalSeats) {
-      trip.status = TripStatus.CANCELLED;
-      await this.tripsRepo.save(trip);
-
-      // Notificar passageiros afectados
-      const affectedPassengerIds = await this.bookingsService.autoCancelByTrip(tripId);
-      if (affectedPassengerIds.length > 0) {
-        await this.notificationsService.sendToUsers(affectedPassengerIds, {
-          title: '❌ Viagem cancelada',
-          body: `A viagem ${route} foi cancelada. A sua reserva foi automaticamente cancelada.`,
-          data: { type: 'trip_cancelled', tripId },
-        });
-      }
-
-      // Notificar o capitão dono do barco quando o cancelamento foi feito pelo gestor
-      const boatOwnerId = (trip as any).boat?.ownerId;
-      if (role === 'boat_manager' && boatOwnerId && boatOwnerId !== userId) {
-        await this.notificationsService.sendToUser(boatOwnerId, {
-          title: '⚠️ Viagem cancelada pelo gestor',
-          body: `A viagem ${route} foi cancelada pelo gestor do seu barco.`,
-          data: { type: 'trip_cancelled_by_manager', tripId },
-        });
-      }
-    } else {
-      await this.tripsRepo.remove(trip);
+    // Cancelar em vez de deletar se houver reservas ou encomendas
+    if (hasBookings || hasShipments) {
+      await this.cancelTripWithPropagation(tripId, {
+        userId,
+        role,
+        notifyBoatOwner: role === 'boat_manager',
+      });
+      return;
     }
+
+    await this.tripsRepo.remove(trip);
   }
 
-  async updateStatus(tripId: string, userId: string, dto: UpdateTripStatusDto, role?: string): Promise<Trip> {
+  async updateStatus(
+    tripId: string,
+    userId: string,
+    dto: UpdateTripStatusDto,
+    role?: string,
+  ): Promise<TripStatusUpdateResult> {
     const trip = await this.findById(tripId);
     await this.assertCanManageTrip(trip, userId, role);
 
     const oldStatus = trip.status;
+
+    if (dto.status === oldStatus) {
+      if (dto.status === TripStatus.CANCELLED) {
+        return this.cancelTripWithPropagation(tripId, {
+          userId,
+          role,
+          notifyBoatOwner: role === 'boat_manager',
+        });
+      }
+      return trip;
+    }
 
     // Validar transições de status permitidas
     const validTransitions: Record<string, TripStatus[]> = {
@@ -586,16 +920,22 @@ export class TripsService {
     if (!allowed.includes(dto.status)) {
       throw new BadRequestException(
         `Transição inválida: "${oldStatus}" → "${dto.status}". ` +
-        (allowed.length ? `Permitido: ${allowed.join(', ')}.` : 'Viagem já está em estado final.'),
+          (allowed.length
+            ? `Permitido: ${allowed.join(', ')}.`
+            : 'Viagem já está em estado final.'),
       );
     }
 
     // ========== VALIDAÇÕES DE SEGURANÇA ANTES DE INICIAR VIAGEM ==========
-    let weatherWarning: { score: number; warnings: string[]; recommendations: string[] } | null = null;
+    let weatherWarning: WeatherWarning | null = null;
 
-    if (dto.status === TripStatus.IN_PROGRESS && oldStatus !== TripStatus.IN_PROGRESS) {
+    if (
+      dto.status === TripStatus.IN_PROGRESS &&
+      oldStatus !== TripStatus.IN_PROGRESS
+    ) {
       // 1. Verificar checklist de segurança completo
-      const checklistComplete = await this.safetyService.isChecklistComplete(tripId);
+      const checklistComplete =
+        await this.safetyService.isChecklistComplete(tripId);
       if (!checklistComplete) {
         throw new BadRequestException(
           '⚠️ Checklist de segurança não está completo. Complete o checklist antes de iniciar a viagem.',
@@ -608,14 +948,15 @@ export class TripsService {
       const lng = trip.currentLng || trip.originLng || _gc?.lng || -60.0217;
 
       try {
-        const weatherSafety = await this.weatherService.evaluateNavigationSafety(lat, lng);
+        const weatherSafety =
+          await this.weatherService.evaluateNavigationSafety(lat, lng);
 
         // Score < 50: PERIGOSO — bloquear viagem
         if (weatherSafety.score < 50) {
           throw new BadRequestException(
             `❌ Condições climáticas PERIGOSAS (Score: ${weatherSafety.score}/100). ` +
-            `NÃO é seguro navegar. Avisos: ${weatherSafety.warnings.join(', ')}. ` +
-            `Recomendações: ${weatherSafety.recommendations.join(', ')}`,
+              `NÃO é seguro navegar. Avisos: ${weatherSafety.warnings.join(', ')}. ` +
+              `Recomendações: ${weatherSafety.recommendations.join(', ')}`,
           );
         }
 
@@ -627,12 +968,20 @@ export class TripsService {
             recommendations: weatherSafety.recommendations,
           };
         }
-
       } catch (error) {
         if (error instanceof BadRequestException) throw error;
         // Se API de clima falhar, não bloquear viagem (fallback)
-        console.error('❌ Erro ao verificar clima:', error.message);
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('❌ Erro ao verificar clima:', message);
       }
+    }
+
+    if (dto.status === TripStatus.CANCELLED) {
+      return this.cancelTripWithPropagation(tripId, {
+        userId,
+        role,
+        notifyBoatOwner: role === 'boat_manager',
+      });
     }
 
     trip.status = dto.status;
@@ -641,16 +990,25 @@ export class TripsService {
     const route = `${trip.origin} → ${trip.destination}`;
 
     // Auto-atualizar encomendas quando viagem muda de status
-    if (dto.status === TripStatus.IN_PROGRESS && oldStatus !== TripStatus.IN_PROGRESS) {
+    if (
+      dto.status === TripStatus.IN_PROGRESS &&
+      oldStatus !== TripStatus.IN_PROGRESS
+    ) {
       // Viagem partiu - atualizar encomendas COLLECTED para IN_TRANSIT
-      await this.shipmentsService.updateShipmentsByTrip(tripId, ShipmentStatus.IN_TRANSIT);
+      await this.shipmentsService.updateShipmentsByTrip(
+        tripId,
+        ShipmentStatus.IN_TRANSIT,
+      );
       // Notificar passageiros
       await this.notificationsService.sendToTripPassengers(tripId, {
         title: '⛵ Sua viagem começou!',
         body: `A viagem ${route} partiu. Boa viagem!`,
         data: { type: 'trip_started', tripId },
       });
-    } else if (dto.status === TripStatus.COMPLETED && oldStatus !== TripStatus.COMPLETED) {
+    } else if (
+      dto.status === TripStatus.COMPLETED &&
+      oldStatus !== TripStatus.COMPLETED
+    ) {
       // Notificar ANTES de completar as reservas (sendToTripPassengers filtra por CONFIRMED/CHECKED_IN)
       await this.notificationsService.sendToTripPassengers(tripId, {
         title: '🏁 Viagem concluída!',
@@ -659,32 +1017,10 @@ export class TripsService {
       });
       // Completar reservas abertas e atualizar encomendas
       await this.bookingsService.autoCompleteByTrip(tripId);
-      await this.shipmentsService.updateShipmentsByTrip(tripId, ShipmentStatus.ARRIVED);
-    } else if (dto.status === TripStatus.CANCELLED && oldStatus !== TripStatus.CANCELLED) {
-      // Cancelar reservas activas (pending/confirmed/checked_in) e recolher IDs dos passageiros
-      const affectedPassengerIds = await this.bookingsService.autoCancelByTrip(tripId);
-
-      // Cancelar encomendas activas (notifica os remetentes internamente)
-      await this.shipmentsService.updateShipmentsByTrip(tripId, ShipmentStatus.CANCELLED);
-
-      // Notificar todos os passageiros afectados
-      if (affectedPassengerIds.length > 0) {
-        await this.notificationsService.sendToUsers(affectedPassengerIds, {
-          title: '❌ Viagem cancelada',
-          body: `A viagem ${route} foi cancelada. A sua reserva foi automaticamente cancelada.`,
-          data: { type: 'trip_cancelled', tripId },
-        });
-      }
-
-      // Notificar o capitão dono do barco quando o cancelamento foi feito pelo gestor
-      const boatOwnerId = (trip as any).boat?.ownerId;
-      if (role === 'boat_manager' && boatOwnerId && boatOwnerId !== userId) {
-        await this.notificationsService.sendToUser(boatOwnerId, {
-          title: '⚠️ Viagem cancelada pelo gestor',
-          body: `A viagem ${route} foi cancelada pelo gestor do seu barco.`,
-          data: { type: 'trip_cancelled_by_manager', tripId },
-        });
-      }
+      await this.shipmentsService.updateShipmentsByTrip(
+        tripId,
+        ShipmentStatus.ARRIVED,
+      );
     }
 
     // Incluir weatherWarning no response quando capitão inicia viagem com alerta
@@ -695,7 +1031,17 @@ export class TripsService {
     return saved;
   }
 
-  async updateLocation(tripId: string, userId: string, dto: UpdateLocationDto, role?: string): Promise<{ lat: number; lng: number; lastLocationAt: Date; status: string }> {
+  async updateLocation(
+    tripId: string,
+    userId: string,
+    dto: UpdateLocationDto,
+    role?: string,
+  ): Promise<{
+    lat: number;
+    lng: number;
+    lastLocationAt: Date;
+    status: string;
+  }> {
     const trip = await this.tripsRepo.findOne({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
     await this.assertCanManageTrip(trip, userId, role);
@@ -704,11 +1050,21 @@ export class TripsService {
       currentLat: dto.lat,
       currentLng: dto.lng,
       lastLocationAt: now,
-    } as any);
-    return { lat: dto.lat, lng: dto.lng, lastLocationAt: now, status: trip.status };
+    });
+    return {
+      lat: dto.lat,
+      lng: dto.lng,
+      lastLocationAt: now,
+      status: trip.status,
+    };
   }
 
-  async getLocation(tripId: string): Promise<{ lat: number | null; lng: number | null; lastLocationAt: Date | null; status: string }> {
+  async getLocation(tripId: string): Promise<{
+    lat: number | null;
+    lng: number | null;
+    lastLocationAt: Date | null;
+    status: string;
+  }> {
     const trip = await this.tripsRepo.findOne({
       where: { id: tripId },
       relations: ['route'],
@@ -716,9 +1072,15 @@ export class TripsService {
     if (!trip) throw new NotFoundException('Viagem não encontrada');
 
     // Viagem agendada → posição é a cidade de origem (da rota ou geocodificada)
-    const _originCoords = (trip.route?.originLat && trip.route?.originLng)
-      ? { lat: Number(trip.route.originLat), lng: Number(trip.route.originLng) }
-      : (trip.originLat ? { lat: Number(trip.originLat), lng: Number(trip.originLng) } : geocodeCity(trip.origin));
+    const _originCoords =
+      trip.route?.originLat && trip.route?.originLng
+        ? {
+            lat: Number(trip.route.originLat),
+            lng: Number(trip.route.originLng),
+          }
+        : trip.originLat
+          ? { lat: Number(trip.originLat), lng: Number(trip.originLng) }
+          : geocodeCity(trip.origin);
     if (trip.status === TripStatus.SCHEDULED && _originCoords) {
       return {
         lat: _originCoords.lat,
@@ -739,7 +1101,9 @@ export class TripsService {
     }
 
     // Em progresso ou sem rota → GPS em tempo real (fallback: coords da cidade de origem)
-    const _fb = trip.originLat ? { lat: Number(trip.originLat), lng: Number(trip.originLng) } : geocodeCity(trip.origin);
+    const _fb = trip.originLat
+      ? { lat: Number(trip.originLat), lng: Number(trip.originLng) }
+      : geocodeCity(trip.origin);
     return {
       lat: trip.currentLat ?? _fb?.lat ?? null,
       lng: trip.currentLng ?? _fb?.lng ?? null,
@@ -748,7 +1112,11 @@ export class TripsService {
     };
   }
 
-  async generateCargoManifestPdf(tripId: string, userId: string, userRole: string): Promise<any> {
+  async generateCargoManifestPdf(
+    tripId: string,
+    userId: string,
+    userRole: string,
+  ): Promise<PdfStream> {
     const trip = await this.tripsRepo.findOne({
       where: { id: tripId },
       relations: ['captain', 'boat'],
@@ -756,10 +1124,17 @@ export class TripsService {
     if (!trip) throw new NotFoundException('Viagem não encontrada');
 
     if (userRole === 'boat_manager') {
-      const staff = trip.boatId ? await this.boatStaffService.canManageBoat(userId, trip.boatId) : null;
-      if (!staff) throw new ForbiddenException('Sem permissão para gerar o manifesto desta viagem');
+      const staff = trip.boatId
+        ? await this.boatStaffService.canManageBoat(userId, trip.boatId)
+        : null;
+      if (!staff)
+        throw new ForbiddenException(
+          'Sem permissão para gerar o manifesto desta viagem',
+        );
     } else if (userRole !== 'admin' && trip.captainId !== userId) {
-      throw new ForbiddenException('Apenas o capitão ou admin pode gerar o manifesto');
+      throw new ForbiddenException(
+        'Apenas o capitão ou admin pode gerar o manifesto',
+      );
     }
 
     const shipments = await this.shipmentsRepo.find({
@@ -772,9 +1147,9 @@ export class TripsService {
       origin: trip.origin || 'N/A',
       destination: trip.destination || 'N/A',
       departureAt: trip.departureAt,
-      captainName: (trip.captain as any)?.name || 'Capitão',
-      boatName: (trip.boat as any)?.name || 'Embarcação',
-      shipments: shipments.map(s => ({
+      captainName: trip.captain?.name || 'Capitão',
+      boatName: trip.boat?.name || 'Embarcação',
+      shipments: shipments.map((s) => ({
         trackingCode: s.trackingCode,
         senderName: s.description?.split(' ')[0] || 'Remetente',
         recipientName: s.recipientName,
@@ -798,55 +1173,74 @@ export class TripsService {
       .addSelect('COUNT(*)', 'count')
       .where('trip.status = :status', { status: TripStatus.SCHEDULED })
       .andWhere('trip.departure_at >= :now', { now })
-      .andWhere(`COALESCE(NULLIF(trip.origin, ''), route.origin_name) IS NOT NULL`)
+      .andWhere(
+        `COALESCE(NULLIF(trip.origin, ''), route.origin_name) IS NOT NULL`,
+      )
       .groupBy(`COALESCE(NULLIF(trip.origin, ''), route.origin_name)`)
       .orderBy('count', 'DESC')
       .limit(10)
-      .getRawMany();
+      .getRawMany<{ city: string; count: string }>();
 
     const popularDestinations = await this.tripsRepo
       .createQueryBuilder('trip')
       .leftJoin('trip.route', 'route')
-      .select(`COALESCE(NULLIF(trip.destination, ''), route.destination_name)`, 'city')
+      .select(
+        `COALESCE(NULLIF(trip.destination, ''), route.destination_name)`,
+        'city',
+      )
       .addSelect('COUNT(*)', 'count')
       .where('trip.status = :status', { status: TripStatus.SCHEDULED })
       .andWhere('trip.departure_at >= :now', { now })
-      .andWhere(`COALESCE(NULLIF(trip.destination, ''), route.destination_name) IS NOT NULL`)
+      .andWhere(
+        `COALESCE(NULLIF(trip.destination, ''), route.destination_name) IS NOT NULL`,
+      )
       .groupBy(`COALESCE(NULLIF(trip.destination, ''), route.destination_name)`)
       .orderBy('count', 'DESC')
       .limit(10)
-      .getRawMany();
+      .getRawMany<{ city: string; count: string }>();
 
     const popularRoutes = await this.tripsRepo
       .createQueryBuilder('trip')
       .leftJoin('trip.route', 'route')
       .select(`COALESCE(NULLIF(trip.origin, ''), route.origin_name)`, 'origin')
-      .addSelect(`COALESCE(NULLIF(trip.destination, ''), route.destination_name)`, 'destination')
+      .addSelect(
+        `COALESCE(NULLIF(trip.destination, ''), route.destination_name)`,
+        'destination',
+      )
       .addSelect('route.id', 'routeId')
       .addSelect('COUNT(*)', 'count')
       .addSelect('MIN(trip.price)', 'minPrice')
       .addSelect('AVG(trip.price)', 'avgPrice')
       .where('trip.status = :status', { status: TripStatus.SCHEDULED })
       .andWhere('trip.departure_at >= :now', { now })
-      .groupBy(`COALESCE(NULLIF(trip.origin, ''), route.origin_name), COALESCE(NULLIF(trip.destination, ''), route.destination_name), route.id`)
+      .groupBy(
+        `COALESCE(NULLIF(trip.origin, ''), route.origin_name), COALESCE(NULLIF(trip.destination, ''), route.destination_name), route.id`,
+      )
       .orderBy('count', 'DESC')
       .limit(10)
-      .getRawMany();
+      .getRawMany<{
+        origin: string;
+        destination: string;
+        routeId: string | null;
+        count: string;
+        minPrice: string;
+        avgPrice: string;
+      }>();
 
     return {
-      origins: popularOrigins.map(item => ({
+      origins: popularOrigins.map((item) => ({
         city: item.city,
-        tripsCount: parseInt(item.count),
+        tripsCount: parseInt(item.count, 10),
       })),
-      destinations: popularDestinations.map(item => ({
+      destinations: popularDestinations.map((item) => ({
         city: item.city,
-        tripsCount: parseInt(item.count),
+        tripsCount: parseInt(item.count, 10),
       })),
-      routes: popularRoutes.map(item => ({
+      routes: popularRoutes.map((item) => ({
         routeId: item.routeId ?? null,
         origin: item.origin,
         destination: item.destination,
-        tripsCount: parseInt(item.count),
+        tripsCount: parseInt(item.count, 10),
         minPrice: parseFloat(item.minPrice),
         avgPrice: parseFloat(item.avgPrice),
       })),
@@ -870,13 +1264,16 @@ export class TripsService {
     });
 
     for (const trip of expired) {
-      trip.status = TripStatus.CANCELLED;
-      await this.tripsRepo.save(trip);
-      console.log(`Trip ${trip.id} auto-cancelada (partida expirada: ${trip.departureAt})`);
+      await this.cancelTripWithPropagation(trip.id);
+      console.log(
+        `Trip ${trip.id} auto-cancelada (partida expirada: ${trip.departureAt.toISOString()})`,
+      );
     }
 
     if (expired.length > 0) {
-      console.log(`[Cron] ${expired.length} viagem(ns) auto-cancelada(s) por expiração.`);
+      console.log(
+        `[Cron] ${expired.length} viagem(ns) auto-cancelada(s) por expiração.`,
+      );
     }
   }
 }

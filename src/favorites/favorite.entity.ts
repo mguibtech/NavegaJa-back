@@ -41,7 +41,7 @@ export class Favorite {
   @Column({ name: 'boat_id', type: 'uuid', nullable: true })
   boatId: string;
 
-  @ManyToOne(() => Boat, { nullable: true })
+  @ManyToOne(() => Boat, { nullable: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'boat_id' })
   boat: Boat;
 

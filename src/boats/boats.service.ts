@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Boat } from './boat.entity';
@@ -9,6 +14,7 @@ import { Trip, TripStatus } from '../trips/trip.entity';
 import { User, UserRole } from '../users/user.entity';
 import { BoatStaff } from '../boat-staff/boat-staff.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { Favorite } from '../favorites/favorite.entity';
 
 @Injectable()
 export class BoatsService {
@@ -21,6 +27,8 @@ export class BoatsService {
     private tripsRepo: Repository<Trip>,
     @InjectRepository(User)
     private usersRepo: Repository<User>,
+    @InjectRepository(Favorite)
+    private favoritesRepo: Repository<Favorite>,
     @InjectRepository(BoatStaff)
     private boatStaffRepo: Repository<BoatStaff>,
     private notificationsService: NotificationsService,
@@ -42,7 +50,8 @@ export class BoatsService {
   async update(id: string, ownerId: string, dto: UpdateBoatDto): Promise<any> {
     const boat = await this.boatsRepo.findOne({ where: { id } });
     if (!boat) throw new NotFoundException('Embarcação não encontrada');
-    if (boat.ownerId !== ownerId) throw new ForbiddenException('Esta embarcação não pertence a você');
+    if (boat.ownerId !== ownerId)
+      throw new ForbiddenException('Esta embarcação não pertence a você');
 
     // Se enviou documentos ou fotos, marcar como pendente de re-verificação
     const needsReview = dto.documentPhotos && dto.documentPhotos.length > 0;
@@ -60,7 +69,8 @@ export class BoatsService {
   async delete(id: string, ownerId: string): Promise<void> {
     const boat = await this.boatsRepo.findOne({ where: { id } });
     if (!boat) throw new NotFoundException('Embarcação não encontrada');
-    if (boat.ownerId !== ownerId) throw new ForbiddenException('Esta embarcação não pertence a você');
+    if (boat.ownerId !== ownerId)
+      throw new ForbiddenException('Esta embarcação não pertence a você');
 
     const activeTrips = await this.tripsRepo.count({
       where: [
@@ -69,7 +79,9 @@ export class BoatsService {
       ],
     });
     if (activeTrips > 0) {
-      throw new BadRequestException('Não é possível apagar uma embarcação com viagens activas');
+      throw new BadRequestException(
+        'Não é possível apagar uma embarcação com viagens activas',
+      );
     }
 
     // Recolher gestores antes de apagar para notificar e reverter roles
@@ -77,7 +89,7 @@ export class BoatsService {
       where: { boatId: id },
       select: ['userId'],
     });
-    const staffUserIds = staffToRemove.map(s => s.userId);
+    const staffUserIds = staffToRemove.map((s) => s.userId);
 
     // Remover gestores atribuídos a este barco
     await this.boatStaffRepo.delete({ boatId: id });
@@ -88,15 +100,17 @@ export class BoatsService {
       if (remaining === 0) {
         await this.usersRepo.update(userId, { role: UserRole.PASSENGER });
       }
-      this.notificationsService.sendToUser(userId, {
-        title: '🚢 Embarcação removida',
-        body: `A embarcação "${boat.name}" foi removida pelo capitão. ${remaining === 0 ? 'O seu cargo de gestor foi encerrado.' : 'Ainda tem outros barcos atribuídos.'}`,
-        data: {
-          type: 'boat_deleted',
-          boatId: id,
-          ...(remaining === 0 && { requiresTokenRefresh: 'true' }),
-        },
-      }).catch(() => {});
+      this.notificationsService
+        .sendToUser(userId, {
+          title: '🚢 Embarcação removida',
+          body: `A embarcação "${boat.name}" foi removida pelo capitão. ${remaining === 0 ? 'O seu cargo de gestor foi encerrado.' : 'Ainda tem outros barcos atribuídos.'}`,
+          data: {
+            type: 'boat_deleted',
+            boatId: id,
+            ...(remaining === 0 && { requiresTokenRefresh: 'true' }),
+          },
+        })
+        .catch(() => {});
     }
 
     // Garantir que boat_id em trips é nullable (idempotente — cobre a migração pendente do TypeORM)
@@ -113,9 +127,11 @@ export class BoatsService {
     await this.reviewsRepo
       .createQueryBuilder()
       .update()
-      .set({ boatId: null as any })
+      .set({ boatId: null })
       .where('boat_id = :id', { id })
       .execute();
+
+    await this.favoritesRepo.delete({ boatId: id });
 
     await this.boatsRepo.delete(id);
   }
@@ -131,7 +147,7 @@ export class BoatsService {
         where: { userId, isActive: true },
         relations: ['boat'],
       });
-      return staffRecords.map(s => s.boat).filter((b): b is Boat => !!b);
+      return staffRecords.map((s) => s.boat).filter((b): b is Boat => !!b);
     }
     return this.findByOwner(userId);
   }
@@ -153,7 +169,7 @@ export class BoatsService {
       this.tripsRepo.count({ where: { boatId: id } }),
     ]);
 
-    const stats = this.buildRatingStats(reviews.map(r => r.boatRating));
+    const stats = this.buildRatingStats(reviews.map((r) => r.boatRating));
 
     const { owner } = boat;
 
@@ -170,7 +186,7 @@ export class BoatsService {
         : null,
       tripsCount,
       reviewCount: stats.total,
-      recentReviews: reviews.map(r => ({
+      recentReviews: reviews.map((r) => ({
         id: r.id,
         boatRating: r.boatRating,
         boatComment: r.boatComment,
@@ -178,7 +194,11 @@ export class BoatsService {
         captainComment: r.captainComment,
         createdAt: r.createdAt,
         reviewer: r.reviewer
-          ? { id: r.reviewer.id, name: r.reviewer.name, avatarUrl: r.reviewer.avatarUrl }
+          ? {
+              id: r.reviewer.id,
+              name: r.reviewer.name,
+              avatarUrl: r.reviewer.avatarUrl,
+            }
           : null,
         trip: r.trip
           ? {
@@ -199,10 +219,20 @@ export class BoatsService {
     const valid = ratings.filter((r): r is number => r !== null);
     const total = valid.length;
     if (total === 0) {
-      return { total: 0, average: 0, distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } };
+      return {
+        total: 0,
+        average: 0,
+        distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+      };
     }
 
-    const distribution: Record<number, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    const distribution: Record<number, number> = {
+      5: 0,
+      4: 0,
+      3: 0,
+      2: 0,
+      1: 0,
+    };
     let sum = 0;
     for (const r of valid) {
       sum += r;
