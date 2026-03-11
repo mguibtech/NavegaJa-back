@@ -1,6 +1,11 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-  UpdateDateColumn, ManyToOne, JoinColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { User } from '../users/user.entity';
 import { Trip } from '../trips/trip.entity';
@@ -8,14 +13,14 @@ import { PaymentMethod } from '../common/enums/payment-method.enum';
 import { PaidBy } from '../common/enums/paid-by.enum';
 
 export enum ShipmentStatus {
-  PENDING = 'pending',           // Criada, aguardando pagamento
-  PAID = 'paid',                 // Pagamento confirmado, aguardando coleta
-  COLLECTED = 'collected',       // Capitão coletou do remetente
-  IN_TRANSIT = 'in_transit',     // Viagem em andamento
-  ARRIVED = 'arrived',           // Viagem chegou ao destino
+  PENDING = 'pending', // Criada, aguardando pagamento
+  PAID = 'paid', // Pagamento confirmado, aguardando coleta
+  COLLECTED = 'collected', // Capitão coletou do remetente
+  IN_TRANSIT = 'in_transit', // Viagem em andamento
+  ARRIVED = 'arrived', // Viagem chegou ao destino
   OUT_FOR_DELIVERY = 'out_for_delivery', // Capitão saiu para entregar
-  DELIVERED = 'delivered',       // Destinatário confirmou recebimento
-  CANCELLED = 'cancelled',       // Cancelada
+  DELIVERED = 'delivered', // Destinatário confirmou recebimento
+  CANCELLED = 'cancelled', // Cancelada
 }
 
 @Entity('shipments')
@@ -40,7 +45,13 @@ export class Shipment {
   @Column({ type: 'text' })
   description: string;
 
-  @Column({ name: 'weight_kg', type: 'decimal', precision: 6, scale: 2, nullable: true })
+  @Column({
+    name: 'weight_kg',
+    type: 'decimal',
+    precision: 6,
+    scale: 2,
+    nullable: true,
+  })
   weightKg: number;
 
   // Alias 'weight' para compatibilidade com DTO e serializações
@@ -94,7 +105,7 @@ export class Shipment {
     name: 'payment_method',
     type: 'enum',
     enum: PaymentMethod,
-    default: PaymentMethod.PIX
+    default: PaymentMethod.PIX,
   })
   paymentMethod: PaymentMethod;
 
@@ -113,7 +124,11 @@ export class Shipment {
   @Column({ name: 'qr_code', type: 'text', nullable: true })
   qrCode: string;
 
-  @Column({ type: 'enum', enum: ShipmentStatus, default: ShipmentStatus.PENDING })
+  @Column({
+    type: 'enum',
+    enum: ShipmentStatus,
+    default: ShipmentStatus.PENDING,
+  })
   status: ShipmentStatus;
 
   @Column({ name: 'delivery_photo_url', type: 'text', nullable: true })

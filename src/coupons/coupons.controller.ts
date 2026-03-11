@@ -1,5 +1,15 @@
-import { Controller, Post, Get, Put, Delete, Param, Body, UseGuards, NotFoundException } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiOkResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  Post,
+  Get,
+  Put,
+  Delete,
+  Param,
+  Body,
+  UseGuards,
+  NotFoundException,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CouponsService } from './coupons.service';
@@ -22,7 +32,7 @@ export class CouponsController {
   async findActive() {
     const coupons = await this.couponsService.findActive();
     return {
-      coupons: coupons.map(c => ({
+      coupons: coupons.map((c) => ({
         code: c.code,
         description: c.description,
         type: c.type,
@@ -30,7 +40,7 @@ export class CouponsController {
         minPurchase: c.minPurchase ? Number(c.minPurchase) : undefined,
         maxDiscount: c.maxDiscount ? Number(c.maxDiscount) : undefined,
         validUntil: c.validUntil,
-      }))
+      })),
     };
   }
 
@@ -49,7 +59,12 @@ export class CouponsController {
     const totalPrice = Number(trip.price) * quantity;
 
     // Validar cupom (passando trip para verificar filtros de rota)
-    const result = await this.couponsService.validate(code, '', totalPrice, trip);
+    const result = await this.couponsService.validate(
+      code,
+      '',
+      totalPrice,
+      trip,
+    );
 
     if (!result.valid) {
       return {

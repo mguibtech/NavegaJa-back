@@ -1,10 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Promotion } from './promotion.entity';
 import { CreatePromotionDto, UpdatePromotionDto } from './dto/promotion.dto';
 import { Trip, TripStatus } from '../trips/trip.entity';
-import { Coupon, CouponType } from './coupon.entity';
+import { CouponType } from './coupon.entity';
 
 @Injectable()
 export class PromotionsService {
@@ -27,7 +27,7 @@ export class PromotionsService {
 
   async findAll(): Promise<Promotion[]> {
     return this.promotionsRepo.find({
-      order: { priority: 'DESC', createdAt: 'DESC' }
+      order: { priority: 'DESC', createdAt: 'DESC' },
     });
   }
 
@@ -41,12 +41,11 @@ export class PromotionsService {
     // Verificar se está dentro do período de validade
     qb.andWhere(
       '(promotion.startDate IS NULL OR promotion.startDate <= :now)',
-      { now }
+      { now },
     );
-    qb.andWhere(
-      '(promotion.endDate IS NULL OR promotion.endDate >= :now)',
-      { now }
-    );
+    qb.andWhere('(promotion.endDate IS NULL OR promotion.endDate >= :now)', {
+      now,
+    });
 
     return qb
       .orderBy('promotion.priority', 'DESC')
@@ -67,12 +66,12 @@ export class PromotionsService {
     // Aplicar filtros de rota se houver
     if (promotion.fromCity) {
       qb.andWhere('LOWER(trip.origin) LIKE LOWER(:from)', {
-        from: `%${promotion.fromCity}%`
+        from: `%${promotion.fromCity}%`,
       });
     }
     if (promotion.toCity) {
       qb.andWhere('LOWER(trip.destination) LIKE LOWER(:to)', {
-        to: `%${promotion.toCity}%`
+        to: `%${promotion.toCity}%`,
       });
     }
 
@@ -83,7 +82,7 @@ export class PromotionsService {
 
     // Calcular desconto para cada viagem
     if (!promotion.coupon) {
-      return trips.map(trip => ({
+      return trips.map((trip) => ({
         id: trip.id,
         from: trip.origin,
         to: trip.destination,
@@ -94,7 +93,7 @@ export class PromotionsService {
       }));
     }
 
-    return trips.map(trip => {
+    return trips.map((trip) => {
       const originalPrice = Number(trip.price);
       let discountAmount = 0;
 
@@ -105,7 +104,10 @@ export class PromotionsService {
           discountAmount = (originalPrice * Number(coupon.value)) / 100;
 
           // Aplicar desconto máximo se configurado
-          if (coupon.maxDiscount && discountAmount > Number(coupon.maxDiscount)) {
+          if (
+            coupon.maxDiscount &&
+            discountAmount > Number(coupon.maxDiscount)
+          ) {
             discountAmount = Number(coupon.maxDiscount);
           }
         } else if (coupon.type === CouponType.FIXED) {

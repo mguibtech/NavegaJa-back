@@ -16,10 +16,19 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/ (GET)', () => {
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('/trips/geocode (GET) returns locations', () => {
     return request(app.getHttpServer())
-      .get('/')
+      .get('/trips/geocode')
+      .query({ q: 'ma' })
       .expect(200)
-      .expect('Hello World!');
+      .expect((res) => {
+        if (!Array.isArray(res.body)) {
+          throw new Error('Expected response to be an array');
+        }
+      });
   });
 });

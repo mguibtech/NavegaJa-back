@@ -4,11 +4,11 @@ import * as QRCode from 'qrcode';
 import { createStaticPix, hasError } from 'pix-utils';
 
 export interface PixPaymentData {
-  pixQrCode: string;        // Código copia e cola
-  pixQrCodeImage: string;   // Base64 PNG
-  pixTxid: string;          // Identificador único
-  pixExpiresAt: Date;       // Expiração
-  pixKey: string;           // Chave usada
+  pixQrCode: string; // Código copia e cola
+  pixQrCodeImage: string; // Base64 PNG
+  pixTxid: string; // Identificador único
+  pixExpiresAt: Date; // Expiração
+  pixKey: string; // Chave usada
 }
 
 @Injectable()
@@ -20,8 +20,10 @@ export class PixService {
 
   constructor(private configService: ConfigService) {
     this.pixKey = this.configService.get<string>('PIX_KEY') || '';
-    this.merchantName = this.configService.get<string>('PIX_MERCHANT_NAME') || '';
-    this.merchantCity = this.configService.get<string>('PIX_MERCHANT_CITY') || '';
+    this.merchantName =
+      this.configService.get<string>('PIX_MERCHANT_NAME') || '';
+    this.merchantCity =
+      this.configService.get<string>('PIX_MERCHANT_CITY') || '';
     this.txidPrefix = this.configService.get<string>('PIX_TXID_PREFIX', 'NVGJ');
   }
 

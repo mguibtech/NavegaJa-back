@@ -27,7 +27,10 @@ export class PromotionCouponDto {
   @ApiProperty({ description: 'Código do cupom' })
   code: string;
 
-  @ApiProperty({ description: 'Tipo de desconto', enum: ['percentage', 'fixed'] })
+  @ApiProperty({
+    description: 'Tipo de desconto',
+    enum: ['percentage', 'fixed'],
+  })
   type: string;
 
   @ApiProperty({ description: 'Valor do desconto (% ou R$)' })
@@ -56,10 +59,16 @@ export class PromotionBannerDto {
   @ApiProperty({ description: 'Texto do botão CTA', required: false })
   ctaText?: string;
 
-  @ApiProperty({ description: 'Ação do CTA (search, url, deeplink)', required: false })
+  @ApiProperty({
+    description: 'Ação do CTA (search, url, deeplink)',
+    required: false,
+  })
   ctaAction?: string;
 
-  @ApiProperty({ description: 'Valor do CTA (rota, URL ou deeplink)', required: false })
+  @ApiProperty({
+    description: 'Valor do CTA (rota, URL ou deeplink)',
+    required: false,
+  })
   ctaValue?: string;
 
   @ApiProperty({ description: 'Cor de fundo (hex)', required: false })
@@ -77,20 +86,33 @@ export class PromotionBannerDto {
   @ApiProperty({ description: 'Data de término', required: false })
   endDate?: Date;
 
-  @ApiPropertyOptional({ description: 'Cupom vinculado à promoção', type: PromotionCouponDto })
+  @ApiPropertyOptional({
+    description: 'Cupom vinculado à promoção',
+    type: PromotionCouponDto,
+  })
   coupon?: PromotionCouponDto;
 
-  @ApiPropertyOptional({ description: 'Filtro: cidade de origem (null = todas)' })
+  @ApiPropertyOptional({
+    description: 'Filtro: cidade de origem (null = todas)',
+  })
   fromCity?: string;
 
-  @ApiPropertyOptional({ description: 'Filtro: cidade de destino (null = todas)' })
+  @ApiPropertyOptional({
+    description: 'Filtro: cidade de destino (null = todas)',
+  })
   toCity?: string;
 
-  @ApiProperty({ description: 'Viagens exemplo com desconto aplicado', type: [PromotionTripSampleDto] })
+  @ApiProperty({
+    description: 'Viagens exemplo com desconto aplicado',
+    type: [PromotionTripSampleDto],
+  })
   sampleTrips: PromotionTripSampleDto[];
 }
 
 export class ActivePromotionsResponseDto {
-  @ApiProperty({ description: 'Lista de promoções ativas (banners visuais)', type: [PromotionBannerDto] })
+  @ApiProperty({
+    description: 'Lista de promoções ativas (banners visuais)',
+    type: [PromotionBannerDto],
+  })
   promotions: PromotionBannerDto[];
 }

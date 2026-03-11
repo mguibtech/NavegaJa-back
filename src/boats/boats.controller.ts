@@ -1,5 +1,22 @@
-import { Controller, Post, Get, Patch, Delete, Param, Body, UseGuards, Request, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  UseGuards,
+  Request,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { BoatsService } from './boats.service';
 import { CreateBoatDto } from './dto/create-boat.dto';
 import { UpdateBoatDto } from './dto/update-boat.dto';
@@ -17,7 +34,7 @@ export class BoatsController {
   @UseGuards(RolesGuard)
   @Roles('captain')
   @ApiOperation({ summary: 'Cadastrar embarcação (captain only)' })
-  create(@Request() req: any, @Body() dto: CreateBoatDto) {
+  create(@Request() req: AuthenticatedRequest, @Body() dto: CreateBoatDto) {
     return this.boatsService.create(req.user.sub, dto);
   }
 
@@ -26,7 +43,8 @@ export class BoatsController {
   @Roles('captain')
   @ApiOperation({
     summary: 'Atualizar embarcação (captain only)',
-    description: 'Atualiza fotos, documentos, comodidades e dados gerais da embarcação. Se documentPhotos for enviado, o barco volta ao estado pendente de verificação.',
+    description:
+      'Atualiza fotos, documentos, comodidades e dados gerais da embarcação. Se documentPhotos for enviado, o barco volta ao estado pendente de verificação.',
   })
   @ApiResponse({
     status: 200,
@@ -41,7 +59,11 @@ export class BoatsController {
       },
     },
   })
-  update(@Request() req: any, @Param('id') id: string, @Body() dto: UpdateBoatDto) {
+  update(
+    @Request() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateBoatDto,
+  ) {
     return this.boatsService.update(id, req.user.sub, dto);
   }
 
@@ -50,7 +72,7 @@ export class BoatsController {
   @Roles('captain')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Apagar embarcação (captain only)' })
-  delete(@Request() req: any, @Param('id') id: string) {
+  delete(@Request() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.boatsService.delete(id, req.user.sub);
   }
 
@@ -59,9 +81,10 @@ export class BoatsController {
   @Roles('captain', 'boat_manager')
   @ApiOperation({
     summary: 'Minhas embarcações',
-    description: 'Captain: barcos de propriedade. Boat_manager: barcos atribuídos via BoatStaff.',
+    description:
+      'Captain: barcos de propriedade. Boat_manager: barcos atribuídos via BoatStaff.',
   })
-  myBoats(@Request() req: any) {
+  myBoats(@Request() req: AuthenticatedRequest) {
     return this.boatsService.findAccessibleBoats(req.user.sub, req.user.role);
   }
 

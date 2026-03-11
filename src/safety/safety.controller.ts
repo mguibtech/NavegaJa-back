@@ -1,10 +1,30 @@
-import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { SafetyService } from './safety.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
 import { Public } from '../common/decorators/public.decorator';
-import { EmergencyServiceType } from './emergency-contact.entity';
+import {
+  EmergencyContact,
+  EmergencyServiceType,
+} from './emergency-contact.entity';
 import { SosAlertType, SosAlertStatus } from './sos-alert.entity';
 
 @ApiTags('safety')
@@ -18,7 +38,8 @@ export class SafetyController {
   @Public()
   @ApiOperation({
     summary: 'Listar contatos de emergência',
-    description: 'Lista pública de números de emergência (Marinha, Bombeiros, etc)',
+    description:
+      'Lista pública de números de emergência (Marinha, Bombeiros, etc)',
   })
   @ApiResponse({
     status: 200,
@@ -55,7 +76,10 @@ export class SafetyController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Atualizar contato de emergência' })
-  updateEmergencyContact(@Param('id') id: string, @Body() updates: any) {
+  updateEmergencyContact(
+    @Param('id') id: string,
+    @Body() updates: Partial<EmergencyContact>,
+  ) {
     return this.safetyService.updateEmergencyContact(id, updates);
   }
 
@@ -81,7 +105,10 @@ export class SafetyController {
     summary: 'Criar checklist de segurança para viagem',
     description: 'Capitão cria checklist antes de iniciar viagem',
   })
-  createSafetyChecklist(@Body() data: { tripId: string }, @Request() req: any) {
+  createSafetyChecklist(
+    @Body() data: { tripId: string },
+    @Request() req: AuthenticatedRequest,
+  ) {
     return this.safetyService.createSafetyChecklist(data.tripId, req.user.sub);
   }
 
@@ -157,7 +184,7 @@ export class SafetyController {
       longitude?: number;
       location?: string;
     },
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     return this.safetyService.createSosAlert({
       userId: req.user.sub,
@@ -192,9 +219,14 @@ export class SafetyController {
       status: SosAlertStatus.RESOLVED | SosAlertStatus.FALSE_ALARM;
       notes?: string;
     },
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
-    return this.safetyService.resolveSosAlert(id, req.user.sub, data.status, data.notes);
+    return this.safetyService.resolveSosAlert(
+      id,
+      req.user.sub,
+      data.status,
+      data.notes,
+    );
   }
 
   @Patch('sos/:id/cancel')
@@ -204,7 +236,10 @@ export class SafetyController {
     summary: 'Cancelar alerta SOS',
     description: 'Usuário cancela seu próprio alerta',
   })
-  cancelSosAlert(@Param('id') id: string, @Request() req: any) {
+  cancelSosAlert(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
     return this.safetyService.cancelSosAlert(id, req.user.sub);
   }
 
@@ -212,7 +247,7 @@ export class SafetyController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Listar meus alertas SOS' })
-  getUserSosAlerts(@Request() req: any) {
+  getUserSosAlerts(@Request() req: AuthenticatedRequest) {
     return this.safetyService.getUserSosAlerts(req.user.sub);
   }
 
@@ -223,9 +258,10 @@ export class SafetyController {
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Listar contactos pessoais de emergência',
-    description: 'Lista os contactos que receberão notificação quando o utilizador acionar o SOS. Máximo 5.',
+    description:
+      'Lista os contactos que receberão notificação quando o utilizador acionar o SOS. Máximo 5.',
   })
-  getPersonalContacts(@Request() req: any) {
+  getPersonalContacts(@Request() req: AuthenticatedRequest) {
     return this.safetyService.getPersonalContacts(req.user.sub);
   }
 
@@ -240,7 +276,7 @@ export class SafetyController {
       'Para contactos sem conta, o app envia SMS/WhatsApp directamente.',
   })
   addPersonalContact(
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
     @Body() body: { name: string; phone: string },
   ) {
     return this.safetyService.addPersonalContact(req.user.sub, body);
@@ -250,7 +286,10 @@ export class SafetyController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Remover contacto pessoal de emergência' })
-  removePersonalContact(@Param('id') id: string, @Request() req: any) {
+  removePersonalContact(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
     return this.safetyService.removePersonalContact(req.user.sub, id);
   }
 
@@ -265,7 +304,10 @@ export class SafetyController {
     description: 'Capitão consulta clima antes de criar checklist',
   })
   async suggestWeather(@Query('lat') lat: string, @Query('lng') lng: string) {
-    return this.safetyService.suggestWeatherCondition(parseFloat(lat), parseFloat(lng));
+    return this.safetyService.suggestWeatherCondition(
+      parseFloat(lat),
+      parseFloat(lng),
+    );
   }
 
   @Get('weather-safety')
@@ -276,7 +318,13 @@ export class SafetyController {
     summary: 'Avaliar segurança do clima para navegação',
     description: 'Verifica se condições climáticas permitem navegação segura',
   })
-  async checkWeatherSafety(@Query('lat') lat: string, @Query('lng') lng: string) {
-    return this.safetyService.checkWeatherSafety(parseFloat(lat), parseFloat(lng));
+  async checkWeatherSafety(
+    @Query('lat') lat: string,
+    @Query('lng') lng: string,
+  ) {
+    return this.safetyService.checkWeatherSafety(
+      parseFloat(lat),
+      parseFloat(lng),
+    );
   }
 }

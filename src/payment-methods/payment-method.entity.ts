@@ -1,21 +1,25 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-  ManyToOne, JoinColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { User } from '../users/user.entity';
 
 export enum CardType {
   CREDIT = 'credit_card',
-  DEBIT  = 'debit_card',
+  DEBIT = 'debit_card',
 }
 
 export enum CardBrand {
-  VISA       = 'visa',
+  VISA = 'visa',
   MASTERCARD = 'mastercard',
-  ELO        = 'elo',
-  HIPERCARD  = 'hipercard',
-  AMEX       = 'amex',
-  OTHER      = 'other',
+  ELO = 'elo',
+  HIPERCARD = 'hipercard',
+  AMEX = 'amex',
+  OTHER = 'other',
 }
 
 @Entity('payment_methods')
@@ -61,7 +65,12 @@ export class PaymentMethod {
   /**
    * Nome do gateway: 'stripe' | 'pagseguro' | 'mercadopago' | null
    */
-  @Column({ name: 'external_provider', type: 'varchar', length: 50, nullable: true })
+  @Column({
+    name: 'external_provider',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
   externalProvider: string | null;
 
   @CreateDateColumn({ name: 'created_at' })

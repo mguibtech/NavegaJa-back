@@ -1,6 +1,11 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, FindOptionsWhere } from 'typeorm';
 import { Favorite, FavoriteType } from './favorite.entity';
 import { CreateFavoriteDto } from './dto/favorite.dto';
 
@@ -24,7 +29,8 @@ export class FavoritesService {
     const favorite = this.favoritesRepo.create({
       userId,
       type: dto.type,
-      destination: dto.type === FavoriteType.DESTINATION ? dto.destination : undefined,
+      destination:
+        dto.type === FavoriteType.DESTINATION ? dto.destination : undefined,
       origin: dto.type === FavoriteType.DESTINATION ? dto.origin : undefined,
       boatId: dto.type === FavoriteType.BOAT ? dto.boatId : undefined,
       captainId: dto.type === FavoriteType.CAPTAIN ? dto.captainId : undefined,
@@ -34,7 +40,7 @@ export class FavoritesService {
   }
 
   async findAll(userId: string, type?: FavoriteType): Promise<Favorite[]> {
-    const where: any = { userId };
+    const where: FindOptionsWhere<Favorite> = { userId };
     if (type) {
       where.type = type;
     }
@@ -58,7 +64,10 @@ export class FavoritesService {
     await this.favoritesRepo.remove(favorite);
   }
 
-  async check(userId: string, dto: CreateFavoriteDto): Promise<{ isFavorite: boolean; favoriteId?: string }> {
+  async check(
+    userId: string,
+    dto: CreateFavoriteDto,
+  ): Promise<{ isFavorite: boolean; favoriteId?: string }> {
     this.validateDto(dto);
 
     const favorite = await this.checkExisting(userId, dto);
@@ -69,7 +78,10 @@ export class FavoritesService {
     };
   }
 
-  async toggleFavorite(userId: string, dto: CreateFavoriteDto): Promise<{ action: 'added' | 'removed'; favorite?: Favorite }> {
+  async toggleFavorite(
+    userId: string,
+    dto: CreateFavoriteDto,
+  ): Promise<{ action: 'added' | 'removed'; favorite?: Favorite }> {
     this.validateDto(dto);
 
     const existing = await this.checkExisting(userId, dto);
@@ -88,30 +100,42 @@ export class FavoritesService {
     switch (dto.type) {
       case FavoriteType.DESTINATION:
         if (!dto.destination) {
-          throw new BadRequestException('Campo "destination" é obrigatório para favoritos de destino');
+          throw new BadRequestException(
+            'Campo "destination" é obrigatório para favoritos de destino',
+          );
         }
         break;
       case FavoriteType.BOAT:
         if (!dto.boatId) {
-          throw new BadRequestException('Campo "boatId" é obrigatório para favoritos de barco');
+          throw new BadRequestException(
+            'Campo "boatId" é obrigatório para favoritos de barco',
+          );
         }
         break;
       case FavoriteType.CAPTAIN:
         if (!dto.captainId) {
-          throw new BadRequestException('Campo "captainId" é obrigatório para favoritos de capitão');
+          throw new BadRequestException(
+            'Campo "captainId" é obrigatório para favoritos de capitão',
+          );
         }
         break;
     }
   }
 
-  private async checkExisting(userId: string, dto: CreateFavoriteDto): Promise<Favorite | null> {
-    const qb = this.favoritesRepo.createQueryBuilder('favorite')
+  private async checkExisting(
+    userId: string,
+    dto: CreateFavoriteDto,
+  ): Promise<Favorite | null> {
+    const qb = this.favoritesRepo
+      .createQueryBuilder('favorite')
       .where('favorite.userId = :userId', { userId })
       .andWhere('favorite.type = :type', { type: dto.type });
 
     switch (dto.type) {
       case FavoriteType.DESTINATION:
-        qb.andWhere('favorite.destination = :destination', { destination: dto.destination });
+        qb.andWhere('favorite.destination = :destination', {
+          destination: dto.destination,
+        });
         if (dto.origin) {
           qb.andWhere('favorite.origin = :origin', { origin: dto.origin });
         } else {
@@ -122,7 +146,9 @@ export class FavoritesService {
         qb.andWhere('favorite.boatId = :boatId', { boatId: dto.boatId });
         break;
       case FavoriteType.CAPTAIN:
-        qb.andWhere('favorite.captainId = :captainId', { captainId: dto.captainId });
+        qb.andWhere('favorite.captainId = :captainId', {
+          captainId: dto.captainId,
+        });
         break;
     }
 

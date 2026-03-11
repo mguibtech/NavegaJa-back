@@ -1,8 +1,22 @@
-import { Controller, Post, Get, Body, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto, LoginWebDto, RefreshTokenDto, ForgotPasswordDto, ResetPasswordDto } from './dto/auth.dto';
+import {
+  RegisterDto,
+  LoginDto,
+  LoginWebDto,
+  RefreshTokenDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+} from './dto/auth.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 @ApiTags('Auth')
@@ -28,7 +42,8 @@ export class AuthController {
   @Throttle({ strict: { limit: 5, ttl: 60000 } })
   @ApiOperation({
     summary: 'Login com e-mail e senha (Dashboard Web)',
-    description: 'Endpoint exclusivo para administradores. APENAS usuários com role admin podem acessar o dashboard web.'
+    description:
+      'Endpoint exclusivo para administradores. APENAS usuários com role admin podem acessar o dashboard web.',
   })
   loginWeb(@Body() dto: LoginWebDto) {
     return this.authService.loginWeb(dto);
@@ -43,7 +58,9 @@ export class AuthController {
 
   @Post('forgot-password')
   @Throttle({ strict: { limit: 3, ttl: 60000 } })
-  @ApiOperation({ summary: 'Solicitar código de recuperação de senha por e-mail' })
+  @ApiOperation({
+    summary: 'Solicitar código de recuperação de senha por e-mail',
+  })
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
   }
@@ -60,7 +77,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Dados do usuário logado' })
-  getMe(@Request() req: any) {
+  getMe(@Request() req: AuthenticatedRequest) {
     return this.authService.getMe(req.user.sub);
   }
 }

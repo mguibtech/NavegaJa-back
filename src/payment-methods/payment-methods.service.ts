@@ -1,9 +1,12 @@
 import {
-  Injectable, NotFoundException, ForbiddenException, BadRequestException,
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { PaymentMethod, CardBrand, CardType } from './payment-method.entity';
+import { PaymentMethod, CardBrand } from './payment-method.entity';
 import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
 
 const MAX_CARDS_PER_USER = 5;
@@ -22,10 +25,13 @@ export class PaymentMethodsService {
     });
   }
 
-  async create(userId: string, dto: CreatePaymentMethodDto): Promise<PaymentMethod> {
+  async create(
+    userId: string,
+    dto: CreatePaymentMethodDto,
+  ): Promise<PaymentMethod> {
     // Validar expiração
     const now = new Date();
-    const currentYear  = now.getFullYear();
+    const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1;
     if (
       dto.expiryYear < currentYear ||
@@ -37,7 +43,9 @@ export class PaymentMethodsService {
     // Limite por utilizador
     const count = await this.repo.count({ where: { userId } });
     if (count >= MAX_CARDS_PER_USER) {
-      throw new BadRequestException(`Limite de ${MAX_CARDS_PER_USER} cartões atingido`);
+      throw new BadRequestException(
+        `Limite de ${MAX_CARDS_PER_USER} cartões atingido`,
+      );
     }
 
     const last4 = dto.cardNumber.slice(-4);
@@ -68,7 +76,8 @@ export class PaymentMethodsService {
   async setDefault(id: string, userId: string): Promise<PaymentMethod> {
     const card = await this.repo.findOne({ where: { id } });
     if (!card) throw new NotFoundException('Cartão não encontrado');
-    if (card.userId !== userId) throw new ForbiddenException('Este cartão não pertence a você');
+    if (card.userId !== userId)
+      throw new ForbiddenException('Este cartão não pertence a você');
 
     await this.repo.update({ userId }, { isDefault: false });
     await this.repo.update(id, { isDefault: true });
@@ -78,7 +87,8 @@ export class PaymentMethodsService {
   async remove(id: string, userId: string): Promise<void> {
     const card = await this.repo.findOne({ where: { id } });
     if (!card) throw new NotFoundException('Cartão não encontrado');
-    if (card.userId !== userId) throw new ForbiddenException('Este cartão não pertence a você');
+    if (card.userId !== userId)
+      throw new ForbiddenException('Este cartão não pertence a você');
 
     const wasDefault = card.isDefault;
     await this.repo.delete(id);
@@ -103,7 +113,11 @@ export class PaymentMethodsService {
     if (/^3[47]/.test(n)) return CardBrand.AMEX;
 
     // Elo — BINs brasileiros principais
-    if (/^(4011|4312|4389|4514|4576|5041|5066|5090|636297|636368|636369|509091|509048|509067|509049|509069|509050|509074|509068|509040|509045|509051|509046|509099|509078|509053|509071|509070|509007|509061|509062|509063|509064|509065|627780)/.test(n)) {
+    if (
+      /^(4011|4312|4389|4514|4576|5041|5066|5090|636297|636368|636369|509091|509048|509067|509049|509069|509050|509074|509068|509040|509045|509051|509046|509099|509078|509053|509071|509070|509007|509061|509062|509063|509064|509065|627780)/.test(
+        n,
+      )
+    ) {
       return CardBrand.ELO;
     }
 

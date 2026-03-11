@@ -1,6 +1,11 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, LessThan } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { ChatMessage, SenderRole } from './chat-message.entity';
 import { Booking, BookingStatus } from '../bookings/booking.entity';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -33,7 +38,9 @@ export class ChatService {
     }
 
     if (booking.status === BookingStatus.CANCELLED) {
-      throw new BadRequestException('Não é possível enviar mensagens em reservas canceladas');
+      throw new BadRequestException(
+        'Não é possível enviar mensagens em reservas canceladas',
+      );
     }
 
     return { booking, isPassenger, isCaptain };
@@ -42,11 +49,20 @@ export class ChatService {
   /**
    * Enviar mensagem
    */
-  async sendMessage(bookingId: string, senderId: string, content: string): Promise<ChatMessage> {
-    if (!content?.trim()) throw new BadRequestException('Mensagem não pode ser vazia');
-    if (content.length > 1000) throw new BadRequestException('Mensagem muito longa (máx 1000 chars)');
+  async sendMessage(
+    bookingId: string,
+    senderId: string,
+    content: string,
+  ): Promise<ChatMessage> {
+    if (!content?.trim())
+      throw new BadRequestException('Mensagem não pode ser vazia');
+    if (content.length > 1000)
+      throw new BadRequestException('Mensagem muito longa (máx 1000 chars)');
 
-    const { booking, isPassenger } = await this.getBookingAndValidateAccess(bookingId, senderId);
+    const { booking, isPassenger } = await this.getBookingAndValidateAccess(
+      bookingId,
+      senderId,
+    );
 
     const message = this.messagesRepo.create({
       bookingId,
@@ -59,11 +75,16 @@ export class ChatService {
 
     // Notificar o destinatário via FCM
     try {
-      const recipientId = isPassenger ? booking.trip?.captainId : booking.passengerId;
+      const recipientId = isPassenger
+        ? booking.trip?.captainId
+        : booking.passengerId;
       if (recipientId) {
         await this.notificationsService.sendToUser(recipientId, {
-          title: isPassenger ? '💬 Mensagem do passageiro' : '💬 Mensagem do capitão',
-          body: content.length > 80 ? content.substring(0, 77) + '...' : content,
+          title: isPassenger
+            ? '💬 Mensagem do passageiro'
+            : '💬 Mensagem do capitão',
+          body:
+            content.length > 80 ? content.substring(0, 77) + '...' : content,
           data: { type: 'chat', bookingId },
         });
       }
@@ -106,8 +127,14 @@ export class ChatService {
   /**
    * Marcar mensagens como lidas (mensagens enviadas pelo outro participante)
    */
-  async markAsRead(bookingId: string, userId: string): Promise<{ marked: number }> {
-    const { isPassenger } = await this.getBookingAndValidateAccess(bookingId, userId);
+  async markAsRead(
+    bookingId: string,
+    userId: string,
+  ): Promise<{ marked: number }> {
+    const { isPassenger } = await this.getBookingAndValidateAccess(
+      bookingId,
+      userId,
+    );
 
     // Marcar mensagens do OUTRO como lidas
     const otherRole = isPassenger ? SenderRole.CAPTAIN : SenderRole.PASSENGER;
@@ -134,11 +161,20 @@ export class ChatService {
       .leftJoin('booking.trip', 'trip')
       .leftJoin('booking.passenger', 'passenger')
       .leftJoin('trip.captain', 'captain')
-      .addSelect(['trip.id', 'trip.origin', 'trip.destination', 'trip.departureAt'])
+      .addSelect([
+        'trip.id',
+        'trip.origin',
+        'trip.destination',
+        'trip.departureAt',
+      ])
       .addSelect(['passenger.id', 'passenger.name', 'passenger.avatarUrl'])
       .addSelect(['captain.id', 'captain.name', 'captain.avatarUrl'])
-      .where('booking.passengerId = :userId OR trip.captainId = :userId', { userId })
-      .andWhere('booking.status != :cancelled', { cancelled: BookingStatus.CANCELLED })
+      .where('booking.passengerId = :userId OR trip.captainId = :userId', {
+        userId,
+      })
+      .andWhere('booking.status != :cancelled', {
+        cancelled: BookingStatus.CANCELLED,
+      })
       .getMany();
 
     const results = await Promise.all(
@@ -149,27 +185,37 @@ export class ChatService {
         });
 
         const isPassenger = booking.passengerId === userId;
-        const myRole = isPassenger ? SenderRole.PASSENGER : SenderRole.CAPTAIN;
-        const otherRole = isPassenger ? SenderRole.CAPTAIN : SenderRole.PASSENGER;
+        const otherRole = isPassenger
+          ? SenderRole.CAPTAIN
+          : SenderRole.PASSENGER;
 
         const unreadCount = await this.messagesRepo.count({
-          where: { bookingId: booking.id, senderRole: otherRole, readAt: null as any },
+          where: {
+            bookingId: booking.id,
+            senderRole: otherRole,
+            readAt: IsNull(),
+          },
         });
 
-        const other = isPassenger ? (booking.trip as any)?.captain : (booking as any).passenger;
+        const trip = booking.trip;
+        const other = isPassenger ? trip?.captain : booking.passenger;
 
         return {
           bookingId: booking.id,
           trip: {
-            origin: (booking.trip as any)?.origin || '',
-            destination: (booking.trip as any)?.destination || '',
-            departureAt: (booking.trip as any)?.departureAt,
+            origin: trip?.origin || '',
+            destination: trip?.destination || '',
+            departureAt: trip?.departureAt ?? null,
           },
           otherParticipant: other
             ? { id: other.id, name: other.name, avatarUrl: other.avatarUrl }
             : null,
           lastMessage: lastMsg
-            ? { content: lastMsg.content, senderRole: lastMsg.senderRole, createdAt: lastMsg.createdAt }
+            ? {
+                content: lastMsg.content,
+                senderRole: lastMsg.senderRole,
+                createdAt: lastMsg.createdAt,
+              }
             : null,
           unreadCount,
         };

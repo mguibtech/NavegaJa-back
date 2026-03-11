@@ -7,7 +7,10 @@ import { CargoService } from './cargo.service';
 import { GamificationModule } from '../gamification/gamification.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([CargoShipment, Trip]), GamificationModule],
+  imports: [
+    TypeOrmModule.forFeature([CargoShipment, Trip]),
+    GamificationModule,
+  ],
   controllers: [CargoController],
   providers: [CargoService],
   exports: [CargoService],

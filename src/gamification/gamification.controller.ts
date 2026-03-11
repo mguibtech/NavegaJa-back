@@ -1,5 +1,10 @@
 import { Controller, Get, UseGuards, Request, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { GamificationService } from './gamification.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -12,7 +17,7 @@ export class GamificationController {
 
   @Get('stats')
   @ApiOperation({ summary: 'Meus pontos, nível e desconto atual' })
-  getStats(@Request() req: any) {
+  getStats(@Request() req: AuthenticatedRequest) {
     return this.gamificationService.getUserStats(req.user.sub);
   }
 
@@ -21,11 +26,15 @@ export class GamificationController {
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 20 })
   getHistory(
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
-    return this.gamificationService.getHistory(req.user.sub, page || 1, limit || 20);
+    return this.gamificationService.getHistory(
+      req.user.sub,
+      page || 1,
+      limit || 20,
+    );
   }
 
   @Get('leaderboard')
@@ -36,17 +45,20 @@ export class GamificationController {
   }
 
   @Get('referrals')
-  @ApiOperation({ summary: 'Meu código de indicação e lista de pessoas indicadas' })
-  getReferrals(@Request() req: any) {
+  @ApiOperation({
+    summary: 'Meu código de indicação e lista de pessoas indicadas',
+  })
+  getReferrals(@Request() req: AuthenticatedRequest) {
     return this.gamificationService.getReferralStats(req.user.sub);
   }
 
   @Get('km-stats')
   @ApiOperation({
     summary: 'Meu saldo de km (milhas fluviais) e histórico de transações',
-    description: 'Retorna km acumulados, saldo disponível, quantos blocos de 500 km tem e o desconto máximo disponível (cada bloco = R$25).',
+    description:
+      'Retorna km acumulados, saldo disponível, quantos blocos de 500 km tem e o desconto máximo disponível (cada bloco = R$25).',
   })
-  getKmStats(@Request() req: any) {
+  getKmStats(@Request() req: AuthenticatedRequest) {
     return this.gamificationService.getKmStats(req.user.sub);
   }
 }

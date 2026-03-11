@@ -22,16 +22,19 @@ async function bootstrap() {
     console.log(`\n📥 ${req.method} ${req.url} - ${timestamp}`);
     console.log('   Origin:', req.headers.origin || 'não informado');
     console.log('   User-Agent:', req.headers['user-agent'] || 'não informado');
-    if (req.body && Object.keys(req.body).length > 0) {
-      console.log('   Body:', JSON.stringify(req.body, null, 2));
+    const body = req.body as Record<string, unknown> | undefined;
+    if (body && Object.keys(body).length > 0) {
+      console.log('   Body:', JSON.stringify(body, null, 2));
     }
 
     // Log da resposta
-    const originalSend = res.send;
-    res.send = function(data: any) {
-      console.log(`📤 Response ${req.method} ${req.url} - Status: ${res.statusCode}`);
-      return originalSend.call(this, data);
-    };
+    const originalSend = res.send.bind(res);
+    res.send = ((data: unknown) => {
+      console.log(
+        `📤 Response ${req.method} ${req.url} - Status: ${res.statusCode}`,
+      );
+      return originalSend(data as never);
+    }) as typeof res.send;
 
     next();
   });
@@ -60,4 +63,4 @@ async function bootstrap() {
   console.log(`🚤 NavegaJá API rodando em http://localhost:${port}`);
   console.log(`📚 Swagger docs em http://localhost:${port}/api/docs`);
 }
-bootstrap();
+void bootstrap();

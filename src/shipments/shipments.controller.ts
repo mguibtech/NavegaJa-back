@@ -1,16 +1,39 @@
-import { Controller, Post, Get, Patch, Param, Body, UseGuards, Request, UseInterceptors, UploadedFiles } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Param,
+  Body,
+  BadRequestException,
+  UseGuards,
+  Request,
+  UseInterceptors,
+  UploadedFiles,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
+import { diskStorage, type FileFilterCallback } from 'multer';
 import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { ShipmentsService } from './shipments.service';
 import { CreateShipmentDto } from './dto/create-shipment.dto';
-import { CalculatePriceDto, CalculatePriceResponseDto } from './dto/calculate-price.dto';
+import {
+  CalculatePriceDto,
+  CalculatePriceResponseDto,
+} from './dto/calculate-price.dto';
 import { CreateShipmentReviewDto } from './dto/create-review.dto';
-import { GeneratePresignedUrlsDto, GeneratePresignedUrlsResponseDto } from './dto/upload-photos.dto';
-import { ShipmentStatus } from './shipment.entity';
+import {
+  GeneratePresignedUrlsDto,
+  GeneratePresignedUrlsResponseDto,
+} from './dto/upload-photos.dto';
+import { Shipment, ShipmentStatus } from './shipment.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
 import { Public } from '../common/decorators/public.decorator';
@@ -20,6 +43,8 @@ import { ShipmentReview } from './shipment-review.entity';
 import { StorageService } from './storage.service';
 import { CouponsService } from '../coupons/coupons.service';
 import { ConfigService } from '@nestjs/config';
+import type { Request as ExpressRequest } from 'express';
+import { Trip } from '../trips/trip.entity';
 
 @ApiTags('Shipments')
 @Controller('shipments')
@@ -37,8 +62,14 @@ export class ShipmentsController {
   @SkipThrottle({ strict: true })
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Calcular preço da encomenda (com peso volumétrico e cupom)' })
-  @ApiResponse({ status: 200, description: 'Cálculo realizado com sucesso', type: CalculatePriceResponseDto })
+  @ApiOperation({
+    summary: 'Calcular preço da encomenda (com peso volumétrico e cupom)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Cálculo realizado com sucesso',
+    type: CalculatePriceResponseDto,
+  })
   async calculatePrice(@Body() dto: CalculatePriceDto) {
     return this.shipmentsService.calculatePrice(dto);
   }
@@ -48,7 +79,7 @@ export class ShipmentsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Validar cupom para encomenda e calcular desconto' })
   async validateCoupon(
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
     @Body('code') code: string,
     @Body('shipmentId') shipmentId: string,
   ) {
@@ -74,7 +105,10 @@ export class ShipmentsController {
     }
 
     // Buscar encomenda para calcular valores
-    const shipment = await this.shipmentsService.findById(shipmentId, req.user.sub);
+    const shipment = await this.shipmentsService.findById(
+      shipmentId,
+      req.user.sub,
+    );
     const originalPrice = Number(shipment.totalPrice);
 
     return {
@@ -95,8 +129,14 @@ export class ShipmentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Gerar presigned URLs para upload de fotos no S3' })
-  @ApiResponse({ status: 200, description: 'URLs geradas com sucesso', type: GeneratePresignedUrlsResponseDto })
-  async generatePresignedUrls(@Body() dto: GeneratePresignedUrlsDto): Promise<GeneratePresignedUrlsResponseDto> {
+  @ApiResponse({
+    status: 200,
+    description: 'URLs geradas com sucesso',
+    type: GeneratePresignedUrlsResponseDto,
+  })
+  async generatePresignedUrls(
+    @Body() dto: GeneratePresignedUrlsDto,
+  ): Promise<GeneratePresignedUrlsResponseDto> {
     const urls = await this.storageService.generatePresignedUrls(dto.count);
     return {
       urls,
@@ -107,16 +147,26 @@ export class ShipmentsController {
   @Post()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Criar encomenda (aceita fotos como multipart/form-data)' })
+  @ApiOperation({
+    summary: 'Criar encomenda (aceita fotos como multipart/form-data)',
+  })
   @UseInterceptors(
     FilesInterceptor('photos', 5, {
       storage: diskStorage({
         destination: './uploads/shipments',
-        filename: (_req: any, file: any, cb: any) => {
+        filename: (
+          _req: ExpressRequest,
+          file: Express.Multer.File,
+          cb: (error: Error | null, filename: string) => void,
+        ) => {
           cb(null, `${uuidv4()}${extname(file.originalname)}`);
         },
       }),
-      fileFilter: (_req: any, file: any, cb: any) => {
+      fileFilter: (
+        _req: ExpressRequest,
+        file: Express.Multer.File,
+        cb: FileFilterCallback,
+      ) => {
         if (!file.mimetype.match(/\/(jpg|jpeg|png|gif|webp)$/)) {
           cb(null, false); // rejeita silenciosamente arquivos não-imagem
         } else {
@@ -127,26 +177,35 @@ export class ShipmentsController {
     }),
   )
   async create(
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
     @Body() dto: CreateShipmentDto,
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
-    const baseUrl = this.configService.get('BASE_URL') || `http://localhost:3000`;
+    const baseUrl =
+      this.configService.get<string>('BASE_URL') || `http://localhost:3000`;
 
     // Converter arquivos recebidos em URLs públicas
     const uploadedPhotoUrls = (files || []).map(
-      f => `${baseUrl}/uploads/shipments/${f.filename}`,
+      (f) => `${baseUrl}/uploads/shipments/${f.filename}`,
     );
 
-    console.log(`[Shipment Create] files recebidos: ${(files || []).length}, URLs: ${JSON.stringify(uploadedPhotoUrls)}`);
+    console.log(
+      `[Shipment Create] files recebidos: ${(files || []).length}, URLs: ${JSON.stringify(uploadedPhotoUrls)}`,
+    );
 
     // Normalizar dados (aceitar tanto JSON quanto FormData)
     const normalizedDto = this.normalizeCreateShipmentDto(dto);
 
     // Mesclar fotos: URLs enviadas no body (string) + arquivos recebidos
-    normalizedDto.photos = [...(normalizedDto.photos || []), ...uploadedPhotoUrls];
+    normalizedDto.photos = [
+      ...(normalizedDto.photos || []),
+      ...uploadedPhotoUrls,
+    ];
 
-    const shipment = await this.shipmentsService.create(req.user.sub, normalizedDto);
+    const shipment = await this.shipmentsService.create(
+      req.user.sub,
+      normalizedDto,
+    );
     return this.serializeShipment(shipment);
   }
 
@@ -154,9 +213,9 @@ export class ShipmentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Minhas encomendas' })
-  async myShipments(@Request() req: any) {
+  async myShipments(@Request() req: AuthenticatedRequest) {
     const shipments = await this.shipmentsService.findBySender(req.user.sub);
-    return shipments.map(s => this.serializeShipment(s));
+    return shipments.map((s) => this.serializeShipment(s));
   }
 
   @Get('track/:code')
@@ -168,7 +227,7 @@ export class ShipmentsController {
     // Serializar com aliases
     return {
       shipment: this.serializeShipment(shipment),
-      timeline: timeline.map(event => ({
+      timeline: timeline.map((event) => ({
         ...event,
         timestamp: event.createdAt,
       })),
@@ -179,7 +238,10 @@ export class ShipmentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Buscar encomenda por ID' })
-  async findById(@Param('id') id: string, @Request() req: any) {
+  async findById(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
     const shipment = await this.shipmentsService.findById(id, req.user.sub);
     return this.serializeShipment(shipment);
   }
@@ -192,7 +254,7 @@ export class ShipmentsController {
     const timeline = await this.shipmentsService.getTimeline(id);
 
     // Adicionar campo 'timestamp' como alias para 'createdAt' (compatibilidade frontend)
-    return timeline.map(event => ({
+    return timeline.map((event) => ({
       ...event,
       timestamp: event.createdAt,
     }));
@@ -201,12 +263,22 @@ export class ShipmentsController {
   @Post(':id/confirm-payment')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Confirmar pagamento da encomenda (Pix/cartão — não usar para dinheiro)' })
-  async confirmPayment(@Param('id') id: string, @Request() req: any) {
-    const shipment = await this.shipmentsService.confirmPayment(id, req.user.sub);
+  @ApiOperation({
+    summary:
+      'Confirmar pagamento da encomenda (Pix/cartão — não usar para dinheiro)',
+  })
+  async confirmPayment(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const shipment = await this.shipmentsService.confirmPayment(
+      id,
+      req.user.sub,
+    );
     return {
       shipment: this.serializeShipment(shipment),
-      message: 'Pagamento confirmado com sucesso! Aguardando coleta pelo capitão.',
+      message:
+        'Pagamento confirmado com sucesso! Aguardando coleta pelo capitão.',
     };
   }
 
@@ -224,7 +296,10 @@ export class ShipmentsController {
       return { received: false, error: 'Unauthorized' };
     }
 
-    await this.shipmentsService.confirmPaymentByWebhook(trackingCode, gatewayRef);
+    await this.shipmentsService.confirmPaymentByWebhook(
+      trackingCode,
+      gatewayRef,
+    );
     return { received: true };
   }
 
@@ -232,10 +307,13 @@ export class ShipmentsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('captain', 'boat_manager')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Coletar encomenda do remetente (captain/boat_manager + validação QR/PIN)' })
+  @ApiOperation({
+    summary:
+      'Coletar encomenda do remetente (captain/boat_manager + validação QR/PIN)',
+  })
   collectShipment(
     @Param('id') id: string,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
     @Body('validationCode') validationCode: string,
     @Body('collectionPhotoUrl') collectionPhotoUrl?: string,
   ) {
@@ -251,14 +329,21 @@ export class ShipmentsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('captain', 'boat_manager')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Marcar como saiu para entrega (captain ou boat_manager)' })
-  outForDelivery(@Param('id') id: string, @Request() req: any) {
+  @ApiOperation({
+    summary: 'Marcar como saiu para entrega (captain ou boat_manager)',
+  })
+  outForDelivery(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
     return this.shipmentsService.outForDelivery(id, req.user.sub);
   }
 
   @Post('validate-delivery')
   @Public() // Endpoint público - destinatário não precisa estar autenticado
-  @ApiOperation({ summary: 'Validar entrega final (público - destinatário com QR/PIN)' })
+  @ApiOperation({
+    summary: 'Validar entrega final (público - destinatário com QR/PIN)',
+  })
   validateDelivery(
     @Body('trackingCode') trackingCode: string,
     @Body('validationCode') validationCode: string,
@@ -277,7 +362,7 @@ export class ShipmentsController {
   @ApiOperation({ summary: 'Cancelar encomenda' })
   cancel(
     @Param('id') id: string,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
     @Body('reason') reason?: string,
   ) {
     return this.shipmentsService.cancel(id, req.user.sub, reason);
@@ -291,7 +376,7 @@ export class ShipmentsController {
   updateStatus(
     @Param('id') id: string,
     @Body('status') status: ShipmentStatus,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     return this.shipmentsService.updateStatus(id, status, req.user.sub);
   }
@@ -300,8 +385,13 @@ export class ShipmentsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('captain', 'boat_manager')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Confirmar entrega + foto (captain ou boat_manager)' })
-  deliver(@Param('id') id: string, @Body('deliveryPhotoUrl') photoUrl?: string) {
+  @ApiOperation({
+    summary: 'Confirmar entrega + foto (captain ou boat_manager)',
+  })
+  deliver(
+    @Param('id') id: string,
+    @Body('deliveryPhotoUrl') photoUrl?: string,
+  ) {
     return this.shipmentsService.deliver(id, photoUrl);
   }
 
@@ -311,7 +401,10 @@ export class ShipmentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Criar avaliação da encomenda' })
-  async createReview(@Request() req: any, @Body() dto: CreateShipmentReviewDto) {
+  async createReview(
+    @Request() req: AuthenticatedRequest,
+    @Body() dto: CreateShipmentReviewDto,
+  ) {
     const shipment = await this.shipmentsService.findById(dto.shipmentId);
 
     // Verifica se a encomenda foi entregue
@@ -351,33 +444,68 @@ export class ShipmentsController {
   /**
    * Normaliza dados de entrada (aceita JSON ou FormData)
    */
-  private normalizeCreateShipmentDto(dto: any): CreateShipmentDto {
+  private normalizeCreateShipmentDto(
+    dto: CreateShipmentDto | Record<string, unknown>,
+  ): CreateShipmentDto {
     // Converter string para number (FormData envia tudo como string)
-    const parseNumber = (value: any): number | undefined => {
-      if (value === undefined || value === null || value === '') return undefined;
-      const parsed = typeof value === 'string' ? parseFloat(value) : value;
-      return isNaN(parsed) ? undefined : parsed;
+    const parseNumber = (value: unknown): number | undefined => {
+      if (value === undefined || value === null || value === '') {
+        return undefined;
+      }
+      if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : undefined;
+      }
+      if (typeof value === 'string') {
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : undefined;
+      }
+      return undefined;
     };
 
+    const input = dto as Record<string, unknown>;
+
     // Aceitar tanto 'weight' quanto 'weightKg' e garantir número
-    const weight = parseNumber(dto.weight || dto.weightKg);
+    const weight = parseNumber(input.weight ?? input.weightKg);
+    if (weight === undefined) {
+      throw new BadRequestException(
+        'Peso da encomenda Ã© obrigatÃ³rio e deve ser numÃ©rico',
+      );
+    }
 
     // Aceitar tanto 'dimensions' (objeto) quanto campos separados
-    const dimensions = dto.dimensions
-      ? (typeof dto.dimensions === 'string' ? JSON.parse(dto.dimensions) : dto.dimensions)
-      : {};
+    let dimensions: Record<string, unknown> = {};
+    if (input.dimensions) {
+      if (typeof input.dimensions === 'string') {
+        try {
+          const parsed = JSON.parse(input.dimensions) as Record<
+            string,
+            unknown
+          >;
+          dimensions = parsed ?? {};
+        } catch {
+          dimensions = {};
+        }
+      } else if (typeof input.dimensions === 'object') {
+        dimensions = input.dimensions as Record<string, unknown>;
+      }
+    }
 
-    const length = parseNumber(dimensions.length || dto.length);
-    const width = parseNumber(dimensions.width || dto.width);
-    const height = parseNumber(dimensions.height || dto.height);
+    const length = parseNumber(dimensions.length ?? input.length);
+    const width = parseNumber(dimensions.width ?? input.width);
+    const height = parseNumber(dimensions.height ?? input.height);
 
     // Normalizar array de fotos (FormData envia como múltiplos campos)
-    const photos = Array.isArray(dto.photos)
-      ? dto.photos
-      : (dto.photos ? [dto.photos] : []).filter(Boolean);
+    const photosRaw = input.photos;
+    const photos = Array.isArray(photosRaw)
+      ? photosRaw.filter(
+          (p): p is string => typeof p === 'string' && p.length > 0,
+        )
+      : typeof photosRaw === 'string' && photosRaw
+        ? [photosRaw]
+        : [];
 
     return {
-      ...dto,
+      ...(dto as CreateShipmentDto),
       weight,
       length,
       width,
@@ -389,8 +517,8 @@ export class ShipmentsController {
   /**
    * Serializa encomenda para frontend (adiciona aliases)
    */
-  private serializeShipment(shipment: any) {
-    const trip = shipment.trip;
+  private serializeShipment(shipment: Shipment) {
+    const trip = shipment.trip as Trip | undefined;
 
     // Resolve origin/destination: campo direto > route.originName (fallback para dados sem origin preenchido)
     if (trip) {
@@ -402,14 +530,17 @@ export class ShipmentsController {
       ...shipment,
       trip,
       // Aliases para compatibilidade com frontend
-      weight: shipment.weightKg ?? shipment.weight,
-      price: shipment.totalPrice,
+      weight: shipment.weightKg ?? shipment.weight ?? null,
+      price: shipment.totalPrice ?? null,
       photos: shipment.photos || [],
-      dimensions: shipment.length || shipment.width || shipment.height ? {
-        length: shipment.length,
-        width: shipment.width,
-        height: shipment.height,
-      } : null,
+      dimensions:
+        shipment.length || shipment.width || shipment.height
+          ? {
+              length: shipment.length ?? null,
+              width: shipment.width ?? null,
+              height: shipment.height ?? null,
+            }
+          : null,
     };
   }
 }

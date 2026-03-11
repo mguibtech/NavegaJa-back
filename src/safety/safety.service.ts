@@ -1,7 +1,16 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { EmergencyContact, EmergencyServiceType } from './emergency-contact.entity';
+import {
+  EmergencyContact,
+  EmergencyServiceType,
+} from './emergency-contact.entity';
 import { SafetyChecklist } from './safety-checklist.entity';
 import { SosAlert, SosAlertStatus, SosAlertType } from './sos-alert.entity';
 import { PersonalContact } from './personal-contact.entity';
@@ -45,7 +54,9 @@ export class SafetyService {
       .addOrderBy('contact.name', 'ASC');
 
     if (region) {
-      query.andWhere('(contact.region = :region OR contact.region IS NULL)', { region });
+      query.andWhere('(contact.region = :region OR contact.region IS NULL)', {
+        region,
+      });
     }
 
     return query.getMany();
@@ -128,7 +139,9 @@ export class SafetyService {
       observations?: string;
     },
   ) {
-    const checklist = await this.checklistsRepo.findOne({ where: { id: checklistId } });
+    const checklist = await this.checklistsRepo.findOne({
+      where: { id: checklistId },
+    });
     if (!checklist) {
       throw new NotFoundException('Checklist não encontrado');
     }
@@ -185,16 +198,25 @@ export class SafetyService {
    * Adiciona um contacto pessoal de emergência (máx. 5).
    * Se o telefone corresponder a um utilizador NavegaJá, liga automaticamente.
    */
-  async addPersonalContact(userId: string, dto: { name: string; phone: string }): Promise<PersonalContact> {
+  async addPersonalContact(
+    userId: string,
+    dto: { name: string; phone: string },
+  ): Promise<PersonalContact> {
     const count = await this.personalContactsRepo.count({ where: { userId } });
     if (count >= MAX_PERSONAL_CONTACTS) {
-      throw new BadRequestException(`Máximo de ${MAX_PERSONAL_CONTACTS} contactos de emergência por utilizador.`);
+      throw new BadRequestException(
+        `Máximo de ${MAX_PERSONAL_CONTACTS} contactos de emergência por utilizador.`,
+      );
     }
 
     // Verificar se já existe este telefone na lista deste utilizador
-    const existing = await this.personalContactsRepo.findOne({ where: { userId, phone: dto.phone } });
+    const existing = await this.personalContactsRepo.findOne({
+      where: { userId, phone: dto.phone },
+    });
     if (existing) {
-      throw new BadRequestException('Este número já está na sua lista de contactos de emergência.');
+      throw new BadRequestException(
+        'Este número já está na sua lista de contactos de emergência.',
+      );
     }
 
     // Auto-vincular se o telefone pertencer a um utilizador do app
@@ -214,10 +236,17 @@ export class SafetyService {
   }
 
   /** Remove um contacto pessoal de emergência */
-  async removePersonalContact(userId: string, contactId: string): Promise<{ message: string }> {
-    const contact = await this.personalContactsRepo.findOne({ where: { id: contactId, userId } });
+  async removePersonalContact(
+    userId: string,
+    contactId: string,
+  ): Promise<{ message: string }> {
+    const contact = await this.personalContactsRepo.findOne({
+      where: { id: contactId, userId },
+    });
     if (!contact) {
-      throw new NotFoundException('Contacto não encontrado ou não pertence a este utilizador.');
+      throw new NotFoundException(
+        'Contacto não encontrado ou não pertence a este utilizador.',
+      );
     }
     await this.personalContactsRepo.remove(contact);
     return { message: 'Contacto removido.' };
@@ -243,7 +272,8 @@ export class SafetyService {
     });
     if (existing) {
       throw new ConflictException({
-        message: 'Já tens um alerta SOS activo. Cancela-o antes de criar um novo.',
+        message:
+          'Já tens um alerta SOS activo. Cancela-o antes de criar um novo.',
         activeAlert: existing,
       });
     }
@@ -251,7 +281,9 @@ export class SafetyService {
     // Valida tripId — se não existir na BD, ignora (SOS pode ocorrer sem viagem ativa)
     let validTripId: string | null = null;
     if (data.tripId) {
-      const tripExists = await this.tripsRepo.findOne({ where: { id: data.tripId } });
+      const tripExists = await this.tripsRepo.findOne({
+        where: { id: data.tripId },
+      });
       validTripId = tripExists ? data.tripId : null;
     }
 
@@ -277,7 +309,9 @@ export class SafetyService {
 
     const locationDesc = data.location
       ? ` em: ${data.location}`
-      : (data.latitude && data.longitude ? ` (GPS: ${Number(data.latitude).toFixed(4)}, ${Number(data.longitude).toFixed(4)})` : '');
+      : data.latitude && data.longitude
+        ? ` (GPS: ${Number(data.latitude).toFixed(4)}, ${Number(data.longitude).toFixed(4)})`
+        : '';
 
     const sosData: Record<string, string> = {
       type: 'sos_alert',
@@ -294,7 +328,7 @@ export class SafetyService {
         where: { role: UserRole.ADMIN, isActive: true },
         select: ['id', 'fcmToken'],
       });
-      const adminIds = admins.filter(a => a.fcmToken).map(a => a.id);
+      const adminIds = admins.filter((a) => a.fcmToken).map((a) => a.id);
       if (adminIds.length > 0) {
         await this.notificationsService.sendToUsers(adminIds, {
           title: '🆘 ALERTA SOS!',
@@ -308,7 +342,7 @@ export class SafetyService {
         where: { userId: data.userId },
       });
       const linkedIds = personalContacts
-        .map(c => c.linkedUserId)
+        .map((c) => c.linkedUserId)
         .filter((id): id is string => !!id);
 
       if (linkedIds.length > 0) {
@@ -368,7 +402,9 @@ export class SafetyService {
     }
 
     if (alert.userId !== userId) {
-      throw new BadRequestException('Você só pode cancelar seus próprios alertas');
+      throw new BadRequestException(
+        'Você só pode cancelar seus próprios alertas',
+      );
     }
 
     alert.status = SosAlertStatus.CANCELLED;
@@ -443,7 +479,10 @@ export class SafetyService {
 
     for (const contactData of contacts) {
       const existing = await this.emergencyContactsRepo.findOne({
-        where: { phoneNumber: contactData.phoneNumber, region: contactData.region },
+        where: {
+          phoneNumber: contactData.phoneNumber,
+          region: contactData.region,
+        },
       });
 
       if (!existing) {
@@ -462,7 +501,10 @@ export class SafetyService {
    */
   async suggestWeatherCondition(latitude: number, longitude: number) {
     try {
-      const weather = await this.weatherService.getCurrentWeather(latitude, longitude);
+      const weather = await this.weatherService.getCurrentWeather(
+        latitude,
+        longitude,
+      );
 
       return {
         weatherCondition: weather.condition,
@@ -475,7 +517,7 @@ export class SafetyService {
           warnings: weather.safetyWarnings,
         },
       };
-    } catch (error) {
+    } catch {
       // Se falhar (sem API key, sem internet, etc), retorna null
       return {
         weatherCondition: null,
@@ -491,8 +533,11 @@ export class SafetyService {
    */
   async checkWeatherSafety(latitude: number, longitude: number) {
     try {
-      return await this.weatherService.evaluateNavigationSafety(latitude, longitude);
-    } catch (error) {
+      return await this.weatherService.evaluateNavigationSafety(
+        latitude,
+        longitude,
+      );
+    } catch {
       throw new ServiceUnavailableException(
         'Serviço de clima indisponível. Verifique manualmente as condições antes de navegar.',
       );

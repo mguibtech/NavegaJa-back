@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike } from 'typeorm';
+import { Repository, ILike, FindOptionsWhere } from 'typeorm';
 import { Route } from './route.entity';
 
 @Injectable()
@@ -21,7 +21,7 @@ export class RoutesService {
   }
 
   async search(origin?: string, dest?: string): Promise<Route[]> {
-    const where: any = {};
+    const where: FindOptionsWhere<Route> = {};
     if (origin) where.originName = ILike(`%${origin}%`);
     if (dest) where.destinationName = ILike(`%${dest}%`);
     return this.routesRepo.find({ where });

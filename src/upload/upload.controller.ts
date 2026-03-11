@@ -1,11 +1,24 @@
 import {
-  Controller, Post, UseGuards, UseInterceptors,
-  UploadedFile, BadRequestException, Query,
+  Controller,
+  Post,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
+  Query,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiConsumes, ApiQuery, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiConsumes,
+  ApiQuery,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { memoryStorage } from 'multer';
+import { memoryStorage, type FileFilterCallback } from 'multer';
+import type { Request } from 'express';
 import { StorageService } from './storage.service';
 
 // Tipos de ficheiro permitidos por categoria
@@ -23,13 +36,15 @@ export class UploadController {
   @Post('image')
   @ApiOperation({
     summary: 'Upload de imagem',
-    description: 'Aceita JPG, PNG, GIF, WEBP (máx. 5MB). Retorna URL pública permanente (Firebase Storage ou disco local como fallback).',
+    description:
+      'Aceita JPG, PNG, GIF, WEBP (máx. 5MB). Retorna URL pública permanente (Firebase Storage ou disco local como fallback).',
   })
   @ApiConsumes('multipart/form-data')
   @ApiQuery({
     name: 'folder',
     required: false,
-    description: 'Pasta no Storage: avatars | reviews | boats | shipments | cargo (default: uploads)',
+    description:
+      'Pasta no Storage: avatars | reviews | boats | shipments | cargo (default: uploads)',
     example: 'avatars',
   })
   @ApiResponse({
@@ -46,9 +61,17 @@ export class UploadController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      fileFilter: (_req: any, file: any, cb: any) => {
+      fileFilter: (
+        _req: Request,
+        file: Express.Multer.File,
+        cb: FileFilterCallback,
+      ) => {
         if (!file.mimetype.match(ALLOWED_IMAGES)) {
-          return cb(new BadRequestException('Apenas imagens são permitidas (JPG, PNG, GIF, WEBP)'), false);
+          return cb(
+            new BadRequestException(
+              'Apenas imagens são permitidas (JPG, PNG, GIF, WEBP)',
+            ),
+          );
         }
         cb(null, true);
       },
@@ -56,7 +79,7 @@ export class UploadController {
     }),
   )
   async uploadImage(
-    @UploadedFile() file: any,
+    @UploadedFile() file: Express.Multer.File,
     @Query('folder') folder = 'uploads',
   ) {
     if (!file) throw new BadRequestException('Nenhum arquivo enviado');
@@ -74,7 +97,8 @@ export class UploadController {
   @Post('document')
   @ApiOperation({
     summary: 'Upload de documento (capitão)',
-    description: 'Aceita JPG, PNG, WEBP e PDF (máx. 10MB). Usar para licença, certificado, documentação de embarcação.',
+    description:
+      'Aceita JPG, PNG, WEBP e PDF (máx. 10MB). Usar para licença, certificado, documentação de embarcação.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiQuery({
@@ -97,9 +121,17 @@ export class UploadController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      fileFilter: (_req: any, file: any, cb: any) => {
+      fileFilter: (
+        _req: Request,
+        file: Express.Multer.File,
+        cb: FileFilterCallback,
+      ) => {
         if (!file.mimetype.match(ALLOWED_DOCUMENTS)) {
-          return cb(new BadRequestException('Apenas imagens (JPG, PNG, WEBP) ou PDF são permitidos'), false);
+          return cb(
+            new BadRequestException(
+              'Apenas imagens (JPG, PNG, WEBP) ou PDF são permitidos',
+            ),
+          );
         }
         cb(null, true);
       },
@@ -107,7 +139,7 @@ export class UploadController {
     }),
   )
   async uploadDocument(
-    @UploadedFile() file: any,
+    @UploadedFile() file: Express.Multer.File,
     @Query('folder') folder = 'documents',
   ) {
     if (!file) throw new BadRequestException('Nenhum arquivo enviado');
@@ -119,13 +151,19 @@ export class UploadController {
       folder,
     );
 
-    return { url, filename: url.split('/').pop(), size: file.size, mimeType: file.mimetype };
+    return {
+      url,
+      filename: url.split('/').pop(),
+      size: file.size,
+      mimeType: file.mimetype,
+    };
   }
 
   @Post('video')
   @ApiOperation({
     summary: 'Upload de vídeo',
-    description: 'Aceita MP4, MOV, AVI, WEBM (máx. 50MB). Retorna URL pública permanente.',
+    description:
+      'Aceita MP4, MOV, AVI, WEBM (máx. 50MB). Retorna URL pública permanente.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiQuery({
@@ -148,9 +186,17 @@ export class UploadController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      fileFilter: (_req: any, file: any, cb: any) => {
+      fileFilter: (
+        _req: Request,
+        file: Express.Multer.File,
+        cb: FileFilterCallback,
+      ) => {
         if (!file.mimetype.match(ALLOWED_VIDEOS)) {
-          return cb(new BadRequestException('Apenas vídeos são permitidos (MP4, MOV, AVI, WEBM)'), false);
+          return cb(
+            new BadRequestException(
+              'Apenas vídeos são permitidos (MP4, MOV, AVI, WEBM)',
+            ),
+          );
         }
         cb(null, true);
       },
@@ -158,7 +204,7 @@ export class UploadController {
     }),
   )
   async uploadVideo(
-    @UploadedFile() file: any,
+    @UploadedFile() file: Express.Multer.File,
     @Query('folder') folder = 'videos',
   ) {
     if (!file) throw new BadRequestException('Nenhum arquivo enviado');

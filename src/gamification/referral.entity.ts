@@ -1,12 +1,17 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn,
-  CreateDateColumn, Index,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  CreateDateColumn,
+  Index,
 } from 'typeorm';
 import { User } from '../users/user.entity';
 
 export enum ReferralStatus {
-  PENDING = 'pending',       // Indicado se cadastrou mas não fez 1ª viagem
-  CONVERTED = 'converted',   // Indicado completou 1ª viagem → pontos dados
+  PENDING = 'pending', // Indicado se cadastrou mas não fez 1ª viagem
+  CONVERTED = 'converted', // Indicado completou 1ª viagem → pontos dados
 }
 
 @Entity('referrals')
@@ -29,7 +34,11 @@ export class Referral {
   @JoinColumn({ name: 'referred_id' })
   referred: User;
 
-  @Column({ type: 'enum', enum: ReferralStatus, default: ReferralStatus.PENDING })
+  @Column({
+    type: 'enum',
+    enum: ReferralStatus,
+    default: ReferralStatus.PENDING,
+  })
   status: ReferralStatus;
 
   @Column({ name: 'points_awarded', type: 'boolean', default: false })

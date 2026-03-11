@@ -31,10 +31,31 @@ export class NotificationsService implements OnModuleInit {
     private bookingsRepo: Repository<Booking>,
   ) {}
 
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  private getFirebaseErrorInfo(
+    error: unknown,
+  ): { code?: string; message?: string } | null {
+    if (!error || typeof error !== 'object') return null;
+    if ('errorInfo' in error) {
+      const info = (
+        error as { errorInfo?: { code?: string; message?: string } }
+      ).errorInfo;
+      if (info && typeof info === 'object') {
+        return info;
+      }
+    }
+    return null;
+  }
+
   onModuleInit() {
     const projectId = this.configService.get<string>('FIREBASE_PROJECT_ID');
     if (!projectId) {
-      this.logger.warn('FIREBASE_PROJECT_ID não definido — push notifications desativado');
+      this.logger.warn(
+        'FIREBASE_PROJECT_ID não definido — push notifications desativado',
+      );
       return;
     }
 
@@ -42,25 +63,30 @@ export class NotificationsService implements OnModuleInit {
     const clientEmail = this.configService.get<string>('FIREBASE_CLIENT_EMAIL');
 
     if (!privateKey || !clientEmail) {
-      this.logger.warn('Credenciais Firebase incompletas — push notifications desativado');
+      this.logger.warn(
+        'Credenciais Firebase incompletas — push notifications desativado',
+      );
       return;
     }
 
     try {
       // Evitar re-inicialização se o app já existe
-      this.firebaseApp = admin.apps.find(a => a?.name === '[DEFAULT]')
-        || admin.initializeApp({
-            credential: admin.credential.cert({
-              projectId,
-              privateKey: privateKey.replace(/\\n/g, '\n'),
-              clientEmail,
-            }),
-          });
+      this.firebaseApp =
+        admin.apps.find((a) => a?.name === '[DEFAULT]') ||
+        admin.initializeApp({
+          credential: admin.credential.cert({
+            projectId,
+            privateKey: privateKey.replace(/\\n/g, '\n'),
+            clientEmail,
+          }),
+        });
 
       this.isEnabled = true;
       this.logger.log('Firebase FCM inicializado com sucesso');
     } catch (error) {
-      this.logger.warn(`Erro ao inicializar Firebase: ${error.message}`);
+      this.logger.warn(
+        `Erro ao inicializar Firebase: ${this.getErrorMessage(error)}`,
+      );
     }
   }
 
@@ -76,7 +102,10 @@ export class NotificationsService implements OnModuleInit {
 
   // ── Send helpers ──────────────────────────────────────────────────────────
 
-  async sendToUser(userId: string, payload: NotificationPayload): Promise<void> {
+  async sendToUser(
+    userId: string,
+    payload: NotificationPayload,
+  ): Promise<void> {
     if (!this.isEnabled) return;
 
     const user = await this.usersRepo.findOne({
@@ -85,7 +114,9 @@ export class NotificationsService implements OnModuleInit {
     });
 
     if (!user?.fcmToken) {
-      this.logger.warn(`sendToUser(${userId}): fcmToken ausente — notificação descartada. Utilizador ainda não registou o token FCM.`);
+      this.logger.warn(
+        `sendToUser(${userId}): fcmToken ausente — notificação descartada. Utilizador ainda não registou o token FCM.`,
+      );
       return;
     }
 
@@ -93,7 +124,10 @@ export class NotificationsService implements OnModuleInit {
     await this.sendToToken(user.fcmToken, payload);
   }
 
-  async sendToUsers(userIds: string[], payload: NotificationPayload): Promise<void> {
+  async sendToUsers(
+    userIds: string[],
+    payload: NotificationPayload,
+  ): Promise<void> {
     if (!this.isEnabled || userIds.length === 0) return;
 
     const users = await this.usersRepo.find({
@@ -101,7 +135,7 @@ export class NotificationsService implements OnModuleInit {
       select: ['id', 'fcmToken'],
     });
 
-    const tokens = users.map(u => u.fcmToken).filter((t): t is string => !!t);
+    const tokens = users.map((u) => u.fcmToken).filter((t): t is string => !!t);
     if (tokens.length === 0) return;
 
     // Firebase limit: 500 tokens por batch
@@ -123,7 +157,9 @@ export class NotificationsService implements OnModuleInit {
           apns: { payload: { aps: { sound: 'default', badge: 1 } } },
         });
       } catch (error) {
-        this.logger.warn(`Erro no batch de notificações: ${error.message}`);
+        this.logger.warn(
+          `Erro no batch de notificações: ${this.getErrorMessage(error)}`,
+        );
       }
     }
   }
@@ -131,7 +167,10 @@ export class NotificationsService implements OnModuleInit {
   /**
    * Notifica todos os passageiros com reserva ativa (CONFIRMED | CHECKED_IN) numa viagem.
    */
-  async sendToTripPassengers(tripId: string, payload: NotificationPayload): Promise<void> {
+  async sendToTripPassengers(
+    tripId: string,
+    payload: NotificationPayload,
+  ): Promise<void> {
     if (!this.isEnabled) return;
 
     const bookings = await this.bookingsRepo.find({
@@ -142,7 +181,7 @@ export class NotificationsService implements OnModuleInit {
       select: ['passengerId'],
     });
 
-    const passengerIds = [...new Set(bookings.map(b => b.passengerId))];
+    const passengerIds = [...new Set(bookings.map((b) => b.passengerId))];
     await this.sendToUsers(passengerIds, payload);
   }
 
@@ -150,17 +189,21 @@ export class NotificationsService implements OnModuleInit {
    * Broadcast para todos os usuários, opcionalmente filtrados por cidade e/ou role.
    * Útil para campanhas promocionais segmentadas (ex: cupons para Parintins).
    */
-  async broadcast(payload: NotificationPayload, filters?: BroadcastFilters): Promise<{ sent: number }> {
+  async broadcast(
+    payload: NotificationPayload,
+    filters?: BroadcastFilters,
+  ): Promise<{ sent: number }> {
     if (!this.isEnabled) return { sent: 0 };
 
-    const qb = this.usersRepo.createQueryBuilder('u')
+    const qb = this.usersRepo
+      .createQueryBuilder('u')
       .select(['u.id', 'u.fcmToken'])
       .where('u.fcmToken IS NOT NULL')
       .andWhere('u.isActive = true');
 
     if (filters?.cities?.length) {
       qb.andWhere('LOWER(u.city) IN (:...cities)', {
-        cities: filters.cities.map(c => c.toLowerCase()),
+        cities: filters.cities.map((c) => c.toLowerCase()),
       });
     }
 
@@ -169,29 +212,33 @@ export class NotificationsService implements OnModuleInit {
     }
 
     const users = await qb.getMany();
-    const tokens = users.map(u => u.fcmToken).filter((t): t is string => !!t);
+    const tokens = users.map((u) => u.fcmToken).filter((t): t is string => !!t);
 
     let sent = 0;
     for (let i = 0; i < tokens.length; i += 500) {
       const batch = tokens.slice(i, i + 500);
       try {
-        const result = await this.firebaseApp!.messaging().sendEachForMulticast({
-          tokens: batch,
-          notification: { title: payload.title, body: payload.body },
-          data: payload.data ?? {},
-          android: {
-            priority: 'high',
-            notification: {
-              channelId: 'default',
-              sound: 'default',
+        const result = await this.firebaseApp!.messaging().sendEachForMulticast(
+          {
+            tokens: batch,
+            notification: { title: payload.title, body: payload.body },
+            data: payload.data ?? {},
+            android: {
               priority: 'high',
+              notification: {
+                channelId: 'default',
+                sound: 'default',
+                priority: 'high',
+              },
             },
+            apns: { payload: { aps: { sound: 'default', badge: 1 } } },
           },
-          apns: { payload: { aps: { sound: 'default', badge: 1 } } },
-        });
+        );
         sent += result.successCount;
       } catch (error) {
-        this.logger.warn(`Erro no broadcast batch: ${error.message}`);
+        this.logger.warn(
+          `Erro no broadcast batch: ${this.getErrorMessage(error)}`,
+        );
       }
     }
 
@@ -201,7 +248,10 @@ export class NotificationsService implements OnModuleInit {
 
   // ── Private ───────────────────────────────────────────────────────────────
 
-  private async sendToToken(token: string, payload: NotificationPayload): Promise<void> {
+  private async sendToToken(
+    token: string,
+    payload: NotificationPayload,
+  ): Promise<void> {
     try {
       const messageId = await this.firebaseApp!.messaging().send({
         token,
@@ -219,12 +269,18 @@ export class NotificationsService implements OnModuleInit {
       });
       this.logger.log(`FCM enviado com sucesso: ${messageId}`);
     } catch (error) {
+      const errorInfo = this.getFirebaseErrorInfo(error);
+      const errorCode = errorInfo?.code ?? 'unknown';
       // Token inválido/expirado — limpar
-      if (error?.errorInfo?.code === 'messaging/registration-token-not-registered') {
-        this.logger.warn(`FCM token inválido/expirado — removendo do utilizador`);
+      if (errorCode === 'messaging/registration-token-not-registered') {
+        this.logger.warn(
+          `FCM token inválido/expirado — removendo do utilizador`,
+        );
         await this.usersRepo.update({ fcmToken: token }, { fcmToken: null });
       }
-      this.logger.error(`Falha ao enviar notificação FCM: [${error?.errorInfo?.code ?? 'unknown'}] ${error.message}`);
+      this.logger.error(
+        `Falha ao enviar notificação FCM: [${errorCode}] ${this.getErrorMessage(error)}`,
+      );
     }
   }
 }

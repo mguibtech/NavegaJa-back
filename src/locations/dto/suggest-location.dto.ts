@@ -1,4 +1,11 @@
-import { IsString, IsNumber, IsOptional, MaxLength, Min, Max } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  IsOptional,
+  MaxLength,
+  Min,
+  Max,
+} from 'class-validator';
 
 export class SuggestLocationDto {
   @IsString()

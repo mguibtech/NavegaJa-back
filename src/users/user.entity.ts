@@ -1,6 +1,10 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-  UpdateDateColumn, OneToMany,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  OneToMany,
 } from 'typeorm';
 import { Boat } from '../boats/boat.entity';
 import { Booking } from '../bookings/booking.entity';
@@ -22,11 +26,11 @@ export enum Gender {
 }
 
 export enum KycStatus {
-  NONE = 'none',                 // Ainda não enviou documentos
-  PENDING = 'pending',           // Documentos enviados, aguardando revisão
+  NONE = 'none', // Ainda não enviou documentos
+  PENDING = 'pending', // Documentos enviados, aguardando revisão
   UNDER_REVIEW = 'under_review', // Em análise pelo admin
-  APPROVED = 'approved',         // Aprovado — pode criar viagens
-  REJECTED = 'rejected',         // Rejeitado — deve reenviar
+  APPROVED = 'approved', // Aprovado — pode criar viagens
+  REJECTED = 'rejected', // Rejeitado — deve reenviar
 }
 
 @Entity('users')
@@ -76,13 +80,25 @@ export class User {
   @Column({ name: 'level', type: 'varchar', length: 50, default: 'Marinheiro' })
   level: string;
 
-  @Column({ name: 'referral_code', type: 'varchar', length: 20, unique: true, nullable: true })
+  @Column({
+    name: 'referral_code',
+    type: 'varchar',
+    length: 20,
+    unique: true,
+    nullable: true,
+  })
   referralCode: string;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
-  @Column({ name: 'passenger_rating', type: 'decimal', precision: 2, scale: 1, default: 5.0 })
+  @Column({
+    name: 'passenger_rating',
+    type: 'decimal',
+    precision: 2,
+    scale: 1,
+    default: 5.0,
+  })
   passengerRating: number;
 
   @Column({ type: 'varchar', length: 100, nullable: true })
@@ -96,7 +112,12 @@ export class User {
   @Column({ name: 'is_verified', type: 'boolean', default: false })
   isVerified: boolean; // documentos do capitão verificados pelo admin
 
-  @Column({ name: 'kyc_status', type: 'enum', enum: KycStatus, default: KycStatus.NONE })
+  @Column({
+    name: 'kyc_status',
+    type: 'enum',
+    enum: KycStatus,
+    default: KycStatus.NONE,
+  })
   kycStatus: KycStatus;
 
   @Column({ name: 'license_photo_url', type: 'text', nullable: true })
@@ -122,16 +143,38 @@ export class User {
 
   // ── Localização da comunidade (crowdsourcing) ─────────────────────────────
 
-  @Column({ name: 'home_community', type: 'varchar', length: 150, nullable: true })
+  @Column({
+    name: 'home_community',
+    type: 'varchar',
+    length: 150,
+    nullable: true,
+  })
   homeCommunity: string | null; // Ex: "Comunidade do Pesqueiro"
 
-  @Column({ name: 'home_municipio', type: 'varchar', length: 150, nullable: true })
+  @Column({
+    name: 'home_municipio',
+    type: 'varchar',
+    length: 150,
+    nullable: true,
+  })
   homeMunicipio: string | null; // Ex: "Manacapuru"
 
-  @Column({ name: 'home_lat', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  @Column({
+    name: 'home_lat',
+    type: 'decimal',
+    precision: 10,
+    scale: 7,
+    nullable: true,
+  })
   homeLat: number | null;
 
-  @Column({ name: 'home_lng', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  @Column({
+    name: 'home_lng',
+    type: 'decimal',
+    precision: 10,
+    scale: 7,
+    nullable: true,
+  })
   homeLng: number | null;
 
   @Column({ name: 'location_updated_at', type: 'timestamp', nullable: true })

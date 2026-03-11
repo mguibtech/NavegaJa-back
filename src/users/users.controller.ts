@@ -1,5 +1,19 @@
-import { Controller, Get, Post, Patch, Param, Body, UseGuards, Request } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Param,
+  Body,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
@@ -14,14 +28,15 @@ export class UsersController {
 
   @Get('profile')
   @ApiOperation({ summary: 'Perfil do usuário logado' })
-  getProfile(@Request() req: any) {
+  getProfile(@Request() req: AuthenticatedRequest) {
     return this.usersService.findById(req.user.sub);
   }
 
   @Patch('profile')
   @ApiOperation({
     summary: 'Atualizar perfil do usuário logado',
-    description: 'Permite atualizar nome, email, avatar, cidade e estado. Campos não enviados são mantidos.',
+    description:
+      'Permite atualizar nome, email, avatar, cidade e estado. Campos não enviados são mantidos.',
   })
   @ApiResponse({
     status: 200,
@@ -37,7 +52,10 @@ export class UsersController {
       },
     },
   })
-  updateProfile(@Request() req: any, @Body() dto: UpdateProfileDto) {
+  updateProfile(
+    @Request() req: AuthenticatedRequest,
+    @Body() dto: UpdateProfileDto,
+  ) {
     return this.usersService.updateProfile(req.user.sub, dto);
   }
 
@@ -54,11 +72,13 @@ export class UsersController {
   @Roles('captain')
   @ApiOperation({
     summary: 'Enviar documentos para verificação KYC (captain only)',
-    description: 'Capitão envia selfie + habilitação + número RNAq para análise do admin',
+    description:
+      'Capitão envia selfie + habilitação + número RNAq para análise do admin',
   })
   submitKyc(
-    @Request() req: any,
-    @Body() body: {
+    @Request() req: AuthenticatedRequest,
+    @Body()
+    body: {
       selfieUrl: string;
       licensePhotoUrl: string;
       rnaqNumber?: string;
@@ -72,7 +92,7 @@ export class UsersController {
   @UseGuards(RolesGuard)
   @Roles('captain')
   @ApiOperation({ summary: 'Ver status atual do KYC (captain only)' })
-  getKycStatus(@Request() req: any) {
+  getKycStatus(@Request() req: AuthenticatedRequest) {
     return this.usersService.getKycStatus(req.user.sub);
   }
 }

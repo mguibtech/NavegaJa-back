@@ -1,4 +1,14 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, IsArray, Min, Max, IsEnum, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsArray,
+  Min,
+  Max,
+  IsEnum,
+  ValidateNested,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type, Transform } from 'class-transformer';
 import { DimensionsDto } from './dimensions.dto';
@@ -28,7 +38,7 @@ export class CreateShipmentDto {
     type: DimensionsDto,
     required: false,
     description: 'Dimensões da encomenda (objeto)',
-    example: { length: 30, width: 20, height: 15 }
+    example: { length: 30, width: 20, height: 15 },
   })
   @IsOptional()
   @ValidateNested()
@@ -36,24 +46,45 @@ export class CreateShipmentDto {
   dimensions?: DimensionsDto;
 
   // Opção 2: Enviar campos separados (BACKWARD COMPATIBILITY)
-  @ApiProperty({ example: 30, description: 'Comprimento em cm (usar dimensions ao invés)', required: false, deprecated: true })
-  @Transform(({ value }) => value !== undefined && value !== '' ? parseFloat(String(value)) : undefined)
+  @ApiProperty({
+    example: 30,
+    description: 'Comprimento em cm (usar dimensions ao invés)',
+    required: false,
+    deprecated: true,
+  })
+  @Transform(({ value }) =>
+    value !== undefined && value !== '' ? parseFloat(String(value)) : undefined,
+  )
   @IsNumber()
   @IsOptional()
   @Min(1)
   @Max(200)
   length?: number;
 
-  @ApiProperty({ example: 20, description: 'Largura em cm (usar dimensions ao invés)', required: false, deprecated: true })
-  @Transform(({ value }) => value !== undefined && value !== '' ? parseFloat(String(value)) : undefined)
+  @ApiProperty({
+    example: 20,
+    description: 'Largura em cm (usar dimensions ao invés)',
+    required: false,
+    deprecated: true,
+  })
+  @Transform(({ value }) =>
+    value !== undefined && value !== '' ? parseFloat(String(value)) : undefined,
+  )
   @IsNumber()
   @IsOptional()
   @Min(1)
   @Max(200)
   width?: number;
 
-  @ApiProperty({ example: 15, description: 'Altura em cm (usar dimensions ao invés)', required: false, deprecated: true })
-  @Transform(({ value }) => value !== undefined && value !== '' ? parseFloat(String(value)) : undefined)
+  @ApiProperty({
+    example: 15,
+    description: 'Altura em cm (usar dimensions ao invés)',
+    required: false,
+    deprecated: true,
+  })
+  @Transform(({ value }) =>
+    value !== undefined && value !== '' ? parseFloat(String(value)) : undefined,
+  )
   @IsNumber()
   @IsOptional()
   @Min(1)
@@ -63,9 +94,12 @@ export class CreateShipmentDto {
   // Array de URLs de fotos (máximo 5)
   @ApiProperty({
     type: [String],
-    example: ['https://cdn.example.com/photo1.jpg', 'https://cdn.example.com/photo2.jpg'],
+    example: [
+      'https://cdn.example.com/photo1.jpg',
+      'https://cdn.example.com/photo2.jpg',
+    ],
     required: false,
-    description: 'Array de URLs de fotos (máximo 5)'
+    description: 'Array de URLs de fotos (máximo 5)',
   })
   @IsArray()
   @IsOptional()
@@ -91,7 +125,7 @@ export class CreateShipmentDto {
     example: PaymentMethod.PIX,
     default: PaymentMethod.PIX,
     required: false,
-    description: 'Método de pagamento (pix, credit_card, debit_card, cash)'
+    description: 'Método de pagamento (pix, credit_card, debit_card, cash)',
   })
   @IsEnum(PaymentMethod)
   @IsOptional()
@@ -102,15 +136,19 @@ export class CreateShipmentDto {
     example: PaidBy.SENDER,
     default: PaidBy.SENDER,
     required: false,
-    description: 'Quem paga o frete: sender (remetente, padrão) ou recipient (destinatário paga na entrega — frete a cobrar)',
+    description:
+      'Quem paga o frete: sender (remetente, padrão) ou recipient (destinatário paga na entrega — frete a cobrar)',
   })
   @IsEnum(PaidBy)
   @IsOptional()
   paidBy?: PaidBy;
 
-  @ApiProperty({ example: 'PROMO10', required: false, description: 'Código de cupom de desconto' })
+  @ApiProperty({
+    example: 'PROMO10',
+    required: false,
+    description: 'Código de cupom de desconto',
+  })
   @IsString()
   @IsOptional()
   couponCode?: string;
 }
-

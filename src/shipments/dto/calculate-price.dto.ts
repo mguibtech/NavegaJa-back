@@ -1,4 +1,12 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, Min, Max, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  Min,
+  Max,
+  ValidateNested,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { DimensionsDto } from './dimensions.dto';
@@ -21,7 +29,7 @@ export class CalculatePriceDto {
     type: DimensionsDto,
     required: false,
     description: 'Dimensões da encomenda (objeto)',
-    example: { length: 30, width: 20, height: 15 }
+    example: { length: 30, width: 20, height: 15 },
   })
   @IsOptional()
   @ValidateNested()
@@ -29,7 +37,12 @@ export class CalculatePriceDto {
   dimensions?: DimensionsDto;
 
   // Opção 2: Enviar campos separados (BACKWARD COMPATIBILITY)
-  @ApiProperty({ example: 30, description: 'Comprimento em cm (usar dimensions ao invés)', required: false, deprecated: true })
+  @ApiProperty({
+    example: 30,
+    description: 'Comprimento em cm (usar dimensions ao invés)',
+    required: false,
+    deprecated: true,
+  })
   @IsNumber()
   @IsOptional()
   @Min(1)
@@ -37,7 +50,12 @@ export class CalculatePriceDto {
   @Type(() => Number)
   length?: number;
 
-  @ApiProperty({ example: 20, description: 'Largura em cm (usar dimensions ao invés)', required: false, deprecated: true })
+  @ApiProperty({
+    example: 20,
+    description: 'Largura em cm (usar dimensions ao invés)',
+    required: false,
+    deprecated: true,
+  })
   @IsNumber()
   @IsOptional()
   @Min(1)
@@ -45,7 +63,12 @@ export class CalculatePriceDto {
   @Type(() => Number)
   width?: number;
 
-  @ApiProperty({ example: 15, description: 'Altura em cm (usar dimensions ao invés)', required: false, deprecated: true })
+  @ApiProperty({
+    example: 15,
+    description: 'Altura em cm (usar dimensions ao invés)',
+    required: false,
+    deprecated: true,
+  })
   @IsNumber()
   @IsOptional()
   @Min(1)
@@ -53,40 +76,65 @@ export class CalculatePriceDto {
   @Type(() => Number)
   height?: number;
 
-  @ApiProperty({ example: 'PROMO10', required: false, description: 'Código de cupom de desconto' })
+  @ApiProperty({
+    example: 'PROMO10',
+    required: false,
+    description: 'Código de cupom de desconto',
+  })
   @IsString()
   @IsOptional()
   couponCode?: string;
 }
 
 export class CalculatePriceResponseDto {
-  @ApiProperty({ example: 55.00, description: 'Preço base (peso cobrado × preço/kg)' })
+  @ApiProperty({
+    example: 55.0,
+    description: 'Preço base (peso cobrado × preço/kg)',
+  })
   basePrice: number;
 
-  @ApiProperty({ example: 6.0, description: 'Peso volumétrico calculado (length × width × height / 6000)', required: false })
+  @ApiProperty({
+    example: 6.0,
+    description: 'Peso volumétrico calculado (length × width × height / 6000)',
+    required: false,
+  })
   volumetricWeight?: number;
 
   @ApiProperty({ example: 5.5, description: 'Peso real em kg' })
   actualWeight: number;
 
-  @ApiProperty({ example: 6.0, description: 'Peso cobrado (maior entre real e volumétrico)' })
+  @ApiProperty({
+    example: 6.0,
+    description: 'Peso cobrado (maior entre real e volumétrico)',
+  })
   chargedWeight: number;
 
-  @ApiProperty({ example: 60.00, description: 'Valor da cobrança por peso (chargedWeight × pricePerKg)' })
+  @ApiProperty({
+    example: 60.0,
+    description: 'Valor da cobrança por peso (chargedWeight × pricePerKg)',
+  })
   weightCharge: number;
 
-  @ApiProperty({ example: 10.00, description: 'Preço por kg da viagem' })
+  @ApiProperty({ example: 10.0, description: 'Preço por kg da viagem' })
   pricePerKg: number;
 
-  @ApiProperty({ example: 5.00, description: 'Desconto do cupom aplicado', required: false })
+  @ApiProperty({
+    example: 5.0,
+    description: 'Desconto do cupom aplicado',
+    required: false,
+  })
   couponDiscount?: number;
 
-  @ApiProperty({ example: 'PROMO10', description: 'Código do cupom aplicado', required: false })
+  @ApiProperty({
+    example: 'PROMO10',
+    description: 'Código do cupom aplicado',
+    required: false,
+  })
   couponCode?: string;
 
-  @ApiProperty({ example: 5.00, description: 'Total de desconto' })
+  @ApiProperty({ example: 5.0, description: 'Total de desconto' })
   totalDiscount: number;
 
-  @ApiProperty({ example: 55.00, description: 'Preço final após descontos' })
+  @ApiProperty({ example: 55.0, description: 'Preço final após descontos' })
   finalPrice: number;
 }

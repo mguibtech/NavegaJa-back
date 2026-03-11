@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  type S3ClientConfig,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuidv4 } from 'uuid';
 import { PresignedUrlDto } from './dto/upload-photos.dto';
@@ -13,23 +17,31 @@ export class StorageService {
   private useS3: boolean;
 
   constructor(private configService: ConfigService) {
-    this.bucket = this.configService.get('AWS_S3_BUCKET') || 'navegaja-shipments';
-    this.region = this.configService.get('AWS_REGION') || 'us-east-1';
+    this.bucket =
+      this.configService.get<string>('AWS_S3_BUCKET') || 'navegaja-shipments';
+    this.region = this.configService.get<string>('AWS_REGION') || 'us-east-1';
 
-    const awsAccessKey = this.configService.get('AWS_ACCESS_KEY_ID');
-    const awsSecretKey = this.configService.get('AWS_SECRET_ACCESS_KEY');
+    const awsAccessKey = this.configService.get<string>('AWS_ACCESS_KEY_ID');
+    const awsSecretKey = this.configService.get<string>(
+      'AWS_SECRET_ACCESS_KEY',
+    );
 
     // Só inicializa S3 se tiver credenciais configuradas
     this.useS3 = !!(awsAccessKey && awsSecretKey);
 
     if (this.useS3) {
-      this.s3Client = new S3Client({
+      const config: S3ClientConfig = {
         region: this.region,
-        credentials: {
+      };
+
+      if (awsAccessKey && awsSecretKey) {
+        config.credentials = {
           accessKeyId: awsAccessKey,
           secretAccessKey: awsSecretKey,
-        },
-      });
+        };
+      }
+
+      this.s3Client = new S3Client(config);
     }
   }
 
@@ -51,13 +63,16 @@ export class StorageService {
           ContentType: 'image/jpeg',
         });
 
-        const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 300 }); // 5 min
+        const uploadUrl = await getSignedUrl(this.s3Client, command, {
+          expiresIn: 300,
+        }); // 5 min
         const publicUrl = `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
 
         urls.push({ uploadUrl, publicUrl, key });
       } else {
         // Fallback: URLs locais (para desenvolvimento sem S3)
-        const baseUrl = this.configService.get('BASE_URL') || 'http://localhost:3000';
+        const baseUrl =
+          this.configService.get<string>('BASE_URL') || 'http://localhost:3000';
         const uploadUrl = `${baseUrl}/shipments/upload/${key}`;
         const publicUrl = `${baseUrl}/uploads/${key}`;
 

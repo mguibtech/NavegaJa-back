@@ -34,8 +34,8 @@ import { BoatStaffModule } from './boat-staff/boat-staff.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([
-      { name: 'default', ttl: 60000, limit: 300 },  // 300 req/min globalmente
-      { name: 'strict',  ttl: 60000, limit: 10  },  // 10 req/min em auth sensível
+      { name: 'default', ttl: 60000, limit: 300 }, // 300 req/min globalmente
+      { name: 'strict', ttl: 60000, limit: 10 }, // 10 req/min em auth sensível
     ]),
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
@@ -81,8 +81,6 @@ import { BoatStaffModule } from './boat-staff/boat-staff.module';
     BoatStaffModule,
     SeedModule,
   ],
-  providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
-  ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

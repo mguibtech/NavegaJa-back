@@ -1,59 +1,132 @@
-import { Controller, Get, Patch, Delete, Post, Param, Body, Query, UseGuards, ParseIntPipe, DefaultValuePipe } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiResponse, ApiBody } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Patch,
+  Delete,
+  Post,
+  Param,
+  Body,
+  Query,
+  UseGuards,
+  ParseIntPipe,
+  DefaultValuePipe,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiQuery,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
-import { AdminService } from './admin.service';
+import { AdminService, type AdminActivity } from './admin.service';
 import { LocationsService } from '../locations/locations.service';
 import { CommunityLocationStatus } from '../locations/community-location.entity';
 import { UserRole } from '../users/user.entity';
-import { NotificationsService, BroadcastFilters } from '../notifications/notifications.service';
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsEnum, IsEmail, MinLength, Length } from 'class-validator';
+import { TripStatus } from '../trips/trip.entity';
+import { BookingStatus } from '../bookings/booking.entity';
+import { ShipmentStatus } from '../shipments/shipment.entity';
+import {
+  NotificationsService,
+  BroadcastFilters,
+} from '../notifications/notifications.service';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsArray,
+  IsEnum,
+  IsEmail,
+  MinLength,
+  Length,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 class CreateCaptainDto {
-  @ApiProperty({ example: 'Carlos Navegador', description: 'Nome completo do capitão' })
-  @IsString() @IsNotEmpty()
+  @ApiProperty({
+    example: 'Carlos Navegador',
+    description: 'Nome completo do capitão',
+  })
+  @IsString()
+  @IsNotEmpty()
   name: string;
 
-  @ApiProperty({ example: '92992001099', description: 'Número de telefone (login mobile)' })
-  @IsString() @IsNotEmpty()
+  @ApiProperty({
+    example: '92992001099',
+    description: 'Número de telefone (login mobile)',
+  })
+  @IsString()
+  @IsNotEmpty()
   phone: string;
 
   @ApiProperty({ example: 'carlos@email.com', required: false })
-  @IsEmail() @IsOptional()
+  @IsEmail()
+  @IsOptional()
   email?: string;
 
-  @ApiProperty({ example: '123456', description: 'Senha provisória (mínimo 6 caracteres)' })
-  @IsString() @MinLength(6)
+  @ApiProperty({
+    example: '123456',
+    description: 'Senha provisória (mínimo 6 caracteres)',
+  })
+  @IsString()
+  @MinLength(6)
   password: string;
 
   @ApiProperty({ example: 'Manaus' })
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   city: string;
 
   @ApiPropertyOptional({ example: 'AM' })
-  @IsString() @Length(2, 2) @IsOptional()
+  @IsString()
+  @Length(2, 2)
+  @IsOptional()
   state?: string;
 }
 
 class BroadcastNotificationDto {
-  @ApiProperty({ example: '🎉 Festa de Parintins', description: 'Título da notificação' })
-  @IsString() @IsNotEmpty()
+  @ApiProperty({
+    example: '🎉 Festa de Parintins',
+    description: 'Título da notificação',
+  })
+  @IsString()
+  @IsNotEmpty()
   title: string;
 
-  @ApiProperty({ example: 'Cupom especial 20% OFF nas viagens para Parintins!', description: 'Corpo da notificação' })
-  @IsString() @IsNotEmpty()
+  @ApiProperty({
+    example: 'Cupom especial 20% OFF nas viagens para Parintins!',
+    description: 'Corpo da notificação',
+  })
+  @IsString()
+  @IsNotEmpty()
   body: string;
 
-  @ApiPropertyOptional({ type: [String], example: ['Parintins', 'Manaus'], description: 'Filtrar por cidades (vazio = todas)' })
-  @IsOptional() @IsArray() @IsString({ each: true })
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['Parintins', 'Manaus'],
+    description: 'Filtrar por cidades (vazio = todas)',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   cities?: string[];
 
-  @ApiPropertyOptional({ enum: UserRole, isArray: true, example: [UserRole.PASSENGER], description: 'Filtrar por roles (vazio = todos)' })
-  @IsOptional() @IsArray() @IsEnum(UserRole, { each: true })
+  @ApiPropertyOptional({
+    enum: UserRole,
+    isArray: true,
+    example: [UserRole.PASSENGER],
+    description: 'Filtrar por roles (vazio = todos)',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(UserRole, { each: true })
   roles?: UserRole[];
 
-  @ApiPropertyOptional({ description: 'Dados extras para o app (deep link, etc)', example: { type: 'coupon', couponCode: 'PARINTINS20' } })
+  @ApiPropertyOptional({
+    description: 'Dados extras para o app (deep link, etc)',
+    example: { type: 'coupon', couponCode: 'PARINTINS20' },
+  })
   @IsOptional()
   data?: Record<string, string>;
 }
@@ -79,8 +152,18 @@ export class AdminController {
   })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
-  @ApiQuery({ name: 'role', required: false, enum: UserRole, description: 'Filtrar por role' })
-  @ApiQuery({ name: 'search', required: false, type: String, description: 'Buscar por nome, email ou telefone' })
+  @ApiQuery({
+    name: 'role',
+    required: false,
+    enum: UserRole,
+    description: 'Filtrar por role',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Buscar por nome, email ou telefone',
+  })
   @ApiResponse({ status: 200, description: 'Lista de usuários' })
   async getAllUsers(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
@@ -94,7 +177,8 @@ export class AdminController {
   @Post('captains')
   @ApiOperation({
     summary: 'Criar conta de capitão (Admin)',
-    description: 'Apenas admins podem criar contas de capitão. O capitão receberá login por telefone e senha provisória.',
+    description:
+      'Apenas admins podem criar contas de capitão. O capitão receberá login por telefone e senha provisória.',
   })
   async createCaptain(@Body() dto: CreateCaptainDto) {
     return this.adminService.createCaptain(dto);
@@ -133,7 +217,8 @@ export class AdminController {
   @Patch('users/:id/role')
   @ApiOperation({
     summary: 'Alterar role do usuário (Admin)',
-    description: 'Permite promover/rebaixar usuário (passenger ↔ captain ↔ admin)',
+    description:
+      'Permite promover/rebaixar usuário (passenger ↔ captain ↔ admin)',
   })
   updateUserRole(@Param('id') id: string, @Body('role') role: UserRole) {
     return this.adminService.updateUserRole(id, role);
@@ -144,10 +229,7 @@ export class AdminController {
     summary: 'Ativar/desativar usuário (Admin)',
     description: 'Permite bloquear acesso de um usuário',
   })
-  updateUserStatus(
-    @Param('id') id: string,
-    @Body('active') active: boolean,
-  ) {
+  updateUserStatus(@Param('id') id: string, @Body('active') active: boolean) {
     return this.adminService.updateUserStatus(id, active);
   }
 
@@ -169,8 +251,18 @@ export class AdminController {
   })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
-  @ApiQuery({ name: 'status', required: false, type: String, description: 'Filtrar por status' })
-  @ApiQuery({ name: 'captainId', required: false, type: String, description: 'Filtrar por capitão' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    type: String,
+    description: 'Filtrar por status',
+  })
+  @ApiQuery({
+    name: 'captainId',
+    required: false,
+    type: String,
+    description: 'Filtrar por capitão',
+  })
   getAllTrips(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
@@ -211,7 +303,10 @@ export class AdminController {
     summary: 'Alterar status de qualquer viagem (Admin)',
     description: 'Admin pode forçar mudança de status',
   })
-  updateTripStatus(@Param('id') id: string, @Body('status') status: string) {
+  updateTripStatus(
+    @Param('id') id: string,
+    @Body('status') status: TripStatus,
+  ) {
     return this.adminService.updateTripStatus(id, status);
   }
 
@@ -230,8 +325,18 @@ export class AdminController {
   })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
-  @ApiQuery({ name: 'status', required: false, type: String, description: 'Filtrar por status' })
-  @ApiQuery({ name: 'trackingCode', required: false, type: String, description: 'Buscar por código' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    type: String,
+    description: 'Filtrar por status',
+  })
+  @ApiQuery({
+    name: 'trackingCode',
+    required: false,
+    type: String,
+    description: 'Buscar por código',
+  })
   getAllShipments(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
@@ -273,7 +378,10 @@ export class AdminController {
     summary: 'Alterar status de encomenda manualmente (Admin)',
     description: 'Admin pode forçar mudança de status em casos especiais',
   })
-  updateShipmentStatus(@Param('id') id: string, @Body('status') status: string) {
+  updateShipmentStatus(
+    @Param('id') id: string,
+    @Body('status') status: ShipmentStatus,
+  ) {
     return this.adminService.updateShipmentStatus(id, status);
   }
 
@@ -328,19 +436,25 @@ export class AdminController {
   @Get('dashboard/revenue')
   @ApiOperation({
     summary: 'Receita diária por período (Admin)',
-    description: 'Retorna receita de bookings + encomendas agrupada por dia para o período seleccionado',
+    description:
+      'Retorna receita de bookings + encomendas agrupada por dia para o período seleccionado',
   })
-  @ApiQuery({ name: 'period', required: false, enum: ['7d', '30d', '90d'], example: '30d' })
+  @ApiQuery({
+    name: 'period',
+    required: false,
+    enum: ['7d', '30d', '90d'],
+    example: '30d',
+  })
   @ApiResponse({
     status: 200,
     schema: {
       example: {
         period: '30d',
         labels: ['01/03', '02/03'],
-        bookings: [1200.00, 850.50],
-        shipments: [340.00, 120.00],
-        total: [1540.00, 970.50],
-        totals: { bookings: 2050.50, shipments: 460.00, combined: 2510.50 },
+        bookings: [1200.0, 850.5],
+        shipments: [340.0, 120.0],
+        total: [1540.0, 970.5],
+        totals: { bookings: 2050.5, shipments: 460.0, combined: 2510.5 },
       },
     },
   })
@@ -353,10 +467,13 @@ export class AdminController {
   @Get('dashboard/chart')
   @ApiOperation({
     summary: 'Dados do gráfico por dia (Admin)',
-    description: 'Retorna contagem de reservas, usuários e viagens agrupados por dia',
+    description:
+      'Retorna contagem de reservas, usuários e viagens agrupados por dia',
   })
   @ApiQuery({ name: 'days', required: false, type: Number, example: 7 })
-  getDashboardChart(@Query('days', new DefaultValuePipe(7), ParseIntPipe) days: number) {
+  getDashboardChart(
+    @Query('days', new DefaultValuePipe(7), ParseIntPipe) days: number,
+  ) {
     return this.adminService.getDashboardChart(days);
   }
 
@@ -366,7 +483,9 @@ export class AdminController {
     description: 'Últimas 50 ações no sistema (criações, atualizações, etc)',
   })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 50 })
-  getRecentActivity(@Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number) {
+  getRecentActivity(
+    @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
+  ): Promise<AdminActivity[]> {
     return this.adminService.getRecentActivity(limit);
   }
 
@@ -381,9 +500,29 @@ export class AdminController {
     status: 200,
     schema: {
       example: {
-        overview: { totalNavegaCoinsDistributed: 15420, totalKmTraveled: 82340, totalEligibleUsers: 145, newUsersToday: 3, newUsersThisWeek: 18, newUsersThisMonth: 64 },
-        levelDistribution: { Marinheiro: 95, Navegador: 38, Capitão: 10, Almirante: 2 },
-        leaderboard: [{ position: 1, id: 'uuid', name: 'João', totalPoints: 2400, level: 'Almirante' }],
+        overview: {
+          totalNavegaCoinsDistributed: 15420,
+          totalKmTraveled: 82340,
+          totalEligibleUsers: 145,
+          newUsersToday: 3,
+          newUsersThisWeek: 18,
+          newUsersThisMonth: 64,
+        },
+        levelDistribution: {
+          Marinheiro: 95,
+          Navegador: 38,
+          Capitão: 10,
+          Almirante: 2,
+        },
+        leaderboard: [
+          {
+            position: 1,
+            id: 'uuid',
+            name: 'João',
+            totalPoints: 2400,
+            level: 'Almirante',
+          },
+        ],
       },
     },
   })
@@ -415,9 +554,25 @@ export class AdminController {
   })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
-  @ApiQuery({ name: 'status', required: false, type: String, description: 'Filtrar por status (pending, confirmed, checked_in, completed, cancelled)' })
-  @ApiQuery({ name: 'paymentStatus', required: false, type: String, description: 'Filtrar por status de pagamento (pending, paid, refunded)' })
-  @ApiQuery({ name: 'search', required: false, type: String, description: 'Buscar por nome do passageiro, email ou ID' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    type: String,
+    description:
+      'Filtrar por status (pending, confirmed, checked_in, completed, cancelled)',
+  })
+  @ApiQuery({
+    name: 'paymentStatus',
+    required: false,
+    type: String,
+    description: 'Filtrar por status de pagamento (pending, paid, refunded)',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Buscar por nome do passageiro, email ou ID',
+  })
   @ApiResponse({ status: 200, description: 'Lista de reservas' })
   async getAllBookings(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
@@ -426,7 +581,13 @@ export class AdminController {
     @Query('paymentStatus') paymentStatus?: string,
     @Query('search') search?: string,
   ) {
-    return this.adminService.getAllBookings(page, limit, status, paymentStatus, search);
+    return this.adminService.getAllBookings(
+      page,
+      limit,
+      status,
+      paymentStatus,
+      search,
+    );
   }
 
   @Get('bookings/stats')
@@ -449,9 +610,9 @@ export class AdminController {
           paid: 448,
         },
         revenue: {
-          total: 54300.00,
-          confirmed: 51200.00,
-          pending: 3100.00,
+          total: 54300.0,
+          confirmed: 51200.0,
+          pending: 3100.0,
         },
         newToday: 12,
         newThisWeek: 67,
@@ -465,7 +626,10 @@ export class AdminController {
 
   @Get('bookings/:id')
   @ApiOperation({ summary: 'Detalhes completos de uma reserva (Admin)' })
-  @ApiResponse({ status: 200, description: 'Detalhes da reserva incluindo passageiro, viagem e capitão' })
+  @ApiResponse({
+    status: 200,
+    description: 'Detalhes da reserva incluindo passageiro, viagem e capitão',
+  })
   getBookingDetails(@Param('id') id: string) {
     return this.adminService.getBookingDetails(id);
   }
@@ -477,7 +641,7 @@ export class AdminController {
   })
   updateBookingStatus(
     @Param('id') id: string,
-    @Body('status') status: string,
+    @Body('status') status: BookingStatus,
   ) {
     return this.adminService.updateBookingStatus(id, status);
   }
@@ -496,12 +660,24 @@ export class AdminController {
   @Get('reviews')
   @ApiOperation({
     summary: 'Listar todas as avaliações (Admin)',
-    description: 'Lista todas as avaliações do sistema com paginação. Tipo: passenger_to_captain | captain_to_passenger',
+    description:
+      'Lista todas as avaliações do sistema com paginação. Tipo: passenger_to_captain | captain_to_passenger',
   })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
-  @ApiQuery({ name: 'type', required: false, type: String, description: 'Filtrar por tipo (passenger_to_captain | captain_to_passenger)' })
-  @ApiQuery({ name: 'search', required: false, type: String, description: 'Buscar por nome do revisor, capitão ou passageiro' })
+  @ApiQuery({
+    name: 'type',
+    required: false,
+    type: String,
+    description:
+      'Filtrar por tipo (passenger_to_captain | captain_to_passenger)',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Buscar por nome do revisor, capitão ou passageiro',
+  })
   @ApiResponse({ status: 200, description: 'Lista de avaliações paginada' })
   getAllReviews(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
@@ -515,7 +691,8 @@ export class AdminController {
   @Get('reviews/stats')
   @ApiOperation({
     summary: 'Estatísticas gerais de avaliações (Admin)',
-    description: 'Total de reviews, médias por tipo (capitão, barco, passageiro) e distribuição de estrelas',
+    description:
+      'Total de reviews, médias por tipo (capitão, barco, passageiro) e distribuição de estrelas',
   })
   @ApiResponse({
     status: 200,
@@ -540,7 +717,8 @@ export class AdminController {
   @Get('reviews/:id')
   @ApiOperation({
     summary: 'Detalhes de uma avaliação (Admin)',
-    description: 'Retorna todos os campos da avaliação com relações (revisor, capitão, barco, passageiro, viagem)',
+    description:
+      'Retorna todos os campos da avaliação com relações (revisor, capitão, barco, passageiro, viagem)',
   })
   @ApiResponse({ status: 200, description: 'Detalhes completos da avaliação' })
   getReviewDetails(@Param('id') id: string) {
@@ -550,9 +728,13 @@ export class AdminController {
   @Delete('reviews/:id')
   @ApiOperation({
     summary: 'Remover avaliação (Admin)',
-    description: 'Remove uma avaliação inapropriada e recalcula automaticamente os ratings afectados (capitão, barco e/ou passageiro)',
+    description:
+      'Remove uma avaliação inapropriada e recalcula automaticamente os ratings afectados (capitão, barco e/ou passageiro)',
   })
-  @ApiResponse({ status: 200, description: 'Avaliação removida e ratings recalculados' })
+  @ApiResponse({
+    status: 200,
+    description: 'Avaliação removida e ratings recalculados',
+  })
   deleteReview(@Param('id') id: string) {
     return this.adminService.deleteReview(id);
   }
@@ -562,16 +744,39 @@ export class AdminController {
   @Get('notifications')
   @ApiOperation({
     summary: 'Notificações pendentes para o admin (badge do header)',
-    description: 'Retorna SOS activos, verificações pendentes e viagens novas nas últimas 24h. Usar para popular o badge de notificações no painel.',
+    description:
+      'Retorna SOS activos, verificações pendentes e viagens novas nas últimas 24h. Usar para popular o badge de notificações no painel.',
   })
   @ApiResponse({
     status: 200,
     schema: {
       example: {
         totalUnread: 5,
-        sos: { count: 1, items: [{ id: 'uuid', type: 'emergency', userName: 'João', createdAt: '2026-02-23T10:00:00Z', link: '/admin/safety/sos/uuid' }] },
+        sos: {
+          count: 1,
+          items: [
+            {
+              id: 'uuid',
+              type: 'emergency',
+              userName: 'João',
+              createdAt: '2026-02-23T10:00:00Z',
+              link: '/admin/safety/sos/uuid',
+            },
+          ],
+        },
         pendingVerifications: { count: 3, boats: [], captains: [] },
-        newTrips: { count: 1, items: [{ id: 'uuid', origin: 'Manaus', destination: 'Iranduba', captainName: 'Carlos', createdAt: '2026-02-23T09:00:00Z' }] },
+        newTrips: {
+          count: 1,
+          items: [
+            {
+              id: 'uuid',
+              origin: 'Manaus',
+              destination: 'Iranduba',
+              captainName: 'Carlos',
+              createdAt: '2026-02-23T09:00:00Z',
+            },
+          ],
+        },
       },
     },
   })
@@ -582,12 +787,18 @@ export class AdminController {
   @Post('notifications/broadcast')
   @ApiOperation({
     summary: 'Enviar notificação broadcast (Admin)',
-    description: 'Envia push notification para todos os usuários ou para um segmento específico (cidade, role). Requer Firebase configurado.',
+    description:
+      'Envia push notification para todos os usuários ou para um segmento específico (cidade, role). Requer Firebase configurado.',
   })
   @ApiResponse({
     status: 201,
     description: 'Broadcast enviado',
-    schema: { example: { sent: 142, message: 'Broadcast enviado para 142 dispositivos' } },
+    schema: {
+      example: {
+        sent: 142,
+        message: 'Broadcast enviado para 142 dispositivos',
+      },
+    },
   })
   async broadcastNotification(@Body() dto: BroadcastNotificationDto) {
     const filters: BroadcastFilters = {};
@@ -610,7 +821,8 @@ export class AdminController {
   @Get('boats/pending')
   @ApiOperation({
     summary: 'Verificações pendentes (Admin)',
-    description: 'Lista barcos e capitães com documentação pendente de verificação',
+    description:
+      'Lista barcos e capitães com documentação pendente de verificação',
   })
   @ApiResponse({ status: 200, description: 'Lista de verificações pendentes' })
   getPendingVerifications() {
@@ -620,12 +832,23 @@ export class AdminController {
   @Get('boats')
   @ApiOperation({
     summary: 'Listar todas as embarcações (Admin)',
-    description: 'Lista todas as embarcações com filtro por status de verificação',
+    description:
+      'Lista todas as embarcações com filtro por status de verificação',
   })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
-  @ApiQuery({ name: 'verified', required: false, type: String, description: 'true | false | (omitir = todos)' })
-  @ApiQuery({ name: 'search', required: false, type: String, description: 'Buscar por nome, registro ou dono' })
+  @ApiQuery({
+    name: 'verified',
+    required: false,
+    type: String,
+    description: 'true | false | (omitir = todos)',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Buscar por nome, registro ou dono',
+  })
   getAllBoats(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
@@ -638,12 +861,19 @@ export class AdminController {
   @Patch('boats/:id/verify')
   @ApiOperation({
     summary: 'Aprovar ou rejeitar embarcação (Admin)',
-    description: 'Aprova ou rejeita a documentação de uma embarcação. Se rejeitado, indicar motivo.',
+    description:
+      'Aprova ou rejeita a documentação de uma embarcação. Se rejeitado, indicar motivo.',
   })
   @ApiResponse({
     status: 200,
     description: 'Decisão registada',
-    schema: { example: { message: 'Embarcação aprovada com sucesso', boatId: 'uuid', isVerified: true } },
+    schema: {
+      example: {
+        message: 'Embarcação aprovada com sucesso',
+        boatId: 'uuid',
+        isVerified: true,
+      },
+    },
   })
   verifyBoat(
     @Param('id') id: string,
@@ -658,12 +888,17 @@ export class AdminController {
   @Patch('users/:id/verify')
   @ApiOperation({
     summary: 'Aprovar ou rejeitar documentação de capitão (Admin)',
-    description: 'Aprovação: { "verified": true } — Rejeição: { "verified": false, "rejectionReason": "Motivo..." }',
+    description:
+      'Aprovação: { "verified": true } — Rejeição: { "verified": false, "rejectionReason": "Motivo..." }',
   })
   @ApiResponse({
     status: 200,
     schema: {
-      example: { message: 'Capitão aprovado com sucesso', userId: 'uuid', isVerified: true },
+      example: {
+        message: 'Capitão aprovado com sucesso',
+        userId: 'uuid',
+        isVerified: true,
+      },
     },
   })
   verifyCapt(
@@ -679,11 +914,18 @@ export class AdminController {
   @Get('locations')
   @ApiOperation({
     summary: 'Listar sugestões de localidades (Admin)',
-    description: 'status: pending | confirmed | rejected. Sem parâmetro → todas.',
+    description:
+      'status: pending | confirmed | rejected. Sem parâmetro → todas.',
   })
-  @ApiQuery({ name: 'status', required: false, enum: ['pending', 'confirmed', 'rejected'] })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['pending', 'confirmed', 'rejected'],
+  })
   listLocations(@Query('status') status?: string) {
-    return this.locationsService.listForAdmin(status as CommunityLocationStatus | undefined);
+    return this.locationsService.listForAdmin(
+      status as CommunityLocationStatus | undefined,
+    );
   }
 
   @Patch('locations/:id/approve')
@@ -694,11 +936,7 @@ export class AdminController {
 
   @Patch('locations/:id/reject')
   @ApiOperation({ summary: 'Rejeitar sugestão de localidade (Admin)' })
-  rejectLocation(
-    @Param('id') id: string,
-    @Body('reason') reason?: string,
-  ) {
+  rejectLocation(@Param('id') id: string, @Body('reason') reason?: string) {
     return this.locationsService.rejectLocation(id, reason);
   }
-
 }

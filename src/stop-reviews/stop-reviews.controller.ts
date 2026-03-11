@@ -1,5 +1,18 @@
-import { Controller, Get, Post, Body, Query, UseGuards, Request } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Query,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { StopReviewsService } from './stop-reviews.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Public } from '../common/decorators/public.decorator';
@@ -14,7 +27,7 @@ export class StopReviewsController {
   @Post()
   @ApiOperation({ summary: 'Avaliar porto / ponto de parada' })
   create(
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
     @Body()
     body: {
       locationName: string;
@@ -40,7 +53,11 @@ export class StopReviewsController {
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
-    return this.stopReviewsService.findByLocation(location, page || 1, limit || 20);
+    return this.stopReviewsService.findByLocation(
+      location,
+      page || 1,
+      limit || 20,
+    );
   }
 
   @Get('top')
@@ -56,10 +73,14 @@ export class StopReviewsController {
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   getMyReviews(
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
-    return this.stopReviewsService.findMyReviews(req.user.sub, page || 1, limit || 20);
+    return this.stopReviewsService.findMyReviews(
+      req.user.sub,
+      page || 1,
+      limit || 20,
+    );
   }
 }

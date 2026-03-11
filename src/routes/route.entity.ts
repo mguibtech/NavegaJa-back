@@ -1,5 +1,9 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToMany,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  OneToMany,
 } from 'typeorm';
 import { Trip } from '../trips/trip.entity';
 
@@ -26,7 +30,13 @@ export class Route {
   @Column({ name: 'destination_lng', type: 'decimal', precision: 10, scale: 7 })
   destinationLng: number;
 
-  @Column({ name: 'distance_km', type: 'decimal', precision: 6, scale: 1, nullable: true })
+  @Column({
+    name: 'distance_km',
+    type: 'decimal',
+    precision: 6,
+    scale: 1,
+    nullable: true,
+  })
   distanceKm: number;
 
   @Column({ name: 'duration_min', nullable: true })

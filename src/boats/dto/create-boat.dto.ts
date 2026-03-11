@@ -1,4 +1,10 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, IsArray } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsArray,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateBoatDto {
@@ -7,7 +13,10 @@ export class CreateBoatDto {
   @IsNotEmpty()
   name: string;
 
-  @ApiProperty({ example: 'lancha', description: 'lancha | voadeira | balsa | recreio' })
+  @ApiProperty({
+    example: 'lancha',
+    description: 'lancha | voadeira | balsa | recreio',
+  })
   @IsString()
   @IsNotEmpty()
   type: string;
@@ -31,12 +40,18 @@ export class CreateBoatDto {
   @IsOptional()
   photoUrl?: string;
 
-  @ApiProperty({ required: false, example: ['wifi', 'banheiro', 'colete', 'som', 'cobertura'] })
+  @ApiProperty({
+    required: false,
+    example: ['wifi', 'banheiro', 'colete', 'som', 'cobertura'],
+  })
   @IsArray()
   @IsOptional()
   amenities?: string[];
 
-  @ApiProperty({ required: false, example: ['https://...foto1.jpg', 'https://...foto2.jpg'] })
+  @ApiProperty({
+    required: false,
+    example: ['https://...foto1.jpg', 'https://...foto2.jpg'],
+  })
   @IsArray()
   @IsOptional()
   photos?: string[];

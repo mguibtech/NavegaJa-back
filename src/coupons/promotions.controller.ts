@@ -1,9 +1,23 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiOkResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiOkResponse,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
 import { PromotionsService } from './promotions.service';
-import { ActivePromotionsResponseDto, PromotionBannerDto } from './dto/promotions.dto';
+import { ActivePromotionsResponseDto } from './dto/promotions.dto';
 import { CreatePromotionDto, UpdatePromotionDto } from './dto/promotion.dto';
 
 @ApiTags('Promotions')
@@ -12,14 +26,17 @@ export class PromotionsController {
   constructor(private promotionsService: PromotionsService) {}
 
   @Get('active')
-  @ApiOperation({ summary: 'Banners de promoções ativas com viagens e descontos' })
+  @ApiOperation({
+    summary: 'Banners de promoções ativas com viagens e descontos',
+  })
   @ApiOkResponse({ type: ActivePromotionsResponseDto })
   async getActivePromotions(): Promise<ActivePromotionsResponseDto> {
     const promotions = await this.promotionsService.findActive();
 
     const promotionsWithTrips = await Promise.all(
       promotions.map(async (p) => {
-        const sampleTrips = await this.promotionsService.getSampleTripsForPromotion(p);
+        const sampleTrips =
+          await this.promotionsService.getSampleTripsForPromotion(p);
 
         return {
           id: p.id,
@@ -34,18 +51,24 @@ export class PromotionsController {
           priority: p.priority,
           startDate: p.startDate || undefined,
           endDate: p.endDate || undefined,
-          coupon: p.coupon ? {
-            code: p.coupon.code,
-            type: p.coupon.type,
-            value: Number(p.coupon.value),
-            minPurchase: p.coupon.minPurchase ? Number(p.coupon.minPurchase) : undefined,
-            maxDiscount: p.coupon.maxDiscount ? Number(p.coupon.maxDiscount) : undefined,
-          } : undefined,
+          coupon: p.coupon
+            ? {
+                code: p.coupon.code,
+                type: p.coupon.type,
+                value: Number(p.coupon.value),
+                minPurchase: p.coupon.minPurchase
+                  ? Number(p.coupon.minPurchase)
+                  : undefined,
+                maxDiscount: p.coupon.maxDiscount
+                  ? Number(p.coupon.maxDiscount)
+                  : undefined,
+              }
+            : undefined,
           fromCity: p.fromCity || undefined,
           toCity: p.toCity || undefined,
           sampleTrips,
         };
-      })
+      }),
     );
 
     return {

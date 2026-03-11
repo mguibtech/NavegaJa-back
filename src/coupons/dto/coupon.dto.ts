@@ -1,5 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsEnum, IsNumber, IsOptional, IsBoolean, IsArray, IsDateString, Min, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsBoolean,
+  IsArray,
+  IsDateString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { CouponType, CouponApplicability } from '../coupon.entity';
 import { ChildPassengerDto } from '../../bookings/dto/passenger.dto';
@@ -23,19 +33,31 @@ export class CreateCouponDto {
   @Min(0)
   value: number;
 
-  @ApiProperty({ example: 50, required: false, description: 'Valor mínimo de compra' })
+  @ApiProperty({
+    example: 50,
+    required: false,
+    description: 'Valor mínimo de compra',
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)
   minPurchase?: number;
 
-  @ApiProperty({ example: 100, required: false, description: 'Desconto máximo em reais' })
+  @ApiProperty({
+    example: 100,
+    required: false,
+    description: 'Desconto máximo em reais',
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)
   maxDiscount?: number;
 
-  @ApiProperty({ example: 100, required: false, description: 'Limite de uso total' })
+  @ApiProperty({
+    example: 100,
+    required: false,
+    description: 'Limite de uso total',
+  })
   @IsOptional()
   @IsNumber()
   @Min(1)
@@ -61,23 +83,39 @@ export class CreateCouponDto {
   @IsBoolean()
   firstPurchaseOnly?: boolean;
 
-  @ApiProperty({ example: 'Manaus', required: false, description: 'Cidade de origem (null = todas)' })
+  @ApiProperty({
+    example: 'Manaus',
+    required: false,
+    description: 'Cidade de origem (null = todas)',
+  })
   @IsOptional()
   @IsString()
   fromCity?: string;
 
-  @ApiProperty({ example: 'Beruri', required: false, description: 'Cidade de destino (null = todas)' })
+  @ApiProperty({
+    example: 'Beruri',
+    required: false,
+    description: 'Cidade de destino (null = todas)',
+  })
   @IsOptional()
   @IsString()
   toCity?: string;
 
-  @ApiProperty({ example: 1.5, required: false, description: 'Peso mínimo em kg (para encomendas)' })
+  @ApiProperty({
+    example: 1.5,
+    required: false,
+    description: 'Peso mínimo em kg (para encomendas)',
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)
   minWeight?: number;
 
-  @ApiProperty({ example: 50, required: false, description: 'Peso máximo em kg (para encomendas)' })
+  @ApiProperty({
+    example: 50,
+    required: false,
+    description: 'Peso máximo em kg (para encomendas)',
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)
@@ -87,7 +125,7 @@ export class CreateCouponDto {
     enum: CouponApplicability,
     example: CouponApplicability.BOTH,
     required: false,
-    description: 'Define se vale para viagens, encomendas ou ambos'
+    description: 'Define se vale para viagens, encomendas ou ambos',
   })
   @IsOptional()
   @IsEnum(CouponApplicability)
@@ -127,7 +165,8 @@ export class CalculatePriceDto {
   @ApiProperty({
     example: 1000,
     required: false,
-    description: 'Km a resgatar (múltiplo de 500). Cada 500 km = R$25 de desconto.',
+    description:
+      'Km a resgatar (múltiplo de 500). Cada 500 km = R$25 de desconto.',
   })
   @IsOptional()
   @IsNumber()
@@ -136,7 +175,8 @@ export class CalculatePriceDto {
 
   @ApiProperty({
     required: false,
-    description: 'Crianças incluídas (nome opcional + idade). Crianças ≤ 9 anos não pagam.',
+    description:
+      'Crianças incluídas (nome opcional + idade). Crianças ≤ 9 anos não pagam.',
     type: [ChildPassengerDto],
   })
   @IsOptional()

@@ -1,31 +1,79 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, Between, IsNull } from 'typeorm';
+import {
+  Repository,
+  MoreThan,
+  Between,
+  IsNull,
+  FindOptionsWhere,
+} from 'typeorm';
 import { NotificationsService } from '../notifications/notifications.service';
 import { GamificationService } from '../gamification/gamification.service';
+import { LoyaltyLevel } from '../gamification/point-transaction.entity';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole, KycStatus } from '../users/user.entity';
 import { Trip, TripStatus } from '../trips/trip.entity';
+import { TripsService } from '../trips/trips.service';
 import { Shipment, ShipmentStatus } from '../shipments/shipment.entity';
 import { SosAlert, SosAlertStatus } from '../safety/sos-alert.entity';
 import { SafetyChecklist } from '../safety/safety-checklist.entity';
-import { Booking, BookingStatus, PaymentStatus } from '../bookings/booking.entity';
-import { Coupon } from '../coupons/coupon.entity';
+import {
+  Booking,
+  BookingStatus,
+  PaymentStatus,
+} from '../bookings/booking.entity';
+import { Coupon, CouponType } from '../coupons/coupon.entity';
 import { Review, ReviewType } from '../reviews/review.entity';
 import { Boat } from '../boats/boat.entity';
+
+export interface AdminActivity {
+  type: string;
+  category: string;
+  description: string;
+  user: string;
+  details: Record<string, unknown>;
+  icon: string;
+  color: string;
+  link: string;
+  timestamp: Date | string;
+}
 
 @Injectable()
 export class AdminService {
   // Campos seguros do capitão — nunca expor passwordHash/fcmToken/resetCode
   private static readonly CAPTAIN_SAFE_FIELDS = [
-    'captain.id', 'captain.name', 'captain.phone', 'captain.role', 'captain.email',
-    'captain.avatarUrl', 'captain.rating', 'captain.rating', 'captain.isActive',
-    'captain.city', 'captain.state', 'captain.isVerified', 'captain.createdAt',
+    'captain.id',
+    'captain.name',
+    'captain.phone',
+    'captain.role',
+    'captain.email',
+    'captain.avatarUrl',
+    'captain.rating',
+    'captain.rating',
+    'captain.isActive',
+    'captain.city',
+    'captain.state',
+    'captain.isVerified',
+    'captain.createdAt',
   ];
 
   private static readonly USER_SAFE_FIELDS = [
-    'id', 'name', 'phone', 'email', 'role', 'avatarUrl', 'city', 'state',
-    'isActive', 'isVerified', 'createdAt',
+    'id',
+    'name',
+    'phone',
+    'email',
+    'role',
+    'avatarUrl',
+    'city',
+    'state',
+    'isActive',
+    'isVerified',
+    'createdAt',
   ];
 
   constructor(
@@ -49,16 +97,28 @@ export class AdminService {
     private boatsRepo: Repository<Boat>,
     private notificationsService: NotificationsService,
     private gamificationService: GamificationService,
+    private tripsService: TripsService,
   ) {}
 
   // ==================== USUÁRIOS ====================
 
-  async createCaptain(dto: { name: string; phone: string; email?: string; password: string; city: string; state?: string }) {
-    const phoneExists = await this.usersRepo.findOne({ where: { phone: dto.phone } });
+  async createCaptain(dto: {
+    name: string;
+    phone: string;
+    email?: string;
+    password: string;
+    city: string;
+    state?: string;
+  }) {
+    const phoneExists = await this.usersRepo.findOne({
+      where: { phone: dto.phone },
+    });
     if (phoneExists) throw new ConflictException('Telefone já cadastrado');
 
     if (dto.email) {
-      const emailExists = await this.usersRepo.findOne({ where: { email: dto.email } });
+      const emailExists = await this.usersRepo.findOne({
+        where: { email: dto.email },
+      });
       if (emailExists) throw new ConflictException('E-mail já cadastrado');
     }
 
@@ -75,11 +135,17 @@ export class AdminService {
       isVerified: false, // aguarda verificação de documentos
     });
 
-    const { passwordHash: _, ...safe } = captain as any;
-    return safe;
+    const safeCaptain = { ...captain } as Partial<User> & { passwordHash?: string };
+    delete safeCaptain.passwordHash;
+    return safeCaptain;
   }
 
-  async getAllUsers(page: number, limit: number, role?: UserRole, search?: string) {
+  async getAllUsers(
+    page: number,
+    limit: number,
+    role?: UserRole,
+    search?: string,
+  ) {
     const skip = (page - 1) * limit;
     const qb = this.usersRepo.createQueryBuilder('user');
 
@@ -101,7 +167,11 @@ export class AdminService {
       .getManyAndCount();
 
     // Remove password hash from response
-    const sanitizedUsers = users.map(({ passwordHash, ...user }) => user);
+    const sanitizedUsers = users.map((user) => {
+      const safeUser = { ...user } as Partial<User> & { passwordHash?: string };
+      delete safeUser.passwordHash;
+      return safeUser;
+    });
 
     return {
       data: sanitizedUsers,
@@ -119,8 +189,12 @@ export class AdminService {
 
     // Por role
     const byRole = {
-      passenger: await this.usersRepo.count({ where: { role: UserRole.PASSENGER } }),
-      captain: await this.usersRepo.count({ where: { role: UserRole.CAPTAIN } }),
+      passenger: await this.usersRepo.count({
+        where: { role: UserRole.PASSENGER },
+      }),
+      captain: await this.usersRepo.count({
+        where: { role: UserRole.CAPTAIN },
+      }),
       admin: await this.usersRepo.count({ where: { role: UserRole.ADMIN } }),
     };
 
@@ -146,7 +220,9 @@ export class AdminService {
       where: { createdAt: MoreThan(monthAgo) },
     });
 
-    const activeUsers = await this.usersRepo.count({ where: { isActive: true } });
+    const activeUsers = await this.usersRepo.count({
+      where: { isActive: true },
+    });
 
     return {
       total,
@@ -177,20 +253,30 @@ export class AdminService {
     };
 
     if (user.role === UserRole.CAPTAIN) {
-      stats.totalTrips = await this.tripsRepo.count({ where: { captainId: id } });
+      stats.totalTrips = await this.tripsRepo.count({
+        where: { captainId: id },
+      });
     }
 
     if (user.role === UserRole.PASSENGER) {
-      const bookings = await this.bookingsRepo.find({ where: { passengerId: id } });
-      stats.totalSpent = bookings.reduce((sum, b) => sum + Number(b.totalPrice || 0), 0);
+      const bookings = await this.bookingsRepo.find({
+        where: { passengerId: id },
+      });
+      stats.totalSpent = bookings.reduce(
+        (sum, b) => sum + Number(b.totalPrice || 0),
+        0,
+      );
     }
 
-    stats.totalShipments = await this.shipmentsRepo.count({ where: { senderId: id } });
+    stats.totalShipments = await this.shipmentsRepo.count({
+      where: { senderId: id },
+    });
 
-    const { passwordHash, ...sanitizedUser } = user;
+    const safeUser = { ...user } as Partial<User> & { passwordHash?: string };
+    delete safeUser.passwordHash;
 
     return {
-      ...sanitizedUser,
+      ...safeUser,
       stats,
     };
   }
@@ -204,8 +290,9 @@ export class AdminService {
     user.role = role;
     await this.usersRepo.save(user);
 
-    const { passwordHash, ...sanitizedUser } = user;
-    return sanitizedUser;
+    const safeUser = { ...user } as Partial<User> & { passwordHash?: string };
+    delete safeUser.passwordHash;
+    return safeUser;
   }
 
   async updateUserStatus(id: string, active: boolean) {
@@ -217,10 +304,11 @@ export class AdminService {
     user.isActive = active;
     await this.usersRepo.save(user);
 
-    const { passwordHash, ...sanitizedUser } = user;
+    const safeUser = { ...user } as Partial<User> & { passwordHash?: string };
+    delete safeUser.passwordHash;
     return {
       message: `Usuário ${active ? 'ativado' : 'desativado'} com sucesso`,
-      user: sanitizedUser,
+      user: safeUser,
     };
   }
 
@@ -254,7 +342,12 @@ export class AdminService {
 
   // ==================== VIAGENS ====================
 
-  async getAllTrips(page: number, limit: number, status?: string, captainId?: string) {
+  async getAllTrips(
+    page: number,
+    limit: number,
+    status?: string,
+    captainId?: string,
+  ) {
     const skip = (page - 1) * limit;
     const qb = this.tripsRepo
       .createQueryBuilder('trip')
@@ -300,21 +393,30 @@ export class AdminService {
     const monthAgo = new Date(now);
     monthAgo.setMonth(monthAgo.getMonth() - 1);
 
-    const [total, scheduled, inProgress, completed, cancelled, todayTrips, thisWeekTrips, thisMonthTrips, revenueRow] =
-      await Promise.all([
-        this.tripsRepo.count(),
-        this.tripsRepo.count({ where: { status: TripStatus.SCHEDULED } }),
-        this.tripsRepo.count({ where: { status: TripStatus.IN_PROGRESS } }),
-        this.tripsRepo.count({ where: { status: TripStatus.COMPLETED } }),
-        this.tripsRepo.count({ where: { status: TripStatus.CANCELLED } }),
-        this.tripsRepo.count({ where: { createdAt: Between(today, tomorrow) } }),
-        this.tripsRepo.count({ where: { createdAt: Between(weekAgo, now) } }),
-        this.tripsRepo.count({ where: { createdAt: Between(monthAgo, now) } }),
-        this.bookingsRepo
-          .createQueryBuilder('b')
-          .select('COALESCE(SUM(b.total_price), 0)', 'totalRevenue')
-          .getRawOne(),
-      ]);
+    const [
+      total,
+      scheduled,
+      inProgress,
+      completed,
+      cancelled,
+      todayTrips,
+      thisWeekTrips,
+      thisMonthTrips,
+      revenueRow,
+    ] = await Promise.all([
+      this.tripsRepo.count(),
+      this.tripsRepo.count({ where: { status: TripStatus.SCHEDULED } }),
+      this.tripsRepo.count({ where: { status: TripStatus.IN_PROGRESS } }),
+      this.tripsRepo.count({ where: { status: TripStatus.COMPLETED } }),
+      this.tripsRepo.count({ where: { status: TripStatus.CANCELLED } }),
+      this.tripsRepo.count({ where: { createdAt: Between(today, tomorrow) } }),
+      this.tripsRepo.count({ where: { createdAt: Between(weekAgo, now) } }),
+      this.tripsRepo.count({ where: { createdAt: Between(monthAgo, now) } }),
+      this.bookingsRepo
+        .createQueryBuilder('b')
+        .select('COALESCE(SUM(b.total_price), 0)', 'totalRevenue')
+        .getRawOne<{ totalRevenue: string | null }>(),
+    ]);
 
     const totalRevenue = Number(revenueRow?.totalRevenue || 0);
     const avgPrice = total > 0 ? totalRevenue / total : 0;
@@ -330,10 +432,14 @@ export class AdminService {
     };
   }
 
-  async updateTripStatus(id: string, status: string) {
+  async updateTripStatus(id: string, status: TripStatus) {
     const trip = await this.tripsRepo.findOne({ where: { id } });
     if (!trip) {
       throw new NotFoundException('Viagem não encontrada');
+    }
+
+    if (status === TripStatus.CANCELLED) {
+      return this.tripsService.cancelTripWithPropagation(id);
     }
 
     trip.status = status as TripStatus;
@@ -349,7 +455,9 @@ export class AdminService {
     }
 
     if (trip.status === TripStatus.IN_PROGRESS) {
-      throw new BadRequestException('Não é possível deletar viagem em andamento');
+      throw new BadRequestException(
+        'Não é possível deletar viagem em andamento',
+      );
     }
 
     await this.tripsRepo.delete(id);
@@ -372,7 +480,15 @@ export class AdminService {
     const qb = this.shipmentsRepo
       .createQueryBuilder('shipment')
       .leftJoin('shipment.sender', 'sender')
-      .addSelect(['sender.id', 'sender.name', 'sender.phone', 'sender.email', 'sender.role', 'sender.city', 'sender.createdAt'])
+      .addSelect([
+        'sender.id',
+        'sender.name',
+        'sender.phone',
+        'sender.email',
+        'sender.role',
+        'sender.city',
+        'sender.createdAt',
+      ])
       .leftJoinAndSelect('shipment.trip', 'trip')
       .leftJoin('trip.captain', 'captain')
       .addSelect(AdminService.CAPTAIN_SAFE_FIELDS);
@@ -415,13 +531,23 @@ export class AdminService {
     monthAgo.setMonth(monthAgo.getMonth() - 1);
 
     const [
-      total, pending, collected, inTransit, delivered, cancelled,
-      todayShipments, thisWeekShipments, thisMonthShipments, revenueRow,
+      total,
+      pending,
+      collected,
+      inTransit,
+      delivered,
+      cancelled,
+      todayShipments,
+      thisWeekShipments,
+      thisMonthShipments,
+      revenueRow,
     ] = await Promise.all([
       this.shipmentsRepo.count(),
       this.shipmentsRepo.count({ where: { status: ShipmentStatus.PENDING } }),
       this.shipmentsRepo.count({ where: { status: ShipmentStatus.COLLECTED } }),
-      this.shipmentsRepo.count({ where: { status: ShipmentStatus.IN_TRANSIT } }),
+      this.shipmentsRepo.count({
+        where: { status: ShipmentStatus.IN_TRANSIT },
+      }),
       this.shipmentsRepo.count({ where: { status: ShipmentStatus.DELIVERED } }),
       this.shipmentsRepo.count({ where: { status: ShipmentStatus.CANCELLED } }),
       this.shipmentsRepo.count({ where: { createdAt: MoreThan(today) } }),
@@ -430,7 +556,7 @@ export class AdminService {
       this.shipmentsRepo
         .createQueryBuilder('s')
         .select('COALESCE(SUM(s.total_price), 0)', 'totalRevenue')
-        .getRawOne(),
+        .getRawOne<{ totalRevenue: string | null }>(),
     ]);
 
     const totalRevenue = Number(revenueRow?.totalRevenue || 0);
@@ -438,7 +564,13 @@ export class AdminService {
 
     return {
       total,
-      byStatus: { pending, collected, in_transit: inTransit, delivered, cancelled },
+      byStatus: {
+        pending,
+        collected,
+        in_transit: inTransit,
+        delivered,
+        cancelled,
+      },
       todayShipments,
       thisWeekShipments,
       thisMonthShipments,
@@ -447,13 +579,13 @@ export class AdminService {
     };
   }
 
-  async updateShipmentStatus(id: string, status: string) {
+  async updateShipmentStatus(id: string, status: ShipmentStatus) {
     const shipment = await this.shipmentsRepo.findOne({ where: { id } });
     if (!shipment) {
       throw new NotFoundException('Encomenda não encontrada');
     }
 
-    shipment.status = status as ShipmentStatus;
+    shipment.status = status;
     await this.shipmentsRepo.save(shipment);
 
     return shipment;
@@ -485,12 +617,12 @@ export class AdminService {
           .createQueryBuilder('b')
           .select('COALESCE(SUM(b.total_price), 0)', 'revenue')
           .where('b.created_at BETWEEN :start AND :end', { start, end })
-          .getRawOne(),
+          .getRawOne<{ revenue: string | null }>(),
         this.shipmentsRepo
           .createQueryBuilder('s')
           .select('COALESCE(SUM(s.total_price), 0)', 'revenue')
           .where('s.created_at BETWEEN :start AND :end', { start, end })
-          .getRawOne(),
+          .getRawOne<{ revenue: string | null }>(),
       ]);
 
       const b = Number(bRow?.revenue || 0);
@@ -500,8 +632,12 @@ export class AdminService {
       total.push(Number((b + s).toFixed(2)));
     }
 
-    const sumBookings = Number(bookingsRevenue.reduce((a, c) => a + c, 0).toFixed(2));
-    const sumShipments = Number(shipmentsRevenue.reduce((a, c) => a + c, 0).toFixed(2));
+    const sumBookings = Number(
+      bookingsRevenue.reduce((a, c) => a + c, 0).toFixed(2),
+    );
+    const sumShipments = Number(
+      shipmentsRevenue.reduce((a, c) => a + c, 0).toFixed(2),
+    );
 
     return {
       period,
@@ -593,7 +729,9 @@ export class AdminService {
   }
 
   private async getSosStats() {
-    const active = await this.sosRepo.count({ where: { status: SosAlertStatus.ACTIVE } });
+    const active = await this.sosRepo.count({
+      where: { status: SosAlertStatus.ACTIVE },
+    });
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -616,7 +754,9 @@ export class AdminService {
     };
   }
 
-  private async getRevenueByPeriod(period: 'today' | 'week' | 'month'): Promise<number> {
+  private async getRevenueByPeriod(
+    period: 'today' | 'week' | 'month',
+  ): Promise<number> {
     const now = new Date();
     let startDate: Date;
 
@@ -636,15 +776,16 @@ export class AdminService {
         .createQueryBuilder('b')
         .select('COALESCE(SUM(b.total_price), 0)', 'revenue')
         .where('b.created_at > :startDate', { startDate })
-        .getRawOne(),
+        .getRawOne<{ revenue: string | null }>(),
       this.shipmentsRepo
         .createQueryBuilder('s')
         .select('COALESCE(SUM(s.total_price), 0)', 'revenue')
         .where('s.created_at > :startDate', { startDate })
-        .getRawOne(),
+        .getRawOne<{ revenue: string | null }>(),
     ]);
 
-    const total = Number(bookingsRow?.revenue || 0) + Number(shipmentsRow?.revenue || 0);
+    const total =
+      Number(bookingsRow?.revenue || 0) + Number(shipmentsRow?.revenue || 0);
     return Number(total.toFixed(2));
   }
 
@@ -672,7 +813,17 @@ export class AdminService {
       this.usersRepo.find({
         order: { createdAt: 'DESC' },
         take: 10,
-        select: ['id', 'name', 'email', 'phone', 'role', 'city', 'state', 'isActive', 'createdAt'],
+        select: [
+          'id',
+          'name',
+          'email',
+          'phone',
+          'role',
+          'city',
+          'state',
+          'isActive',
+          'createdAt',
+        ],
       }),
       this.bookingsRepo.find({
         order: { createdAt: 'DESC' },
@@ -696,7 +847,7 @@ export class AdminService {
       }),
     ]);
 
-    const activities: any[] = [];
+    const activities: AdminActivity[] = [];
 
     // ==================== VIAGENS ====================
     recentTrips.forEach((trip) => {
@@ -733,7 +884,9 @@ export class AdminService {
         details: {
           shipmentId: shipment.id,
           trackingCode: shipment.trackingCode,
-          route: shipment.trip ? `${shipment.trip.origin} → ${shipment.trip.destination}` : 'Rota não disponível',
+          route: shipment.trip
+            ? `${shipment.trip.origin} → ${shipment.trip.destination}`
+            : 'Rota não disponível',
           weight: Number(shipment.weight),
           price: Number(shipment.totalPrice),
           status: shipment.status,
@@ -769,7 +922,8 @@ export class AdminService {
     // ==================== RESERVAS ====================
     recentBookings.forEach((booking) => {
       const statusInfo = this.getBookingStatusInfo(booking.status);
-      const paymentInfo = booking.paymentStatus === PaymentStatus.PAID ? ' (Pago)' : '';
+      const paymentInfo =
+        booking.paymentStatus === PaymentStatus.PAID ? ' (Pago)' : '';
       activities.push({
         type: `booking_${booking.status}`,
         category: 'booking',
@@ -777,7 +931,9 @@ export class AdminService {
         user: booking.passenger?.name || 'Passageiro',
         details: {
           bookingId: booking.id,
-          route: booking.trip ? `${booking.trip.origin} → ${booking.trip.destination}` : 'Rota não disponível',
+          route: booking.trip
+            ? `${booking.trip.origin} → ${booking.trip.destination}`
+            : 'Rota não disponível',
           seats: booking.seats,
           totalPrice: Number(booking.totalPrice),
           status: booking.status,
@@ -793,7 +949,10 @@ export class AdminService {
 
     // ==================== CUPONS ====================
     recentCoupons.forEach((coupon) => {
-      const typeLabel = coupon.type === 'percentage' ? `${Number(coupon.value)}% OFF` : `R$ ${Number(coupon.value)} OFF`;
+      const typeLabel =
+        coupon.type === CouponType.PERCENTAGE
+          ? `${Number(coupon.value)}% OFF`
+          : `R$ ${Number(coupon.value)} OFF`;
       activities.push({
         type: 'coupon_created',
         category: 'coupon',
@@ -823,7 +982,9 @@ export class AdminService {
       activities.push({
         type: `sos_${sos.status}`,
         category: 'sos',
-        description: isActive ? `🆘 Alerta SOS acionado` : `✅ Alerta SOS resolvido`,
+        description: isActive
+          ? `🆘 Alerta SOS acionado`
+          : `✅ Alerta SOS resolvido`,
         user: sos.user?.name || 'Usuário',
         details: {
           sosId: sos.id,
@@ -850,7 +1011,9 @@ export class AdminService {
         details: {
           checklistId: checklist.id,
           tripId: checklist.tripId,
-          route: checklist.trip ? `${checklist.trip.origin} → ${checklist.trip.destination}` : 'Rota não disponível',
+          route: checklist.trip
+            ? `${checklist.trip.origin} → ${checklist.trip.destination}`
+            : 'Rota não disponível',
           completedAt: checklist.completedAt,
         },
         icon: '✅',
@@ -862,78 +1025,103 @@ export class AdminService {
 
     // Ordenar por timestamp e limitar
     return activities
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .sort(
+        (a, b) =>
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+      )
       .slice(0, limit);
   }
 
   // Helper methods para informações de status
   private getTripStatusInfo(status: TripStatus) {
-    const statusMap: Record<TripStatus, { description: (trip: Trip) => string; icon: string; color: string }> = {
+    const statusMap: Record<
+      TripStatus,
+      { description: (trip: Trip) => string; icon: string; color: string }
+    > = {
       [TripStatus.SCHEDULED]: {
-        description: (trip: Trip) => `Nova viagem: ${trip.origin} → ${trip.destination}`,
+        description: (trip: Trip) =>
+          `Nova viagem: ${trip.origin} → ${trip.destination}`,
         icon: '🚤',
-        color: 'blue'
+        color: 'blue',
       },
       [TripStatus.IN_PROGRESS]: {
-        description: (trip: Trip) => `Viagem iniciada: ${trip.origin} → ${trip.destination}`,
+        description: (trip: Trip) =>
+          `Viagem iniciada: ${trip.origin} → ${trip.destination}`,
         icon: '⛵',
-        color: 'orange'
+        color: 'orange',
       },
       [TripStatus.COMPLETED]: {
-        description: (trip: Trip) => `Viagem concluída: ${trip.origin} → ${trip.destination}`,
+        description: (trip: Trip) =>
+          `Viagem concluída: ${trip.origin} → ${trip.destination}`,
         icon: '🏁',
-        color: 'green'
+        color: 'green',
       },
       [TripStatus.CANCELLED]: {
-        description: (trip: Trip) => `Viagem cancelada: ${trip.origin} → ${trip.destination}`,
+        description: (trip: Trip) =>
+          `Viagem cancelada: ${trip.origin} → ${trip.destination}`,
         icon: '❌',
-        color: 'red'
+        color: 'red',
       },
     };
     return statusMap[status] || statusMap[TripStatus.SCHEDULED];
   }
 
   private getShipmentStatusInfo(status: ShipmentStatus) {
-    const statusMap: Record<ShipmentStatus, { description: (shipment: Shipment) => string; icon: string; color: string }> = {
+    const statusMap: Record<
+      ShipmentStatus,
+      {
+        description: (shipment: Shipment) => string;
+        icon: string;
+        color: string;
+      }
+    > = {
       [ShipmentStatus.PENDING]: {
-        description: (shipment: Shipment) => `Nova encomenda: ${shipment.trackingCode}`,
+        description: (shipment: Shipment) =>
+          `Nova encomenda: ${shipment.trackingCode}`,
         icon: '📦',
-        color: 'blue'
+        color: 'blue',
       },
       [ShipmentStatus.PAID]: {
-        description: (shipment: Shipment) => `Encomenda paga: ${shipment.trackingCode}`,
+        description: (shipment: Shipment) =>
+          `Encomenda paga: ${shipment.trackingCode}`,
         icon: '💰',
-        color: 'green'
+        color: 'green',
       },
       [ShipmentStatus.COLLECTED]: {
-        description: (shipment: Shipment) => `Encomenda coletada: ${shipment.trackingCode}`,
+        description: (shipment: Shipment) =>
+          `Encomenda coletada: ${shipment.trackingCode}`,
         icon: '📮',
-        color: 'orange'
+        color: 'orange',
       },
       [ShipmentStatus.IN_TRANSIT]: {
-        description: (shipment: Shipment) => `Encomenda em trânsito: ${shipment.trackingCode}`,
+        description: (shipment: Shipment) =>
+          `Encomenda em trânsito: ${shipment.trackingCode}`,
         icon: '🚢',
-        color: 'blue'
+        color: 'blue',
       },
       [ShipmentStatus.ARRIVED]: {
-        description: (shipment: Shipment) => `Encomenda chegou: ${shipment.trackingCode}`,
+        description: (shipment: Shipment) =>
+          `Encomenda chegou: ${shipment.trackingCode}`,
         icon: '🎯',
-        color: 'blue'
+        color: 'blue',
       },
       [ShipmentStatus.OUT_FOR_DELIVERY]: {
-        description: (shipment: Shipment) => `Saiu para entrega: ${shipment.trackingCode}`,
+        description: (shipment: Shipment) =>
+          `Saiu para entrega: ${shipment.trackingCode}`,
         icon: '🚚',
-        color: 'orange'
+        color: 'orange',
       },
       [ShipmentStatus.DELIVERED]: {
-        description: (shipment: Shipment) => `Encomenda entregue: ${shipment.trackingCode}`,
+        description: (shipment: Shipment) =>
+          `Encomenda entregue: ${shipment.trackingCode}`,
         icon: '✅',
-        color: 'green'
+        color: 'green',
       },
       [ShipmentStatus.CANCELLED]: {
-        description: (shipment: Shipment) => `Encomenda cancelada: ${shipment.trackingCode}`,
+        description: (shipment: Shipment) =>
+          `Encomenda cancelada: ${shipment.trackingCode}`,
         icon: '❌',
-        color: 'red'
+        color: 'red',
       },
     };
     return statusMap[status] || statusMap[ShipmentStatus.PENDING];
@@ -944,38 +1132,45 @@ export class AdminService {
       [BookingStatus.PENDING]: {
         action: 'Nova reserva',
         icon: '🎫',
-        color: 'blue'
+        color: 'blue',
       },
       [BookingStatus.CONFIRMED]: {
         action: 'Reserva confirmada',
         icon: '✅',
-        color: 'green'
+        color: 'green',
       },
       [BookingStatus.CHECKED_IN]: {
         action: 'Check-in realizado',
         icon: '🎟️',
-        color: 'purple'
+        color: 'purple',
       },
       [BookingStatus.COMPLETED]: {
         action: 'Viagem concluída',
         icon: '🏁',
-        color: 'green'
+        color: 'green',
       },
       [BookingStatus.CANCELLED]: {
         action: 'Reserva cancelada',
         icon: '❌',
-        color: 'red'
+        color: 'red',
       },
     };
     return statusMap[status] || statusMap[BookingStatus.PENDING];
   }
 
   private getUserRoleInfo(role: UserRole) {
-    const roleMap: Record<UserRole, { label: string; icon: string; color: string }> = {
+    const roleMap: Record<
+      UserRole,
+      { label: string; icon: string; color: string }
+    > = {
       [UserRole.PASSENGER]: { label: 'passageiro', icon: '👤', color: 'gray' },
       [UserRole.CAPTAIN]: { label: 'capitão', icon: '⚓', color: 'blue' },
       [UserRole.ADMIN]: { label: 'administrador', icon: '👑', color: 'purple' },
-      [UserRole.BOAT_MANAGER]: { label: 'gestor de barco', icon: '🚢', color: 'teal' },
+      [UserRole.BOAT_MANAGER]: {
+        label: 'gestor de barco',
+        icon: '🚢',
+        color: 'teal',
+      },
     };
     return roleMap[role] || roleMap[UserRole.PASSENGER];
   }
@@ -983,7 +1178,7 @@ export class AdminService {
   // ==================== SEGURANÇA ====================
 
   async getAllChecklists(incomplete?: boolean) {
-    const where: any = {};
+    const where: FindOptionsWhere<SafetyChecklist> = {};
 
     if (incomplete !== undefined) {
       where.allItemsChecked = !incomplete;
@@ -998,7 +1193,9 @@ export class AdminService {
 
   async getChecklistStats() {
     const total = await this.checklistsRepo.count();
-    const complete = await this.checklistsRepo.count({ where: { allItemsChecked: true } });
+    const complete = await this.checklistsRepo.count({
+      where: { allItemsChecked: true },
+    });
     const incomplete = total - complete;
 
     const complianceRate = total > 0 ? (complete / total) * 100 : 0;
@@ -1070,10 +1267,19 @@ export class AdminService {
     monthAgo.setMonth(monthAgo.getMonth() - 1);
 
     const [
-      total, pending, confirmed, checkedIn, completed, cancelled,
-      paymentPending, paid,
-      newToday, newThisWeek, newThisMonth,
-      totalRevenueRow, confirmedRevenueRow,
+      total,
+      pending,
+      confirmed,
+      checkedIn,
+      completed,
+      cancelled,
+      paymentPending,
+      paid,
+      newToday,
+      newThisWeek,
+      newThisMonth,
+      totalRevenueRow,
+      confirmedRevenueRow,
     ] = await Promise.all([
       this.bookingsRepo.count(),
       this.bookingsRepo.count({ where: { status: BookingStatus.PENDING } }),
@@ -1081,7 +1287,9 @@ export class AdminService {
       this.bookingsRepo.count({ where: { status: BookingStatus.CHECKED_IN } }),
       this.bookingsRepo.count({ where: { status: BookingStatus.COMPLETED } }),
       this.bookingsRepo.count({ where: { status: BookingStatus.CANCELLED } }),
-      this.bookingsRepo.count({ where: { paymentStatus: PaymentStatus.PENDING } }),
+      this.bookingsRepo.count({
+        where: { paymentStatus: PaymentStatus.PENDING },
+      }),
       this.bookingsRepo.count({ where: { paymentStatus: PaymentStatus.PAID } }),
       this.bookingsRepo.count({ where: { createdAt: MoreThan(today) } }),
       this.bookingsRepo.count({ where: { createdAt: MoreThan(weekAgo) } }),
@@ -1089,12 +1297,12 @@ export class AdminService {
       this.bookingsRepo
         .createQueryBuilder('b')
         .select('COALESCE(SUM(b.total_price), 0)', 'totalRevenue')
-        .getRawOne(),
+        .getRawOne<{ totalRevenue: string | null }>(),
       this.bookingsRepo
         .createQueryBuilder('b')
         .select('COALESCE(SUM(b.total_price), 0)', 'confirmedRevenue')
         .where('b.payment_status = :status', { status: PaymentStatus.PAID })
-        .getRawOne(),
+        .getRawOne<{ confirmedRevenue: string | null }>(),
     ]);
 
     const totalRevenue = Number(totalRevenueRow?.totalRevenue || 0);
@@ -1128,20 +1336,14 @@ export class AdminService {
     return booking;
   }
 
-  async updateBookingStatus(id: string, status: string) {
+  async updateBookingStatus(id: string, status: BookingStatus) {
     const booking = await this.bookingsRepo.findOne({ where: { id } });
 
     if (!booking) {
       throw new NotFoundException('Reserva não encontrada');
     }
 
-    // Validar status
-    const validStatuses = ['pending', 'confirmed', 'checked_in', 'completed', 'cancelled'];
-    if (!validStatuses.includes(status)) {
-      throw new BadRequestException(`Status inválido. Use: ${validStatuses.join(', ')}`);
-    }
-
-    booking.status = status as any;
+    booking.status = status;
 
     return this.bookingsRepo.save(booking);
   }
@@ -1214,26 +1416,40 @@ export class AdminService {
       newThisWeek,
       newThisMonth,
     ] = await Promise.all([
-      this.reviewsRepo.count({ where: { reviewType: ReviewType.PASSENGER_TO_CAPTAIN } }),
-      this.reviewsRepo.count({ where: { reviewType: ReviewType.CAPTAIN_TO_PASSENGER } }),
+      this.reviewsRepo.count({
+        where: { reviewType: ReviewType.PASSENGER_TO_CAPTAIN },
+      }),
+      this.reviewsRepo.count({
+        where: { reviewType: ReviewType.CAPTAIN_TO_PASSENGER },
+      }),
       this.reviewsRepo
         .createQueryBuilder('r')
         .select('ROUND(AVG(r.rating)::numeric, 2)', 'avg')
-        .where('r.review_type = :type', { type: ReviewType.PASSENGER_TO_CAPTAIN })
-        .getRawOne(),
+        .where('r.review_type = :type', {
+          type: ReviewType.PASSENGER_TO_CAPTAIN,
+        })
+        .getRawOne<{ avg: string | null }>(),
       this.reviewsRepo
         .createQueryBuilder('r')
         .select('ROUND(AVG(r.boat_rating)::numeric, 2)', 'avg')
         .where('r.boat_rating IS NOT NULL')
-        .getRawOne(),
+        .getRawOne<{ avg: string | null }>(),
       this.reviewsRepo
         .createQueryBuilder('r')
         .select('ROUND(AVG(r.passenger_rating)::numeric, 2)', 'avg')
-        .where('r.review_type = :type', { type: ReviewType.CAPTAIN_TO_PASSENGER })
-        .getRawOne(),
-      this.reviewsRepo.count({ where: { createdAt: MoreThan(this.startOfToday()) } }),
-      this.reviewsRepo.count({ where: { createdAt: MoreThan(this.daysAgo(7)) } }),
-      this.reviewsRepo.count({ where: { createdAt: MoreThan(this.daysAgo(30)) } }),
+        .where('r.review_type = :type', {
+          type: ReviewType.CAPTAIN_TO_PASSENGER,
+        })
+        .getRawOne<{ avg: string | null }>(),
+      this.reviewsRepo.count({
+        where: { createdAt: MoreThan(this.startOfToday()) },
+      }),
+      this.reviewsRepo.count({
+        where: { createdAt: MoreThan(this.daysAgo(7)) },
+      }),
+      this.reviewsRepo.count({
+        where: { createdAt: MoreThan(this.daysAgo(30)) },
+      }),
     ]);
 
     // Distribuição de estrelas (capitão)
@@ -1243,11 +1459,17 @@ export class AdminService {
       .addSelect('COUNT(*)', 'count')
       .where('r.review_type = :type', { type: ReviewType.PASSENGER_TO_CAPTAIN })
       .groupBy('r.rating')
-      .getRawMany();
+      .getRawMany<{ stars: number | null; count: string }>();
 
-    const distribution: Record<number, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    const distribution: Record<number, number> = {
+      5: 0,
+      4: 0,
+      3: 0,
+      2: 0,
+      1: 0,
+    };
     for (const row of distributionRows) {
-      if (row.stars) distribution[row.stars] = parseInt(row.count);
+      if (row.stars) distribution[row.stars] = parseInt(row.count, 10);
     }
 
     return {
@@ -1294,9 +1516,13 @@ export class AdminService {
         .createQueryBuilder('r')
         .select('ROUND(AVG(r.rating)::numeric, 1)', 'avg')
         .where('r.captain_id = :id', { id: review.captainId })
-        .andWhere('r.review_type = :type', { type: ReviewType.PASSENGER_TO_CAPTAIN })
-        .getRawOne();
-      await this.usersRepo.update(review.captainId, { rating: Number(row?.avg || 5.0) });
+        .andWhere('r.review_type = :type', {
+          type: ReviewType.PASSENGER_TO_CAPTAIN,
+        })
+        .getRawOne<{ avg: string | null }>();
+      await this.usersRepo.update(review.captainId, {
+        rating: Number(row?.avg || 5.0),
+      });
     }
 
     if (review.boatId) {
@@ -1306,7 +1532,7 @@ export class AdminService {
         .addSelect('COUNT(*)', 'total')
         .where('r.boat_id = :id', { id: review.boatId })
         .andWhere('r.boat_rating IS NOT NULL')
-        .getRawOne();
+        .getRawOne<{ avg: string | null; total: string | null }>();
       await this.boatsRepo.update(review.boatId, {
         rating: Number(row?.avg || 5.0),
         reviewCount: parseInt(row?.total || '0'),
@@ -1318,9 +1544,13 @@ export class AdminService {
         .createQueryBuilder('r')
         .select('ROUND(AVG(r.passenger_rating)::numeric, 1)', 'avg')
         .where('r.passenger_id = :id', { id: review.passengerId })
-        .andWhere('r.review_type = :type', { type: ReviewType.CAPTAIN_TO_PASSENGER })
-        .getRawOne();
-      await this.usersRepo.update(review.passengerId, { passengerRating: Number(row?.avg || 5.0) });
+        .andWhere('r.review_type = :type', {
+          type: ReviewType.CAPTAIN_TO_PASSENGER,
+        })
+        .getRawOne<{ avg: string | null }>();
+      await this.usersRepo.update(review.passengerId, {
+        passengerRating: Number(row?.avg || 5.0),
+      });
     }
 
     return { message: 'Avaliação removida e ratings recalculados com sucesso' };
@@ -1328,7 +1558,12 @@ export class AdminService {
 
   // ==================== EMBARCAÇÕES ====================
 
-  async getAllBoats(page: number, limit: number, verified?: string, search?: string) {
+  async getAllBoats(
+    page: number,
+    limit: number,
+    verified?: string,
+    search?: string,
+  ) {
     const skip = (page - 1) * limit;
     const qb = this.boatsRepo
       .createQueryBuilder('boat')
@@ -1351,9 +1586,11 @@ export class AdminService {
 
     const [boats, total] = await qb.getManyAndCount();
     return {
-      boats: boats.map(b => ({
+      boats: boats.map((b) => ({
         ...b,
-        owner: b.owner ? { id: b.owner.id, name: b.owner.name, phone: b.owner.phone } : null,
+        owner: b.owner
+          ? { id: b.owner.id, name: b.owner.name, phone: b.owner.phone }
+          : null,
       })),
       total,
       page,
@@ -1362,7 +1599,10 @@ export class AdminService {
   }
 
   async verifyBoat(id: string, approved: boolean, rejectionReason?: string) {
-    const boat = await this.boatsRepo.findOne({ where: { id }, relations: ['owner'] });
+    const boat = await this.boatsRepo.findOne({
+      where: { id },
+      relations: ['owner'],
+    });
     if (!boat) throw new NotFoundException('Embarcação não encontrada');
 
     const reason = rejectionReason ?? 'Documentação inválida ou incompleta';
@@ -1391,7 +1631,11 @@ export class AdminService {
     }
 
     const action = approved ? 'aprovada' : 'rejeitada';
-    return { message: `Embarcação ${action} com sucesso`, boatId: id, isVerified: approved };
+    return {
+      message: `Embarcação ${action} com sucesso`,
+      boatId: id,
+      isVerified: approved,
+    };
   }
 
   // ==================== VERIFICAÇÃO DE CAPITÃO ====================
@@ -1409,7 +1653,7 @@ export class AdminService {
       kycStatus: verified ? KycStatus.APPROVED : KycStatus.REJECTED,
       verifiedAt: verified ? new Date() : null,
       rejectionReason: verified ? null : rejectionReason,
-    } as any);
+    });
 
     // Notificação push ao capitão
     if (verified) {
@@ -1427,7 +1671,11 @@ export class AdminService {
     }
 
     const action = verified ? 'aprovado' : 'rejeitado';
-    return { message: `Capitão ${action} com sucesso`, userId: id, isVerified: verified };
+    return {
+      message: `Capitão ${action} com sucesso`,
+      userId: id,
+      isVerified: verified,
+    };
   }
 
   async getPendingVerifications() {
@@ -1439,14 +1687,19 @@ export class AdminService {
         take: 50,
       }),
       this.usersRepo.find({
-        where: { role: UserRole.CAPTAIN, isVerified: false, isActive: true, rejectionReason: IsNull() },
+        where: {
+          role: UserRole.CAPTAIN,
+          isVerified: false,
+          isActive: true,
+          rejectionReason: IsNull(),
+        },
         order: { createdAt: 'ASC' },
         take: 50,
       }),
     ]);
 
     return {
-      pendingBoats: pendingBoats.map(b => ({
+      pendingBoats: pendingBoats.map((b) => ({
         id: b.id,
         name: b.name,
         type: b.type,
@@ -1455,9 +1708,11 @@ export class AdminService {
         photos: b.photos,
         rejectionReason: b.rejectionReason,
         createdAt: b.createdAt,
-        owner: b.owner ? { id: b.owner.id, name: b.owner.name, phone: b.owner.phone } : null,
+        owner: b.owner
+          ? { id: b.owner.id, name: b.owner.name, phone: b.owner.phone }
+          : null,
       })),
-      pendingCaptains: pendingCaptains.map(u => ({
+      pendingCaptains: pendingCaptains.map((u) => ({
         id: u.id,
         name: u.name,
         phone: u.phone,
@@ -1482,48 +1737,53 @@ export class AdminService {
   async getAdminNotifications() {
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    const [
-      sosAlerts,
-      pendingBoats,
-      pendingCaptains,
-      newTrips,
-    ] = await Promise.all([
-      // SOS activos — mais urgente
-      this.sosRepo.find({
-        where: { status: SosAlertStatus.ACTIVE },
-        relations: ['user'],
-        order: { createdAt: 'DESC' },
-        take: 5,
-      }),
-      // Barcos pendentes (nunca revistos — rejectionReason IS NULL)
-      this.boatsRepo.find({
-        where: { isVerified: false, rejectionReason: IsNull() },
-        relations: ['owner'],
-        order: { createdAt: 'DESC' },
-        take: 5,
-      }),
-      // Capitães pendentes (nunca revistos — rejectionReason IS NULL)
-      this.usersRepo.find({
-        where: { role: UserRole.CAPTAIN, isVerified: false, isActive: true, rejectionReason: IsNull() },
-        order: { createdAt: 'DESC' },
-        take: 5,
-      }),
-      // Viagens criadas nas últimas 24h
-      this.tripsRepo.find({
-        where: { createdAt: MoreThan(since24h) },
-        relations: ['captain'],
-        order: { createdAt: 'DESC' },
-        take: 5,
-      }),
-    ]);
+    const [sosAlerts, pendingBoats, pendingCaptains, newTrips] =
+      await Promise.all([
+        // SOS activos — mais urgente
+        this.sosRepo.find({
+          where: { status: SosAlertStatus.ACTIVE },
+          relations: ['user'],
+          order: { createdAt: 'DESC' },
+          take: 5,
+        }),
+        // Barcos pendentes (nunca revistos — rejectionReason IS NULL)
+        this.boatsRepo.find({
+          where: { isVerified: false, rejectionReason: IsNull() },
+          relations: ['owner'],
+          order: { createdAt: 'DESC' },
+          take: 5,
+        }),
+        // Capitães pendentes (nunca revistos — rejectionReason IS NULL)
+        this.usersRepo.find({
+          where: {
+            role: UserRole.CAPTAIN,
+            isVerified: false,
+            isActive: true,
+            rejectionReason: IsNull(),
+          },
+          order: { createdAt: 'DESC' },
+          take: 5,
+        }),
+        // Viagens criadas nas últimas 24h
+        this.tripsRepo.find({
+          where: { createdAt: MoreThan(since24h) },
+          relations: ['captain'],
+          order: { createdAt: 'DESC' },
+          take: 5,
+        }),
+      ]);
 
-    const totalUnread = sosAlerts.length + pendingBoats.length + pendingCaptains.length + newTrips.length;
+    const totalUnread =
+      sosAlerts.length +
+      pendingBoats.length +
+      pendingCaptains.length +
+      newTrips.length;
 
     return {
       totalUnread,
       sos: {
         count: sosAlerts.length,
-        items: sosAlerts.map(a => ({
+        items: sosAlerts.map((a) => ({
           id: a.id,
           type: a.type,
           description: a.description,
@@ -1535,7 +1795,7 @@ export class AdminService {
       },
       pendingVerifications: {
         count: pendingBoats.length + pendingCaptains.length,
-        boats: pendingBoats.map(b => ({
+        boats: pendingBoats.map((b) => ({
           id: b.id,
           name: b.name,
           type: b.type,
@@ -1543,7 +1803,7 @@ export class AdminService {
           createdAt: b.createdAt,
           link: `/admin/boats/${b.id}`,
         })),
-        captains: pendingCaptains.map(u => ({
+        captains: pendingCaptains.map((u) => ({
           id: u.id,
           name: u.name,
           phone: u.phone,
@@ -1554,11 +1814,11 @@ export class AdminService {
       },
       newTrips: {
         count: newTrips.length,
-        items: newTrips.map(t => ({
+        items: newTrips.map((t) => ({
           id: t.id,
           origin: t.origin,
           destination: t.destination,
-          captainName: (t.captain as any)?.name ?? 'Desconhecido',
+          captainName: t.captain?.name ?? 'Desconhecido',
           departureAt: t.departureAt,
           createdAt: t.createdAt,
           link: `/admin/trips/${t.id}`,
@@ -1574,22 +1834,22 @@ export class AdminService {
 
     // Distribuição por nível
     const [marinheiro, navegador, capitao, almirante] = await Promise.all([
-      this.usersRepo.count({ where: { level: 'Marinheiro' as any } }),
-      this.usersRepo.count({ where: { level: 'Navegador' as any } }),
-      this.usersRepo.count({ where: { level: 'Capitão' as any } }),
-      this.usersRepo.count({ where: { level: 'Almirante' as any } }),
+      this.usersRepo.count({ where: { level: LoyaltyLevel.MARINHEIRO } }),
+      this.usersRepo.count({ where: { level: LoyaltyLevel.NAVEGADOR } }),
+      this.usersRepo.count({ where: { level: LoyaltyLevel.CAPITAO } }),
+      this.usersRepo.count({ where: { level: LoyaltyLevel.ALMIRANTE } }),
     ]);
 
     // Total de NavegaCoins distribuídos e por acção
     const totalPointsRow = await this.usersRepo
       .createQueryBuilder('u')
       .select('COALESCE(SUM(u.total_points), 0)', 'total')
-      .getRawOne();
+      .getRawOne<{ total: string | null }>();
 
     const totalKmRow = await this.usersRepo
       .createQueryBuilder('u')
       .select('COALESCE(SUM(u.total_km_traveled), 0)', 'total')
-      .getRawOne();
+      .getRawOne<{ total: string | null }>();
 
     // Referrals: total, convertidos, pendentes
     const today = new Date();
@@ -1599,12 +1859,31 @@ export class AdminService {
     const monthAgo = new Date(today);
     monthAgo.setMonth(monthAgo.getMonth() - 1);
 
-    const [totalUsers, newToday, newThisWeek, newThisMonth] = await Promise.all([
-      this.usersRepo.count({ where: [{ role: UserRole.PASSENGER }, { role: UserRole.CAPTAIN }] }),
-      this.usersRepo.count({ where: [{ role: UserRole.PASSENGER, createdAt: MoreThan(today) }, { role: UserRole.CAPTAIN, createdAt: MoreThan(today) }] }),
-      this.usersRepo.count({ where: [{ role: UserRole.PASSENGER, createdAt: MoreThan(weekAgo) }, { role: UserRole.CAPTAIN, createdAt: MoreThan(weekAgo) }] }),
-      this.usersRepo.count({ where: [{ role: UserRole.PASSENGER, createdAt: MoreThan(monthAgo) }, { role: UserRole.CAPTAIN, createdAt: MoreThan(monthAgo) }] }),
-    ]);
+    const [totalUsers, newToday, newThisWeek, newThisMonth] = await Promise.all(
+      [
+        this.usersRepo.count({
+          where: [{ role: UserRole.PASSENGER }, { role: UserRole.CAPTAIN }],
+        }),
+        this.usersRepo.count({
+          where: [
+            { role: UserRole.PASSENGER, createdAt: MoreThan(today) },
+            { role: UserRole.CAPTAIN, createdAt: MoreThan(today) },
+          ],
+        }),
+        this.usersRepo.count({
+          where: [
+            { role: UserRole.PASSENGER, createdAt: MoreThan(weekAgo) },
+            { role: UserRole.CAPTAIN, createdAt: MoreThan(weekAgo) },
+          ],
+        }),
+        this.usersRepo.count({
+          where: [
+            { role: UserRole.PASSENGER, createdAt: MoreThan(monthAgo) },
+            { role: UserRole.CAPTAIN, createdAt: MoreThan(monthAgo) },
+          ],
+        }),
+      ],
+    );
 
     return {
       overview: {

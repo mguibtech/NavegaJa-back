@@ -1,6 +1,11 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-  UpdateDateColumn, ManyToOne, JoinColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { User } from '../users/user.entity';
 import { Trip } from '../trips/trip.entity';
@@ -80,10 +85,20 @@ export class Booking {
   @Column({ name: 'pix_paid_at', type: 'timestamp', nullable: true })
   pixPaidAt: Date | null;
 
-  @Column({ name: 'payment_method', type: 'enum', enum: PaymentMethod, default: PaymentMethod.PIX })
+  @Column({
+    name: 'payment_method',
+    type: 'enum',
+    enum: PaymentMethod,
+    default: PaymentMethod.PIX,
+  })
   paymentMethod: PaymentMethod;
 
-  @Column({ name: 'payment_status', type: 'enum', enum: PaymentStatus, default: PaymentStatus.PENDING })
+  @Column({
+    name: 'payment_status',
+    type: 'enum',
+    enum: PaymentStatus,
+    default: PaymentStatus.PENDING,
+  })
   paymentStatus: PaymentStatus;
 
   @Column({ name: 'checked_in_at', type: 'timestamp', nullable: true })
@@ -94,7 +109,13 @@ export class Booking {
   @Column({ name: 'km_redeemed', type: 'int', default: 0 })
   kmRedeemed: number; // km usados como desconto nesta booking
 
-  @Column({ name: 'km_discount', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({
+    name: 'km_discount',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
   kmDiscount: number; // valor (R$) descontado pelos km
 
   // ── Passageiros adicionais ─────────────────────────────────────────────────

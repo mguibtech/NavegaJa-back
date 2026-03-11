@@ -38,16 +38,32 @@ export class Promotion {
   @Column({ type: 'varchar', name: 'cta_value', length: 500, nullable: true })
   ctaValue: string | null;
 
-  @Column({ type: 'varchar', name: 'background_color', length: 20, nullable: true, default: '#FF6B35' })
+  @Column({
+    type: 'varchar',
+    name: 'background_color',
+    length: 20,
+    nullable: true,
+    default: '#FF6B35',
+  })
   backgroundColor: string;
 
-  @Column({ type: 'varchar', name: 'text_color', length: 20, nullable: true, default: '#FFFFFF' })
+  @Column({
+    type: 'varchar',
+    name: 'text_color',
+    length: 20,
+    nullable: true,
+    default: '#FFFFFF',
+  })
   textColor: string;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
-  @Column({ type: 'int', default: 0, comment: 'Maior prioridade aparece primeiro' })
+  @Column({
+    type: 'int',
+    default: 0,
+    comment: 'Maior prioridade aparece primeiro',
+  })
   priority: number;
 
   @Column({ name: 'start_date', type: 'timestamp', nullable: true })
@@ -63,10 +79,22 @@ export class Promotion {
   @JoinColumn({ name: 'coupon_id' })
   coupon: Coupon | null;
 
-  @Column({ name: 'from_city', type: 'varchar', length: 100, nullable: true, comment: 'Filtro: cidade de origem (opcional)' })
+  @Column({
+    name: 'from_city',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+    comment: 'Filtro: cidade de origem (opcional)',
+  })
   fromCity: string | null;
 
-  @Column({ name: 'to_city', type: 'varchar', length: 100, nullable: true, comment: 'Filtro: cidade de destino (opcional)' })
+  @Column({
+    name: 'to_city',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+    comment: 'Filtro: cidade de destino (opcional)',
+  })
   toCity: string | null;
 
   @CreateDateColumn({ name: 'created_at' })

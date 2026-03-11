@@ -1,4 +1,13 @@
-import { Controller, Post, Get, Patch, Delete, Param, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { BoatStaffService } from './boat-staff.service';
 import { CreateBoatStaffDto, UpdateBoatStaffDto } from './dto/boat-staff.dto';
@@ -14,7 +23,9 @@ export class BoatStaffController {
   constructor(private boatStaffService: BoatStaffService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Atribuir utilizador boat_manager a um barco (admin)' })
+  @ApiOperation({
+    summary: 'Atribuir utilizador boat_manager a um barco (admin)',
+  })
   assign(@Body() dto: CreateBoatStaffDto) {
     return this.boatStaffService.assignStaff(dto);
   }

@@ -1,5 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEnum, IsBoolean, IsInt, IsUrl, MaxLength, Min } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsBoolean,
+  IsInt,
+  IsUrl,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { CtaAction } from '../promotion.entity';
 
 export class CreatePromotionDto {
@@ -12,7 +21,10 @@ export class CreatePromotionDto {
   @IsString()
   description: string;
 
-  @ApiProperty({ description: 'URL da imagem (CDN)', example: 'https://cdn.example.com/promo.jpg' })
+  @ApiProperty({
+    description: 'URL da imagem (CDN)',
+    example: 'https://cdn.example.com/promo.jpg',
+  })
   @IsUrl()
   imageUrl: string;
 
@@ -27,19 +39,27 @@ export class CreatePromotionDto {
   @IsEnum(CtaAction)
   ctaAction?: CtaAction;
 
-  @ApiPropertyOptional({ description: 'Valor do CTA (rota de busca, URL ou deeplink)' })
+  @ApiPropertyOptional({
+    description: 'Valor do CTA (rota de busca, URL ou deeplink)',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(500)
   ctaValue?: string;
 
-  @ApiPropertyOptional({ description: 'Cor de fundo (hex)', default: '#FF6B35' })
+  @ApiPropertyOptional({
+    description: 'Cor de fundo (hex)',
+    default: '#FF6B35',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(20)
   backgroundColor?: string;
 
-  @ApiPropertyOptional({ description: 'Cor do texto (hex)', default: '#FFFFFF' })
+  @ApiPropertyOptional({
+    description: 'Cor do texto (hex)',
+    default: '#FFFFFF',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(20)
@@ -50,7 +70,10 @@ export class CreatePromotionDto {
   @IsBoolean()
   isActive?: boolean;
 
-  @ApiPropertyOptional({ description: 'Prioridade (maior aparece primeiro)', default: 0 })
+  @ApiPropertyOptional({
+    description: 'Prioridade (maior aparece primeiro)',
+    default: 0,
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -69,13 +92,17 @@ export class CreatePromotionDto {
   @IsString()
   couponId?: string;
 
-  @ApiPropertyOptional({ description: 'Filtro: cidade de origem (opcional, null = todas)' })
+  @ApiPropertyOptional({
+    description: 'Filtro: cidade de origem (opcional, null = todas)',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)
   fromCity?: string;
 
-  @ApiPropertyOptional({ description: 'Filtro: cidade de destino (opcional, null = todas)' })
+  @ApiPropertyOptional({
+    description: 'Filtro: cidade de destino (opcional, null = todas)',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)
@@ -152,13 +179,17 @@ export class UpdatePromotionDto {
   @IsString()
   couponId?: string;
 
-  @ApiPropertyOptional({ description: 'Filtro: cidade de origem (opcional, null = todas)' })
+  @ApiPropertyOptional({
+    description: 'Filtro: cidade de origem (opcional, null = todas)',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)
   fromCity?: string;
 
-  @ApiPropertyOptional({ description: 'Filtro: cidade de destino (opcional, null = todas)' })
+  @ApiPropertyOptional({
+    description: 'Filtro: cidade de destino (opcional, null = todas)',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)

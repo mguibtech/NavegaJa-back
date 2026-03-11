@@ -1,8 +1,19 @@
-import { IsString, IsNotEmpty, IsInt, IsOptional, Min, Max } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsInt,
+  IsOptional,
+  Min,
+  Max,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class ChildPassengerDto {
-  @ApiProperty({ example: 'Ana', required: false, description: 'Nome da criança (opcional)' })
+  @ApiProperty({
+    example: 'Ana',
+    required: false,
+    description: 'Nome da criança (opcional)',
+  })
   @IsOptional()
   @IsString()
   name?: string;
@@ -15,7 +26,10 @@ export class ChildPassengerDto {
 }
 
 export class ExtraPassengerDto {
-  @ApiProperty({ example: 'Maria Santos', description: 'Nome completo do passageiro' })
+  @ApiProperty({
+    example: 'Maria Santos',
+    description: 'Nome completo do passageiro',
+  })
   @IsString()
   @IsNotEmpty({ message: 'Nome do passageiro é obrigatório.' })
   name: string;

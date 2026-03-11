@@ -1,19 +1,24 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column,
-  CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { User } from '../users/user.entity';
 
 export enum CommunityLocationStatus {
-  PENDING   = 'pending',
+  PENDING = 'pending',
   CONFIRMED = 'confirmed',
-  REJECTED  = 'rejected',
+  REJECTED = 'rejected',
 }
 
 export enum CommunityLocationSource {
   USER_SUGGESTION = 'user_suggestion',
-  USER_HOME       = 'user_home',
-  ADMIN           = 'admin',
+  USER_HOME = 'user_home',
+  ADMIN = 'admin',
 }
 
 @Entity('community_locations')

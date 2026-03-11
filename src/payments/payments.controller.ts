@@ -1,5 +1,18 @@
-import { Controller, Post, Param, UseGuards, Request, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  Post,
+  Param,
+  UseGuards,
+  Request,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -23,7 +36,8 @@ export class PaymentsController {
   @Post('pix/booking/:id')
   @ApiOperation({
     summary: 'Gerar QR Code PIX para reserva',
-    description: 'Gera um QR Code PIX com validade de 15 minutos para pagar a reserva indicada. Apenas o próprio passageiro pode gerar.',
+    description:
+      'Gera um QR Code PIX com validade de 15 minutos para pagar a reserva indicada. Apenas o próprio passageiro pode gerar.',
   })
   @ApiResponse({
     status: 201,
@@ -35,12 +49,15 @@ export class PaymentsController {
         pixTxid: 'NVGJ12345678ABCD1234',
         pixExpiresAt: '2026-02-19T13:15:00.000Z',
         pixKey: 'navegaja@example.com',
-        amount: 120.50,
+        amount: 120.5,
         description: 'NavegaJá — Reserva Manaus → Parintins',
       },
     },
   })
-  async generatePixForBooking(@Param('id') id: string, @Request() req: any) {
+  async generatePixForBooking(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
     const booking = await this.bookingsRepo.findOne({
       where: { id },
       relations: ['trip'],
@@ -63,7 +80,8 @@ export class PaymentsController {
   @Post('pix/shipment/:id')
   @ApiOperation({
     summary: 'Gerar QR Code PIX para encomenda',
-    description: 'Gera um QR Code PIX com validade de 15 minutos para pagar a encomenda indicada. Apenas o remetente pode gerar.',
+    description:
+      'Gera um QR Code PIX com validade de 15 minutos para pagar a encomenda indicada. Apenas o remetente pode gerar.',
   })
   @ApiResponse({
     status: 201,
@@ -75,12 +93,15 @@ export class PaymentsController {
         pixTxid: 'NVGJ12345678ABCD1234',
         pixExpiresAt: '2026-02-19T13:15:00.000Z',
         pixKey: 'navegaja@example.com',
-        amount: 45.00,
+        amount: 45.0,
         description: 'NavegaJá — Encomenda TRK-ABC12345',
       },
     },
   })
-  async generatePixForShipment(@Param('id') id: string, @Request() req: any) {
+  async generatePixForShipment(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
     const shipment = await this.shipmentsRepo.findOne({ where: { id } });
     if (!shipment) throw new NotFoundException('Encomenda não encontrada');
     if (shipment.senderId !== req.user.sub) {

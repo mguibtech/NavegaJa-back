@@ -1,4 +1,10 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -6,9 +12,15 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { User, UserRole } from '../users/user.entity';
-import { RegisterDto, LoginDto, ForgotPasswordDto, ResetPasswordDto } from './dto/auth.dto';
+import {
+  RegisterDto,
+  LoginDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+} from './dto/auth.dto';
 import { MailService } from '../mail/mail.service';
 import { GamificationService } from '../gamification/gamification.service';
+import { JwtPayload } from './jwt-payload';
 
 @Injectable()
 export class AuthService {
@@ -22,17 +34,24 @@ export class AuthService {
     private gamificationService: GamificationService,
     config: ConfigService,
   ) {
-    this.refreshSecret = config.get('JWT_REFRESH_SECRET', 'navegaja-refresh-secret-2026');
+    this.refreshSecret = config.get(
+      'JWT_REFRESH_SECRET',
+      'navegaja-refresh-secret-2026',
+    );
   }
 
   async register(dto: RegisterDto) {
-    const exists = await this.usersRepo.findOne({ where: { phone: dto.phone } });
+    const exists = await this.usersRepo.findOne({
+      where: { phone: dto.phone },
+    });
     if (exists) {
       throw new ConflictException('Telefone já cadastrado');
     }
 
     if (dto.cpf) {
-      const cpfExists = await this.usersRepo.findOne({ where: { cpf: dto.cpf } });
+      const cpfExists = await this.usersRepo.findOne({
+        where: { cpf: dto.cpf },
+      });
       if (cpfExists) {
         throw new ConflictException('CPF já cadastrado');
       }
@@ -51,7 +70,7 @@ export class AuthService {
       gender: dto.gender ?? null,
     });
 
-    const saved = await this.usersRepo.save(user) as User;
+    const saved = await this.usersRepo.save(user);
 
     // Gera código de indicação
     const referralCode = `NVJ-${saved.id.substring(0, 6).toUpperCase()}`;
@@ -60,7 +79,10 @@ export class AuthService {
 
     // Processa indicação se informada
     if (dto.referralCode) {
-      await this.gamificationService.processReferral(dto.referralCode, saved.id);
+      await this.gamificationService.processReferral(
+        dto.referralCode,
+        saved.id,
+      );
     }
 
     const tokens = this.generateTokens(saved);
@@ -105,8 +127,10 @@ export class AuthService {
     }
 
     // ✅ Apenas admin e boat_manager acedem ao dashboard web
-    if (user.role !== 'admin' && user.role !== 'boat_manager') {
-      throw new UnauthorizedException('Acesso restrito a administradores e gestores de embarcação');
+    if (user.role !== UserRole.ADMIN && user.role !== UserRole.BOAT_MANAGER) {
+      throw new UnauthorizedException(
+        'Acesso restrito a administradores e gestores de embarcação',
+      );
     }
 
     const tokens = this.generateTokens(user);
@@ -118,7 +142,7 @@ export class AuthService {
 
   async refresh(refreshToken: string) {
     try {
-      const payload = this.jwtService.verify(refreshToken, {
+      const payload = this.jwtService.verify<JwtPayload>(refreshToken, {
         secret: this.refreshSecret,
       });
 
@@ -166,7 +190,9 @@ export class AuthService {
     }
 
     if (!user.resetCode || !user.resetCodeExpires) {
-      throw new BadRequestException('Nenhum código de recuperação foi solicitado');
+      throw new BadRequestException(
+        'Nenhum código de recuperação foi solicitado',
+      );
     }
 
     if (new Date() > user.resetCodeExpires) {
@@ -203,9 +229,14 @@ export class AuthService {
   }
 
   private sanitizeUser(user: User) {
-    const { passwordHash, resetCode, resetCodeExpires, ...result } = user as any;
-    result.capabilities = this.buildCapabilities(user);
-    return result;
+    const { passwordHash, resetCode, resetCodeExpires, ...result } = user;
+    void passwordHash;
+    void resetCode;
+    void resetCodeExpires;
+    return {
+      ...result,
+      capabilities: this.buildCapabilities(user),
+    };
   }
 
   /**
@@ -217,8 +248,7 @@ export class AuthService {
     if (user.role === UserRole.CAPTAIN) {
       const isVerified = user.isVerified ?? false;
       const pendingVerification =
-        !isVerified &&
-        (!!user.licensePhotoUrl || !!user.certificatePhotoUrl);
+        !isVerified && (!!user.licensePhotoUrl || !!user.certificatePhotoUrl);
 
       return {
         isVerified,

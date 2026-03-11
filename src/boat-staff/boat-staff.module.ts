@@ -9,7 +9,10 @@ import { CaptainBoatStaffController } from './captain-boat-staff.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([BoatStaff, Boat, User]), NotificationsModule],
+  imports: [
+    TypeOrmModule.forFeature([BoatStaff, Boat, User]),
+    NotificationsModule,
+  ],
   controllers: [BoatStaffController, CaptainBoatStaffController],
   providers: [BoatStaffService],
   exports: [BoatStaffService],

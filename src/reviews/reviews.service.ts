@@ -1,16 +1,27 @@
 import {
-  Injectable, NotFoundException, BadRequestException, ForbiddenException,
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Review, ReviewType } from './review.entity';
-import { CreatePassengerReviewDto, CreateCaptainReviewDto } from './dto/create-review.dto';
+import {
+  CreatePassengerReviewDto,
+  CreateCaptainReviewDto,
+} from './dto/create-review.dto';
 import { User } from '../users/user.entity';
 import { Boat } from '../boats/boat.entity';
 import { Booking, BookingStatus } from '../bookings/booking.entity';
 import { Trip, TripStatus } from '../trips/trip.entity';
 import { GamificationService } from '../gamification/gamification.service';
 import { PointAction } from '../gamification/point-transaction.entity';
+
+type SanitizedUser = Omit<
+  User,
+  'passwordHash' | 'resetCode' | 'resetCodeExpires'
+>;
 
 @Injectable()
 export class ReviewsService {
@@ -30,7 +41,10 @@ export class ReviewsService {
 
   // ── Passageiro avalia Capitão + Barco ──────────────────────────────────────
 
-  async createPassengerReview(reviewerId: string, dto: CreatePassengerReviewDto): Promise<Review> {
+  async createPassengerReview(
+    reviewerId: string,
+    dto: CreatePassengerReviewDto,
+  ): Promise<Review> {
     // 1. Buscar a viagem e validar que está concluída
     const trip = await this.tripsRepo.findOne({ where: { id: dto.tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
@@ -104,15 +118,22 @@ export class ReviewsService {
 
   // ── Capitão avalia Passageiro ──────────────────────────────────────────────
 
-  async createCaptainReview(captainId: string, dto: CreateCaptainReviewDto): Promise<Review> {
+  async createCaptainReview(
+    captainId: string,
+    dto: CreateCaptainReviewDto,
+  ): Promise<Review> {
     // 1. Buscar e validar a viagem
     const trip = await this.tripsRepo.findOne({ where: { id: dto.tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
     if (trip.captainId !== captainId) {
-      throw new ForbiddenException('Só o capitão desta viagem pode avaliar os passageiros');
+      throw new ForbiddenException(
+        'Só o capitão desta viagem pode avaliar os passageiros',
+      );
     }
     if (trip.status !== TripStatus.COMPLETED) {
-      throw new BadRequestException('Só é possível avaliar passageiros de viagens concluídas');
+      throw new BadRequestException(
+        'Só é possível avaliar passageiros de viagens concluídas',
+      );
     }
 
     // 2. Verificar que o passageiro participou da viagem
@@ -124,7 +145,9 @@ export class ReviewsService {
       },
     });
     if (!booking) {
-      throw new BadRequestException('Este passageiro não tem reserva concluída nesta viagem');
+      throw new BadRequestException(
+        'Este passageiro não tem reserva concluída nesta viagem',
+      );
     }
 
     // 3. Verificar que ainda não avaliou este passageiro nesta viagem
@@ -137,7 +160,9 @@ export class ReviewsService {
       },
     });
     if (existing) {
-      throw new BadRequestException('Você já avaliou este passageiro nesta viagem');
+      throw new BadRequestException(
+        'Você já avaliou este passageiro nesta viagem',
+      );
     }
 
     // 4. Criar a review
@@ -160,34 +185,40 @@ export class ReviewsService {
 
   // ── Leituras ───────────────────────────────────────────────────────────────
 
-  async findByCaptain(captainId: string): Promise<{ reviews: object[]; stats: object }> {
+  async findByCaptain(
+    captainId: string,
+  ): Promise<{ reviews: object[]; stats: object }> {
     const reviews = await this.reviewsRepo.find({
       where: { captainId, reviewType: ReviewType.PASSENGER_TO_CAPTAIN },
       relations: ['reviewer', 'trip'],
       order: { createdAt: 'DESC' },
     });
-    const stats = this.buildRatingStats(reviews.map(r => r.captainRating));
-    return { reviews: reviews.map(r => this.sanitizeReview(r)), stats };
+    const stats = this.buildRatingStats(reviews.map((r) => r.captainRating));
+    return { reviews: reviews.map((r) => this.sanitizeReview(r)), stats };
   }
 
-  async findByBoat(boatId: string): Promise<{ reviews: object[]; stats: object }> {
+  async findByBoat(
+    boatId: string,
+  ): Promise<{ reviews: object[]; stats: object }> {
     const reviews = await this.reviewsRepo.find({
       where: { boatId, reviewType: ReviewType.PASSENGER_TO_CAPTAIN },
       relations: ['reviewer', 'trip'],
       order: { createdAt: 'DESC' },
     });
-    const stats = this.buildRatingStats(reviews.map(r => r.boatRating));
-    return { reviews: reviews.map(r => this.sanitizeReview(r)), stats };
+    const stats = this.buildRatingStats(reviews.map((r) => r.boatRating));
+    return { reviews: reviews.map((r) => this.sanitizeReview(r)), stats };
   }
 
-  async findByPassenger(passengerId: string): Promise<{ reviews: object[]; stats: object }> {
+  async findByPassenger(
+    passengerId: string,
+  ): Promise<{ reviews: object[]; stats: object }> {
     const reviews = await this.reviewsRepo.find({
       where: { passengerId, reviewType: ReviewType.CAPTAIN_TO_PASSENGER },
       relations: ['reviewer', 'trip'],
       order: { createdAt: 'DESC' },
     });
-    const stats = this.buildRatingStats(reviews.map(r => r.passengerRating));
-    return { reviews: reviews.map(r => this.sanitizeReview(r)), stats };
+    const stats = this.buildRatingStats(reviews.map((r) => r.passengerRating));
+    return { reviews: reviews.map((r) => this.sanitizeReview(r)), stats };
   }
 
   async findByTrip(tripId: string): Promise<object[]> {
@@ -196,7 +227,7 @@ export class ReviewsService {
       relations: ['reviewer', 'captain', 'boat', 'passenger'],
       order: { createdAt: 'DESC' },
     });
-    return reviews.map(r => this.sanitizeReview(r));
+    return reviews.map((r) => this.sanitizeReview(r));
   }
 
   async findMyReviews(userId: string): Promise<object[]> {
@@ -205,20 +236,35 @@ export class ReviewsService {
       relations: ['trip', 'captain', 'boat', 'passenger'],
       order: { createdAt: 'DESC' },
     });
-    return reviews.map(r => this.sanitizeReview(r));
+    return reviews.map((r) => this.sanitizeReview(r));
   }
 
   async canReview(
     userId: string,
     tripId: string,
-  ): Promise<{ canReview: boolean; alreadyReviewed: boolean; reason: string; isCaptain: boolean }> {
+  ): Promise<{
+    canReview: boolean;
+    alreadyReviewed: boolean;
+    reason: string;
+    isCaptain: boolean;
+  }> {
     const trip = await this.tripsRepo.findOne({ where: { id: tripId } });
     if (!trip) {
-      return { canReview: false, alreadyReviewed: false, reason: 'Viagem não encontrada', isCaptain: false };
+      return {
+        canReview: false,
+        alreadyReviewed: false,
+        reason: 'Viagem não encontrada',
+        isCaptain: false,
+      };
     }
 
     if (trip.status !== TripStatus.COMPLETED) {
-      return { canReview: false, alreadyReviewed: false, reason: 'Viagem ainda não foi concluída', isCaptain: false };
+      return {
+        canReview: false,
+        alreadyReviewed: false,
+        reason: 'Viagem ainda não foi concluída',
+        isCaptain: false,
+      };
     }
 
     const isCaptain = trip.captainId === userId;
@@ -228,34 +274,61 @@ export class ReviewsService {
         where: { tripId, passengerId: userId, status: BookingStatus.COMPLETED },
       });
       if (!booking) {
-        return { canReview: false, alreadyReviewed: false, reason: 'Você não participou desta viagem', isCaptain: false };
+        return {
+          canReview: false,
+          alreadyReviewed: false,
+          reason: 'Você não participou desta viagem',
+          isCaptain: false,
+        };
       }
       const existing = await this.reviewsRepo.findOne({
-        where: { reviewerId: userId, tripId, reviewType: ReviewType.PASSENGER_TO_CAPTAIN },
+        where: {
+          reviewerId: userId,
+          tripId,
+          reviewType: ReviewType.PASSENGER_TO_CAPTAIN,
+        },
       });
       if (existing) {
-        return { canReview: false, alreadyReviewed: true, reason: 'Você já avaliou esta viagem', isCaptain: false };
+        return {
+          canReview: false,
+          alreadyReviewed: true,
+          reason: 'Você já avaliou esta viagem',
+          isCaptain: false,
+        };
       }
-      return { canReview: true, alreadyReviewed: false, reason: 'Pode avaliar capitão e barco', isCaptain: false };
+      return {
+        canReview: true,
+        alreadyReviewed: false,
+        reason: 'Pode avaliar capitão e barco',
+        isCaptain: false,
+      };
     }
 
-    return { canReview: true, alreadyReviewed: false, reason: 'Pode avaliar os passageiros desta viagem', isCaptain: true };
+    return {
+      canReview: true,
+      alreadyReviewed: false,
+      reason: 'Pode avaliar os passageiros desta viagem',
+      isCaptain: true,
+    };
   }
 
   // ── Helpers privados ───────────────────────────────────────────────────────
 
-  private sanitizeUser(user: any) {
+  private sanitizeUser(user: User | null | undefined): SanitizedUser | null {
     if (!user) return null;
-    const { passwordHash, resetCode, resetCodeExpires, ...safe } = user;
-    return safe;
+    const safeUser = { ...user } as SanitizedUser & Partial<User>;
+    delete safeUser.passwordHash;
+    delete safeUser.resetCode;
+    delete safeUser.resetCodeExpires;
+    return safeUser;
   }
 
   private sanitizeReview(review: Review) {
     return {
       ...review,
       reviewer: this.sanitizeUser(review.reviewer),
-      captain: this.sanitizeUser((review as any).captain),
-      passenger: this.sanitizeUser((review as any).passenger),
+      captain: this.sanitizeUser(review.captain),
+      passenger: this.sanitizeUser(review.passenger),
     };
   }
 
@@ -263,10 +336,20 @@ export class ReviewsService {
     const valid = ratings.filter((r): r is number => r !== null);
     const total = valid.length;
     if (total === 0) {
-      return { total: 0, average: 0, distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } };
+      return {
+        total: 0,
+        average: 0,
+        distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+      };
     }
 
-    const distribution: Record<number, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    const distribution: Record<number, number> = {
+      5: 0,
+      4: 0,
+      3: 0,
+      2: 0,
+      1: 0,
+    };
     let sum = 0;
     for (const r of valid) {
       sum += r;
@@ -281,8 +364,10 @@ export class ReviewsService {
       .createQueryBuilder('r')
       .select('ROUND(AVG(r.rating)::numeric, 1)', 'avg')
       .where('r.captain_id = :captainId', { captainId })
-      .andWhere('r.review_type = :type', { type: ReviewType.PASSENGER_TO_CAPTAIN })
-      .getRawOne();
+      .andWhere('r.review_type = :type', {
+        type: ReviewType.PASSENGER_TO_CAPTAIN,
+      })
+      .getRawOne<{ avg: string }>();
 
     const avg = Number(row?.avg || 5.0);
     await this.usersRepo.update(captainId, { rating: avg });
@@ -295,10 +380,10 @@ export class ReviewsService {
       .addSelect('COUNT(*)', 'total')
       .where('r.boat_id = :boatId', { boatId })
       .andWhere('r.boat_rating IS NOT NULL')
-      .getRawOne();
+      .getRawOne<{ avg: string; total: string }>();
 
     const avg = Number(row?.avg || 5.0);
-    const count = parseInt(row?.total || '0');
+    const count = parseInt(row?.total || '0', 10);
     await this.boatsRepo.update(boatId, { rating: avg, reviewCount: count });
   }
 
@@ -307,8 +392,10 @@ export class ReviewsService {
       .createQueryBuilder('r')
       .select('ROUND(AVG(r.passenger_rating)::numeric, 1)', 'avg')
       .where('r.passenger_id = :passengerId', { passengerId })
-      .andWhere('r.review_type = :type', { type: ReviewType.CAPTAIN_TO_PASSENGER })
-      .getRawOne();
+      .andWhere('r.review_type = :type', {
+        type: ReviewType.CAPTAIN_TO_PASSENGER,
+      })
+      .getRawOne<{ avg: string }>();
 
     const avg = Number(row?.avg || 5.0);
     await this.usersRepo.update(passengerId, { passengerRating: avg });

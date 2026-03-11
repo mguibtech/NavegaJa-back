@@ -13,7 +13,7 @@ export class IsCpfValidConstraint implements ValidatorConstraintInterface {
     if (typeof cpf !== 'string') return false;
 
     // Remove pontos e traço
-    const cleaned = cpf.replace(/[.\-]/g, '');
+    const cleaned = cpf.replace(/[.-]/g, '');
 
     // Deve ter exatamente 11 dígitos
     if (!/^\d{11}$/.test(cleaned)) return false;

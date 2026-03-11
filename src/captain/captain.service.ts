@@ -2,7 +2,11 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Trip, TripStatus } from '../trips/trip.entity';
-import { Booking, BookingStatus, PaymentStatus } from '../bookings/booking.entity';
+import {
+  Booking,
+  BookingStatus,
+  PaymentStatus,
+} from '../bookings/booking.entity';
 import { User } from '../users/user.entity';
 
 @Injectable()
@@ -28,8 +32,12 @@ export class CaptainService {
 
     const [totalTrips, completedTrips, cancelledTrips] = await Promise.all([
       this.tripsRepo.count({ where: { captainId } }),
-      this.tripsRepo.count({ where: { captainId, status: TripStatus.COMPLETED } }),
-      this.tripsRepo.count({ where: { captainId, status: TripStatus.CANCELLED } }),
+      this.tripsRepo.count({
+        where: { captainId, status: TripStatus.COMPLETED },
+      }),
+      this.tripsRepo.count({
+        where: { captainId, status: TripStatus.CANCELLED },
+      }),
     ]);
 
     // Receita total (soma de bookings pagos)
@@ -39,10 +47,13 @@ export class CaptainService {
       .select('COALESCE(SUM(CAST(booking.total_price AS DECIMAL)), 0)', 'total')
       .addSelect('COUNT(DISTINCT booking.passenger_id)', 'totalPassengers')
       .where('trip.captain_id = :captainId', { captainId })
-      .andWhere('booking.payment_status = :status', { status: PaymentStatus.PAID })
-      .getRawOne();
+      .andWhere('booking.payment_status = :status', {
+        status: PaymentStatus.PAID,
+      })
+      .getRawOne<{ total: string; totalPassengers: string }>();
 
-    const completionRate = totalTrips > 0 ? Math.round((completedTrips / totalTrips) * 100) : 0;
+    const completionRate =
+      totalTrips > 0 ? Math.round((completedTrips / totalTrips) * 100) : 0;
 
     return {
       captainName: captain.name,
@@ -54,14 +65,17 @@ export class CaptainService {
       cancelledTrips,
       completionRate,
       totalRevenue: parseFloat(revenueResult?.total || '0'),
-      totalPassengers: parseInt(revenueResult?.totalPassengers || '0'),
+      totalPassengers: parseInt(revenueResult?.totalPassengers || '0', 10),
     };
   }
 
   /**
    * Receita por período (daily breakdown)
    */
-  async getRevenueSeries(captainId: string, period: '7d' | '30d' | '90d' = '30d') {
+  async getRevenueSeries(
+    captainId: string,
+    period: '7d' | '30d' | '90d' = '30d',
+  ) {
     const days = period === '7d' ? 7 : period === '30d' ? 30 : 90;
     const since = new Date();
     since.setDate(since.getDate() - days);
@@ -70,19 +84,24 @@ export class CaptainService {
       .createQueryBuilder('booking')
       .innerJoin('booking.trip', 'trip')
       .select("DATE_TRUNC('day', booking.created_at)", 'date')
-      .addSelect('COALESCE(SUM(CAST(booking.total_price AS DECIMAL)), 0)', 'amount')
+      .addSelect(
+        'COALESCE(SUM(CAST(booking.total_price AS DECIMAL)), 0)',
+        'amount',
+      )
       .addSelect('COUNT(*)', 'bookings')
       .where('trip.captain_id = :captainId', { captainId })
-      .andWhere('booking.payment_status = :status', { status: PaymentStatus.PAID })
+      .andWhere('booking.payment_status = :status', {
+        status: PaymentStatus.PAID,
+      })
       .andWhere('booking.created_at >= :since', { since })
       .groupBy("DATE_TRUNC('day', booking.created_at)")
       .orderBy('date', 'ASC')
-      .getRawMany();
+      .getRawMany<{ date: Date; amount: string; bookings: string }>();
 
-    return rows.map(r => ({
+    return rows.map((r) => ({
       date: r.date,
       amount: parseFloat(r.amount),
-      bookings: parseInt(r.bookings),
+      bookings: parseInt(r.bookings, 10),
     }));
   }
 
@@ -95,19 +114,28 @@ export class CaptainService {
       .select('trip.origin', 'origin')
       .addSelect('trip.destination', 'destination')
       .addSelect('COUNT(*)', 'tripsCount')
-      .addSelect('COALESCE(SUM(CAST(trip.price AS DECIMAL)), 0)', 'totalRevenue')
+      .addSelect(
+        'COALESCE(SUM(CAST(trip.price AS DECIMAL)), 0)',
+        'totalRevenue',
+      )
       .addSelect('ROUND(AVG(CAST(trip.price AS DECIMAL)), 2)', 'avgPrice')
       .where('trip.captain_id = :captainId', { captainId })
       .andWhere('trip.status = :status', { status: TripStatus.COMPLETED })
       .groupBy('trip.origin, trip.destination')
       .orderBy('"tripsCount"', 'DESC')
       .limit(10)
-      .getRawMany();
+      .getRawMany<{
+        origin: string;
+        destination: string;
+        tripsCount: string;
+        totalRevenue: string;
+        avgPrice: string;
+      }>();
 
-    return rows.map(r => ({
+    return rows.map((r) => ({
       origin: r.origin,
       destination: r.destination,
-      tripsCount: parseInt(r.tripsCount),
+      tripsCount: parseInt(r.tripsCount, 10),
       totalRevenue: parseFloat(r.totalRevenue),
       avgPrice: parseFloat(r.avgPrice),
     }));
@@ -124,24 +152,40 @@ export class CaptainService {
       .select('passenger.id', 'passengerId')
       .addSelect('passenger.name', 'passengerName')
       .addSelect('passenger.avatarUrl', 'avatarUrl')
-      .addSelect('CAST(passenger.passengerRating AS DECIMAL)', 'passengerRating')
+      .addSelect(
+        'CAST(passenger.passengerRating AS DECIMAL)',
+        'passengerRating',
+      )
       .addSelect('COUNT(*)', 'totalBookings')
-      .addSelect('COALESCE(SUM(CAST(booking.total_price AS DECIMAL)), 0)', 'totalSpent')
+      .addSelect(
+        'COALESCE(SUM(CAST(booking.total_price AS DECIMAL)), 0)',
+        'totalSpent',
+      )
       .addSelect('MAX(booking.created_at)', 'lastTrip')
       .where('trip.captain_id = :captainId', { captainId })
       .andWhere('booking.status = :status', { status: BookingStatus.COMPLETED })
-      .groupBy('passenger.id, passenger.name, passenger.avatarUrl, passenger.passengerRating')
+      .groupBy(
+        'passenger.id, passenger.name, passenger.avatarUrl, passenger.passengerRating',
+      )
       .having('COUNT(*) > 1')
       .orderBy('"totalBookings"', 'DESC')
       .limit(20)
-      .getRawMany();
+      .getRawMany<{
+        passengerId: string;
+        passengerName: string;
+        avatarUrl: string | null;
+        passengerRating: string;
+        totalBookings: string;
+        totalSpent: string;
+        lastTrip: Date;
+      }>();
 
-    return rows.map(r => ({
+    return rows.map((r) => ({
       passengerId: r.passengerId,
       passengerName: r.passengerName,
       avatarUrl: r.avatarUrl,
       passengerRating: parseFloat(r.passengerRating),
-      totalBookings: parseInt(r.totalBookings),
+      totalBookings: parseInt(r.totalBookings, 10),
       totalSpent: parseFloat(r.totalSpent),
       lastTrip: r.lastTrip,
     }));

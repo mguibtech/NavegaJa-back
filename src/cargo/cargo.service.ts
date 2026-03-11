@@ -1,7 +1,15 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { CargoShipment, CargoStatus, CargoType, CARGO_REFERENCE_PRICES } from './cargo.entity';
+import {
+  CargoShipment,
+  CargoStatus,
+  CARGO_REFERENCE_PRICES,
+} from './cargo.entity';
 import { Trip } from '../trips/trip.entity';
 import { CreateCargoDto, QuoteCargoDto } from './dto/cargo.dto';
 import { GamificationService } from '../gamification/gamification.service';
@@ -10,7 +18,8 @@ import { PointAction } from '../gamification/point-transaction.entity';
 @Injectable()
 export class CargoService {
   constructor(
-    @InjectRepository(CargoShipment) private cargoRepo: Repository<CargoShipment>,
+    @InjectRepository(CargoShipment)
+    private cargoRepo: Repository<CargoShipment>,
     @InjectRepository(Trip) private tripsRepo: Repository<Trip>,
     private gamificationService: GamificationService,
   ) {}
@@ -107,7 +116,9 @@ export class CargoService {
     });
     if (!cargo) throw new NotFoundException('Carga não encontrada');
     if (cargo.trip.captainId !== captainId) {
-      throw new ForbiddenException('Apenas o capitão da viagem pode alterar status');
+      throw new ForbiddenException(
+        'Apenas o capitão da viagem pode alterar status',
+      );
     }
 
     cargo.status = status;
@@ -121,7 +132,9 @@ export class CargoService {
     });
     if (!cargo) throw new NotFoundException('Carga não encontrada');
     if (cargo.trip.captainId !== captainId) {
-      throw new ForbiddenException('Apenas o capitão da viagem pode marcar entrega');
+      throw new ForbiddenException(
+        'Apenas o capitão da viagem pode marcar entrega',
+      );
     }
 
     cargo.status = CargoStatus.DELIVERED;
@@ -139,7 +152,7 @@ export class CargoService {
     return saved;
   }
 
-  async getCargoTypes() {
+  getCargoTypes() {
     return Object.entries(CARGO_REFERENCE_PRICES).map(([type, info]) => ({
       type,
       unit: info.unit,

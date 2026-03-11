@@ -5,8 +5,12 @@
  * mocks com severity = 'NO_FLOODING' e source = 'mock' — sem erros.
  */
 
-export type FloodSeverity = 'NO_FLOODING' | 'ABOVE_NORMAL' | 'SEVERE' | 'EXTREME';
-export type FloodTrend    = 'INCREASING' | 'STEADY' | 'DECREASING';
+export type FloodSeverity =
+  | 'NO_FLOODING'
+  | 'ABOVE_NORMAL'
+  | 'SEVERE'
+  | 'EXTREME';
+export type FloodTrend = 'INCREASING' | 'STEADY' | 'DECREASING';
 export type InundationRisk = 'HIGH' | 'MEDIUM' | 'LOW';
 
 // ─── FloodStatus ─────────────────────────────────────────────────────────────
@@ -55,8 +59,8 @@ export class GaugeModelDto {
 // ─── Forecast (série temporal 7 dias) ────────────────────────────────────────
 
 export class FloodForecastPointDto {
-  timestamp: string;      // ISO 8601
-  level?: number;         // metros
+  timestamp: string; // ISO 8601
+  level?: number; // metros
   severity: FloodSeverity;
 }
 

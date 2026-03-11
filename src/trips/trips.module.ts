@@ -15,6 +15,7 @@ import { BookingsModule } from '../bookings/bookings.module';
 import { PdfModule } from '../pdf/pdf.module';
 import { BoatStaffModule } from '../boat-staff/boat-staff.module';
 import { LocationsModule } from '../locations/locations.module';
+import { GamificationModule } from '../gamification/gamification.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { LocationsModule } from '../locations/locations.module';
     WeatherModule,
     NotificationsModule,
     BookingsModule,
+    GamificationModule,
     PdfModule,
     BoatStaffModule,
     LocationsModule,

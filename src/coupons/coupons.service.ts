@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Coupon, CouponType, CouponApplicability } from './coupon.entity';
@@ -21,7 +25,9 @@ export class CouponsService {
 
   async create(dto: CreateCouponDto): Promise<Coupon> {
     // Verificar se código já existe
-    const existing = await this.couponsRepo.findOne({ where: { code: dto.code.toUpperCase() } });
+    const existing = await this.couponsRepo.findOne({
+      where: { code: dto.code.toUpperCase() },
+    });
     if (existing) {
       throw new BadRequestException('Código de cupom já existe');
     }
@@ -47,15 +53,17 @@ export class CouponsService {
   }
 
   private async notifyNewCoupon(coupon: Coupon): Promise<void> {
-    const discountText = coupon.type === CouponType.PERCENTAGE
-      ? `${Number(coupon.value)}% de desconto`
-      : `R$ ${Number(coupon.value).toFixed(2)} de desconto`;
+    const discountText =
+      coupon.type === CouponType.PERCENTAGE
+        ? `${Number(coupon.value)}% de desconto`
+        : `R$ ${Number(coupon.value).toFixed(2)} de desconto`;
 
-    const applicableText = coupon.applicableTo === CouponApplicability.TRIPS
-      ? 'em viagens'
-      : coupon.applicableTo === CouponApplicability.SHIPMENTS
-      ? 'em encomendas'
-      : 'em viagens e encomendas';
+    const applicableText =
+      coupon.applicableTo === CouponApplicability.TRIPS
+        ? 'em viagens'
+        : coupon.applicableTo === CouponApplicability.SHIPMENTS
+          ? 'em encomendas'
+          : 'em viagens e encomendas';
 
     await this.notificationsService.broadcast({
       title: 'Novo cupom disponivel!',
@@ -79,25 +87,25 @@ export class CouponsService {
     qb.where('coupon.isActive = :active', { active: true });
 
     // Verificar se está dentro do período de validade
-    qb.andWhere(
-      '(coupon.validFrom IS NULL OR coupon.validFrom <= :now)',
-      { now }
-    );
-    qb.andWhere(
-      '(coupon.validUntil IS NULL OR coupon.validUntil >= :now)',
-      { now }
-    );
+    qb.andWhere('(coupon.validFrom IS NULL OR coupon.validFrom <= :now)', {
+      now,
+    });
+    qb.andWhere('(coupon.validUntil IS NULL OR coupon.validUntil >= :now)', {
+      now,
+    });
 
     // Verificar se não atingiu limite de uso
     qb.andWhere(
-      '(coupon.usageLimit IS NULL OR coupon.usageCount < coupon.usageLimit)'
+      '(coupon.usageLimit IS NULL OR coupon.usageCount < coupon.usageLimit)',
     );
 
     return qb.orderBy('coupon.createdAt', 'DESC').getMany();
   }
 
   async findByCode(code: string): Promise<Coupon> {
-    const coupon = await this.couponsRepo.findOne({ where: { code: code.toUpperCase() } });
+    const coupon = await this.couponsRepo.findOne({
+      where: { code: code.toUpperCase() },
+    });
     if (!coupon) {
       throw new NotFoundException('Cupom não encontrado');
     }
@@ -108,14 +116,16 @@ export class CouponsService {
     code: string,
     userId: string,
     totalPrice: number,
-    trip?: Trip
+    trip?: Trip,
   ): Promise<{
     valid: boolean;
     coupon?: Coupon;
     discount?: number;
     message?: string;
   }> {
-    const coupon = await this.couponsRepo.findOne({ where: { code: code.toUpperCase() } });
+    const coupon = await this.couponsRepo.findOne({
+      where: { code: code.toUpperCase() },
+    });
 
     if (!coupon) {
       return { valid: false, message: 'Cupom não encontrado' };
@@ -123,7 +133,10 @@ export class CouponsService {
 
     // Verificar se cupom é aplicável a viagens
     if (coupon.applicableTo === CouponApplicability.SHIPMENTS) {
-      return { valid: false, message: 'Este cupom é válido apenas para encomendas' };
+      return {
+        valid: false,
+        message: 'Este cupom é válido apenas para encomendas',
+      };
     }
 
     if (!coupon.isActive) {
@@ -148,7 +161,7 @@ export class CouponsService {
     if (coupon.minPurchase && totalPrice < Number(coupon.minPurchase)) {
       return {
         valid: false,
-        message: `Valor mínimo de compra: R$ ${Number(coupon.minPurchase).toFixed(2)}`
+        message: `Valor mínimo de compra: R$ ${Number(coupon.minPurchase).toFixed(2)}`,
       };
     }
 
@@ -160,7 +173,7 @@ export class CouponsService {
         if (!tripFrom.includes(couponFrom) && !couponFrom.includes(tripFrom)) {
           return {
             valid: false,
-            message: `Este cupom só vale para viagens saindo de ${coupon.fromCity}`
+            message: `Este cupom só vale para viagens saindo de ${coupon.fromCity}`,
           };
         }
       }
@@ -171,7 +184,7 @@ export class CouponsService {
         if (!tripTo.includes(couponTo) && !couponTo.includes(tripTo)) {
           return {
             valid: false,
-            message: `Este cupom só vale para viagens indo para ${coupon.toCity}`
+            message: `Este cupom só vale para viagens indo para ${coupon.toCity}`,
           };
         }
       }
@@ -206,7 +219,9 @@ export class CouponsService {
     discount?: number;
     message?: string;
   }> {
-    const coupon = await this.couponsRepo.findOne({ where: { code: code.toUpperCase() } });
+    const coupon = await this.couponsRepo.findOne({
+      where: { code: code.toUpperCase() },
+    });
 
     if (!coupon) {
       return { valid: false, message: 'Cupom não encontrado' };
@@ -214,7 +229,10 @@ export class CouponsService {
 
     // Verificar se cupom é aplicável a encomendas
     if (coupon.applicableTo === CouponApplicability.TRIPS) {
-      return { valid: false, message: 'Este cupom é válido apenas para viagens' };
+      return {
+        valid: false,
+        message: 'Este cupom é válido apenas para viagens',
+      };
     }
 
     if (!coupon.isActive) {
@@ -251,7 +269,7 @@ export class CouponsService {
     if (coupon.minPurchase && totalPrice < Number(coupon.minPurchase)) {
       return {
         valid: false,
-        message: `Valor mínimo de compra: R$ ${Number(coupon.minPurchase).toFixed(2)}`
+        message: `Valor mínimo de compra: R$ ${Number(coupon.minPurchase).toFixed(2)}`,
       };
     }
 
@@ -260,13 +278,13 @@ export class CouponsService {
     if (coupon.minWeight && weight < Number(coupon.minWeight)) {
       return {
         valid: false,
-        message: `Este cupom é válido apenas para encomendas acima de ${Number(coupon.minWeight)}kg`
+        message: `Este cupom é válido apenas para encomendas acima de ${Number(coupon.minWeight)}kg`,
       };
     }
     if (coupon.maxWeight && weight > Number(coupon.maxWeight)) {
       return {
         valid: false,
-        message: `Este cupom é válido apenas para encomendas até ${Number(coupon.maxWeight)}kg`
+        message: `Este cupom é válido apenas para encomendas até ${Number(coupon.maxWeight)}kg`,
       };
     }
 
@@ -278,7 +296,7 @@ export class CouponsService {
         if (!tripFrom.includes(couponFrom) && !couponFrom.includes(tripFrom)) {
           return {
             valid: false,
-            message: `Este cupom só vale para encomendas saindo de ${coupon.fromCity}`
+            message: `Este cupom só vale para encomendas saindo de ${coupon.fromCity}`,
           };
         }
       }
@@ -289,7 +307,7 @@ export class CouponsService {
         if (!tripTo.includes(couponTo) && !couponTo.includes(tripTo)) {
           return {
             valid: false,
-            message: `Este cupom só vale para encomendas indo para ${coupon.toCity}`
+            message: `Este cupom só vale para encomendas indo para ${coupon.toCity}`,
           };
         }
       }
@@ -322,7 +340,9 @@ export class CouponsService {
     }
 
     if (dto.code && dto.code !== coupon.code) {
-      const existing = await this.couponsRepo.findOne({ where: { code: dto.code.toUpperCase() } });
+      const existing = await this.couponsRepo.findOne({
+        where: { code: dto.code.toUpperCase() },
+      });
       if (existing) {
         throw new BadRequestException('Código de cupom já existe');
       }

@@ -1,5 +1,17 @@
-import { Controller, Post, Delete, Body, UseGuards, Request } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Controller,
+  Post,
+  Delete,
+  Body,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
 import { NotificationsService } from './notifications.service';
@@ -15,10 +27,14 @@ export class NotificationsController {
   @Post('register-token')
   @ApiOperation({
     summary: 'Registrar token FCM do dispositivo',
-    description: 'Guarda o token FCM para receber push notifications. Chamar após login.',
+    description:
+      'Guarda o token FCM para receber push notifications. Chamar após login.',
   })
   @ApiResponse({ status: 200, description: 'Token registrado com sucesso' })
-  async registerToken(@Request() req: any, @Body() dto: RegisterTokenDto) {
+  async registerToken(
+    @Request() req: AuthenticatedRequest,
+    @Body() dto: RegisterTokenDto,
+  ) {
     await this.notificationsService.registerToken(req.user.sub, dto.fcmToken);
     return { message: 'Token registrado com sucesso' };
   }
@@ -29,7 +45,7 @@ export class NotificationsController {
     description: 'Remove o token FCM do dispositivo. Chamar ao fazer logout.',
   })
   @ApiResponse({ status: 200, description: 'Token removido com sucesso' })
-  async unregisterToken(@Request() req: any) {
+  async unregisterToken(@Request() req: AuthenticatedRequest) {
     await this.notificationsService.unregisterToken(req.user.sub);
     return { message: 'Token removido com sucesso' };
   }
@@ -39,10 +55,11 @@ export class NotificationsController {
   @Roles('admin')
   @ApiOperation({
     summary: 'Enviar notificação de teste (Admin)',
-    description: 'Envia uma notificação de teste para o próprio dispositivo do admin.',
+    description:
+      'Envia uma notificação de teste para o próprio dispositivo do admin.',
   })
   @ApiResponse({ status: 200, description: 'Notificação de teste enviada' })
-  async sendTest(@Request() req: any) {
+  async sendTest(@Request() req: AuthenticatedRequest) {
     await this.notificationsService.sendToUser(req.user.sub, {
       title: '🔔 Teste NavegaJá',
       body: 'Push notifications funcionando corretamente!',

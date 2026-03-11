@@ -14,6 +14,7 @@ import { Boat } from '../boats/boat.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { LocationsModule } from '../locations/locations.module';
 import { GamificationModule } from '../gamification/gamification.module';
+import { TripsModule } from '../trips/trips.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { GamificationModule } from '../gamification/gamification.module';
     NotificationsModule,
     LocationsModule,
     GamificationModule,
+    TripsModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

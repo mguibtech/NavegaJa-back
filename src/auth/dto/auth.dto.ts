@@ -1,4 +1,12 @@
-import { IsString, IsNotEmpty, MinLength, IsOptional, IsEmail, Length, IsEnum } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  MinLength,
+  IsOptional,
+  IsEmail,
+  Length,
+  IsEnum,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsCpfValid } from '../../common/validators/is-cpf-valid.validator';
 import { Gender } from '../../users/user.entity';

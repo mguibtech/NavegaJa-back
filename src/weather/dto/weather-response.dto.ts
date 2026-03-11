@@ -72,7 +72,13 @@ export class RiverLevelDto {
   stationCode: string;
   river: string;
   levelCm: number | null;
-  levelStatus: 'low' | 'normal' | 'attention' | 'alert' | 'emergency' | 'unknown';
+  levelStatus:
+    | 'low'
+    | 'normal'
+    | 'attention'
+    | 'alert'
+    | 'emergency'
+    | 'unknown';
   recordedAt: string | null;
   source: 'ANA' | 'estimate';
 }

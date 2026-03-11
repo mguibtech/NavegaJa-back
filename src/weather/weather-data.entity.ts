@@ -1,4 +1,9 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+} from 'typeorm';
 
 /**
  * Entidade para armazenar histórico de dados meteorológicos
@@ -30,7 +35,13 @@ export class WeatherData {
   @Column({ type: 'decimal', precision: 5, scale: 2, name: 'wind_speed' })
   windSpeed: number; // Velocidade do vento em m/s
 
-  @Column({ type: 'decimal', precision: 5, scale: 2, name: 'wind_gust', nullable: true })
+  @Column({
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    name: 'wind_gust',
+    nullable: true,
+  })
   windGust: number | null; // Rajadas de vento
 
   @Column({ type: 'int', name: 'wind_deg' })

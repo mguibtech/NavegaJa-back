@@ -1,4 +1,14 @@
-import { IsString, IsNotEmpty, IsNumber, IsInt, IsOptional, IsDateString, IsEnum, Min, Max } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsInt,
+  IsOptional,
+  IsDateString,
+  IsEnum,
+  Min,
+  Max,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { TripStatus } from '../trip.entity';
 
@@ -26,12 +36,16 @@ export class CreateTripDto {
   @IsDateString()
   arrivalTime: string;
 
-  @ApiProperty({ example: 45.00 })
+  @ApiProperty({ example: 45.0 })
   @IsNumber()
   @Min(0.01, { message: 'Preço deve ser maior que zero.' })
   price: number;
 
-  @ApiProperty({ example: 0, description: 'Desconto em % (0-100)', required: false })
+  @ApiProperty({
+    example: 0,
+    description: 'Desconto em % (0-100)',
+    required: false,
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)
@@ -43,13 +57,21 @@ export class CreateTripDto {
   @Min(1, { message: 'Total de assentos deve ser pelo menos 1.' })
   totalSeats: number;
 
-  @ApiProperty({ example: 15.00, description: 'Preço por kg de carga (R$/kg)', required: false })
+  @ApiProperty({
+    example: 15.0,
+    description: 'Preço por kg de carga (R$/kg)',
+    required: false,
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)
   cargoPriceKg?: number;
 
-  @ApiProperty({ example: 500, description: 'Capacidade total de carga em kg', required: false })
+  @ApiProperty({
+    example: 500,
+    description: 'Capacidade total de carga em kg',
+    required: false,
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)
@@ -63,7 +85,7 @@ export class UpdateTripStatusDto {
 }
 
 export class UpdateLocationDto {
-  @ApiProperty({ example: -3.1190 })
+  @ApiProperty({ example: -3.119 })
   @IsNumber()
   lat: number;
 
@@ -91,10 +113,10 @@ export class PopularRouteDto {
   @ApiProperty({ example: 8 })
   tripsCount: number;
 
-  @ApiProperty({ example: 45.00 })
+  @ApiProperty({ example: 45.0 })
   minPrice: number;
 
-  @ApiProperty({ example: 52.50 })
+  @ApiProperty({ example: 52.5 })
   avgPrice: number;
 }
 

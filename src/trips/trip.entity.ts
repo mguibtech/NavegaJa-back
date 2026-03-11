@@ -1,6 +1,12 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-  UpdateDateColumn, ManyToOne, JoinColumn, OneToMany,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
+  OneToMany,
 } from 'typeorm';
 import { User } from '../users/user.entity';
 import { Boat } from '../boats/boat.entity';
@@ -58,16 +64,41 @@ export class Trip {
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   price: number;
 
-  @Column({ type: 'int', default: 0, comment: 'Desconto em porcentagem (0-100)' })
+  @Column({
+    type: 'int',
+    default: 0,
+    comment: 'Desconto em porcentagem (0-100)',
+  })
   discount: number;
 
-  @Column({ name: 'cargo_price_kg', type: 'decimal', precision: 10, scale: 2, nullable: true, default: null })
+  @Column({
+    name: 'cargo_price_kg',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+    default: null,
+  })
   cargoPriceKg: number | null;
 
-  @Column({ name: 'cargo_capacity_kg', type: 'decimal', precision: 10, scale: 2, nullable: true, comment: 'Capacidade total de carga em kg' })
+  @Column({
+    name: 'cargo_capacity_kg',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+    comment: 'Capacidade total de carga em kg',
+  })
   cargoCapacityKg: number;
 
-  @Column({ name: 'available_cargo_kg', type: 'decimal', precision: 10, scale: 2, nullable: true, comment: 'Carga disponível em kg (atualizada conforme reservas)' })
+  @Column({
+    name: 'available_cargo_kg',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+    comment: 'Carga disponível em kg (atualizada conforme reservas)',
+  })
   availableCargoKg: number;
 
   @Column({ name: 'total_seats' })
@@ -80,17 +111,41 @@ export class Trip {
   status: TripStatus;
 
   // Coordenadas geocodificadas da cidade de origem (preenchidas ao criar a viagem)
-  @Column({ name: 'origin_lat', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  @Column({
+    name: 'origin_lat',
+    type: 'decimal',
+    precision: 10,
+    scale: 7,
+    nullable: true,
+  })
   originLat: number | null;
 
-  @Column({ name: 'origin_lng', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  @Column({
+    name: 'origin_lng',
+    type: 'decimal',
+    precision: 10,
+    scale: 7,
+    nullable: true,
+  })
   originLng: number | null;
 
   // GPS em tempo real do capitão (actualizado via PATCH /trips/:id/location)
-  @Column({ name: 'current_lat', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  @Column({
+    name: 'current_lat',
+    type: 'decimal',
+    precision: 10,
+    scale: 7,
+    nullable: true,
+  })
   currentLat: number | null;
 
-  @Column({ name: 'current_lng', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  @Column({
+    name: 'current_lng',
+    type: 'decimal',
+    precision: 10,
+    scale: 7,
+    nullable: true,
+  })
   currentLng: number | null;
 
   @Column({ name: 'last_location_at', type: 'timestamp', nullable: true })

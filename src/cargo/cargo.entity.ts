@@ -1,6 +1,11 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-  UpdateDateColumn, ManyToOne, JoinColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { User } from '../users/user.entity';
 import { Trip } from '../trips/trip.entity';
@@ -28,7 +33,10 @@ export enum CargoStatus {
 }
 
 // Precos de referencia por tipo de carga (em R$)
-export const CARGO_REFERENCE_PRICES: Record<CargoType, { unit: string; basePrice: number }> = {
+export const CARGO_REFERENCE_PRICES: Record<
+  CargoType,
+  { unit: string; basePrice: number }
+> = {
   [CargoType.MOTORCYCLE]: { unit: 'unidade', basePrice: 150 },
   [CargoType.CAR]: { unit: 'unidade', basePrice: 500 },
   [CargoType.PICKUP_TRUCK]: { unit: 'unidade', basePrice: 650 },
@@ -68,7 +76,13 @@ export class CargoShipment {
   @Column({ default: 1 })
   quantity: number;
 
-  @Column({ name: 'estimated_weight_kg', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({
+    name: 'estimated_weight_kg',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
   estimatedWeightKg: number;
 
   @Column({ length: 255, nullable: true })
@@ -86,7 +100,11 @@ export class CargoShipment {
   @Column({ name: 'total_price', type: 'decimal', precision: 10, scale: 2 })
   totalPrice: number;
 
-  @Column({ type: 'enum', enum: CargoStatus, default: CargoStatus.PENDING_QUOTE })
+  @Column({
+    type: 'enum',
+    enum: CargoStatus,
+    default: CargoStatus.PENDING_QUOTE,
+  })
   status: CargoStatus;
 
   @Column({ name: 'tracking_code', length: 20, unique: true })

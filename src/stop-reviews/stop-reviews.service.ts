@@ -13,15 +13,18 @@ export class StopReviewsService {
     private gamificationService: GamificationService,
   ) {}
 
-  async create(userId: string, data: {
-    locationName: string;
-    rating: number;
-    comment?: string;
-    photos?: string[];
-    tripId?: string;
-    lat?: number;
-    lng?: number;
-  }): Promise<StopReview> {
+  async create(
+    userId: string,
+    data: {
+      locationName: string;
+      rating: number;
+      comment?: string;
+      photos?: string[];
+      tripId?: string;
+      lat?: number;
+      lng?: number;
+    },
+  ): Promise<StopReview> {
     if (data.rating < 1 || data.rating > 5 || !Number.isInteger(data.rating)) {
       throw new BadRequestException('rating deve ser um inteiro de 1 a 5');
     }
@@ -38,7 +41,11 @@ export class StopReviewsService {
     const saved = await this.reviewsRepo.save(review);
 
     // Dar 5 NavegaCoins ao usuário por avaliar um ponto de parada
-    await this.gamificationService.awardPoints(userId, PointAction.REVIEW_CREATED, saved.id);
+    await this.gamificationService.awardPoints(
+      userId,
+      PointAction.REVIEW_CREATED,
+      saved.id,
+    );
 
     return saved;
   }
@@ -48,7 +55,9 @@ export class StopReviewsService {
       .createQueryBuilder('r')
       .leftJoin('r.user', 'user')
       .addSelect(['user.id', 'user.name', 'user.avatarUrl'])
-      .where('LOWER(r.location_name) LIKE LOWER(:location)', { location: `%${location}%` })
+      .where('LOWER(r.location_name) LIKE LOWER(:location)', {
+        location: `%${location}%`,
+      })
       .orderBy('r.created_at', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
@@ -70,12 +79,18 @@ export class StopReviewsService {
       .orderBy('"avgRating"', 'DESC')
       .addOrderBy('"reviewCount"', 'DESC')
       .limit(limit)
-      .getRawMany();
+      .getRawMany<{
+        locationName: string;
+        avgRating: string;
+        reviewCount: string;
+        lat: string | null;
+        lng: string | null;
+      }>();
 
-    return rows.map(r => ({
+    return rows.map((r) => ({
       locationName: r.locationName,
       avgRating: parseFloat(r.avgRating),
-      reviewCount: parseInt(r.reviewCount),
+      reviewCount: parseInt(r.reviewCount, 10),
       lat: r.lat ? parseFloat(r.lat) : null,
       lng: r.lng ? parseFloat(r.lng) : null,
     }));

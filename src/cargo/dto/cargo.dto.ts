@@ -1,4 +1,11 @@
-import { IsString, IsNotEmpty, IsEnum, IsOptional, IsNumber, Min } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsEnum,
+  IsOptional,
+  IsNumber,
+  Min,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { CargoType, CargoStatus } from '../cargo.entity';
 
@@ -61,7 +68,7 @@ export class UpdateCargoStatusDto {
 }
 
 export class QuoteCargoDto {
-  @ApiProperty({ example: 150.00 })
+  @ApiProperty({ example: 150.0 })
   @IsNumber()
   @Min(0)
   totalPrice: number;

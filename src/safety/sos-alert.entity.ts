@@ -1,24 +1,32 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import { User } from '../users/user.entity';
 import { Trip } from '../trips/trip.entity';
 
 export enum SosAlertStatus {
-  ACTIVE = 'active',       // Alerta ativo
-  RESOLVED = 'resolved',   // Resolvido
+  ACTIVE = 'active', // Alerta ativo
+  RESOLVED = 'resolved', // Resolvido
   FALSE_ALARM = 'false_alarm', // Falso alarme
   CANCELLED = 'cancelled', // Cancelado pelo usuário
 }
 
 export enum SosAlertType {
-  GENERAL = 'general',         // Alerta geral (botão físico / atalho rápido)
-  EMERGENCY = 'emergency',     // Emergência geral
-  MEDICAL = 'medical',         // Emergência médica
-  FIRE = 'fire',               // Incêndio
-  WATER_LEAK = 'water_leak',   // Vazamento de água/naufrágio
-  MECHANICAL = 'mechanical',   // Problema mecânico
-  WEATHER = 'weather',         // Condições climáticas perigosas
-  ACCIDENT = 'accident',       // Acidente
-  OTHER = 'other',             // Outro
+  GENERAL = 'general', // Alerta geral (botão físico / atalho rápido)
+  EMERGENCY = 'emergency', // Emergência geral
+  MEDICAL = 'medical', // Emergência médica
+  FIRE = 'fire', // Incêndio
+  WATER_LEAK = 'water_leak', // Vazamento de água/naufrágio
+  MECHANICAL = 'mechanical', // Problema mecânico
+  WEATHER = 'weather', // Condições climáticas perigosas
+  ACCIDENT = 'accident', // Acidente
+  OTHER = 'other', // Outro
 }
 
 /**
@@ -47,7 +55,11 @@ export class SosAlert {
   @Column({ type: 'enum', enum: SosAlertType })
   type: SosAlertType;
 
-  @Column({ type: 'enum', enum: SosAlertStatus, default: SosAlertStatus.ACTIVE })
+  @Column({
+    type: 'enum',
+    enum: SosAlertStatus,
+    default: SosAlertStatus.ACTIVE,
+  })
   status: SosAlertStatus;
 
   @Column({ type: 'text', nullable: true })

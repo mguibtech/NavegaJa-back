@@ -8,7 +8,7 @@ import * as fs from 'fs';
 @Injectable()
 export class StorageService implements OnModuleInit {
   private readonly logger = new Logger(StorageService.name);
-  private bucket: admin.storage.Storage['bucket'] extends (...args: any[]) => infer R ? R : never | null = null as any;
+  private bucket: ReturnType<admin.storage.Storage['bucket']> | null = null;
   private isEnabled = false;
 
   constructor(private configService: ConfigService) {}
@@ -16,16 +16,22 @@ export class StorageService implements OnModuleInit {
   onModuleInit() {
     const projectId = this.configService.get<string>('FIREBASE_PROJECT_ID');
     if (!projectId) {
-      this.logger.warn('FIREBASE_PROJECT_ID não definido — uploads salvos em disco local');
+      this.logger.warn(
+        'FIREBASE_PROJECT_ID não definido — uploads salvos em disco local',
+      );
       return;
     }
 
     try {
       // Reutiliza o app Firebase já inicializado (pelo NotificationsService) ou cria um novo
-      const app = admin.apps.find(a => a?.name === '[DEFAULT]');
+      const app = admin.apps.find((a) => a?.name === '[DEFAULT]');
       if (!app) {
-        const privateKey = this.configService.get<string>('FIREBASE_PRIVATE_KEY');
-        const clientEmail = this.configService.get<string>('FIREBASE_CLIENT_EMAIL');
+        const privateKey = this.configService.get<string>(
+          'FIREBASE_PRIVATE_KEY',
+        );
+        const clientEmail = this.configService.get<string>(
+          'FIREBASE_CLIENT_EMAIL',
+        );
         admin.initializeApp({
           credential: admin.credential.cert({
             projectId,
@@ -34,16 +40,15 @@ export class StorageService implements OnModuleInit {
           }),
           storageBucket: `${projectId}.appspot.com`,
         });
-      } else {
-        // App já existe — garantir que o storageBucket está definido
-        (app.options as any).storageBucket = `${projectId}.appspot.com`;
       }
 
       this.bucket = admin.storage().bucket(`${projectId}.appspot.com`);
       this.isEnabled = true;
       this.logger.log('Firebase Storage inicializado');
     } catch (error) {
-      this.logger.warn(`Erro ao inicializar Firebase Storage: ${error.message} — usando disco local`);
+      this.logger.warn(
+        `Erro ao inicializar Firebase Storage: ${error instanceof Error ? error.message : String(error)} — usando disco local`,
+      );
     }
   }
 
@@ -65,7 +70,9 @@ export class StorageService implements OnModuleInit {
       try {
         return await this.uploadToFirebase(buffer, destination, mimetype);
       } catch (error) {
-        this.logger.warn(`Firebase upload falhou (${error.message}) — usando disco local como fallback`);
+        this.logger.warn(
+          `Firebase upload falhou (${error instanceof Error ? error.message : String(error)}) — usando disco local como fallback`,
+        );
       }
     }
 
@@ -79,7 +86,12 @@ export class StorageService implements OnModuleInit {
     destination: string,
     mimetype: string,
   ): Promise<string> {
-    const file = this.bucket.file(destination);
+    const bucket = this.bucket;
+    if (!bucket) {
+      throw new Error('Firebase Storage nÃ£o inicializado');
+    }
+
+    const file = bucket.file(destination);
 
     await file.save(buffer, {
       metadata: {
@@ -95,7 +107,7 @@ export class StorageService implements OnModuleInit {
 
   // ── Fallback: disco local ──────────────────────────────────────────────────
 
-  private async uploadToDisk(buffer: Buffer, filename: string): Promise<string> {
+  private uploadToDisk(buffer: Buffer, filename: string): string {
     const dir = './uploads';
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -106,7 +118,9 @@ export class StorageService implements OnModuleInit {
 
     // Retorna URL completa para que web e app consigam carregar o ficheiro
     // APP_URL deve ser o endereço público do servidor (ex: http://192.168.1.100:3000)
-    const appUrl = this.configService.get<string>('APP_URL') || `http://localhost:${process.env.PORT || 3000}`;
+    const appUrl =
+      this.configService.get<string>('APP_URL') ||
+      `http://localhost:${process.env.PORT || 3000}`;
     return `${appUrl}/uploads/${filename}`;
   }
 }

@@ -1,15 +1,20 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  CreateDateColumn,
 } from 'typeorm';
 import { User } from '../users/user.entity';
 
-export const KM_BLOCK = 500;           // km por bloco
-export const DISCOUNT_PER_BLOCK = 25;  // R$ de desconto por bloco de 500 km
+export const KM_BLOCK = 500; // km por bloco
+export const DISCOUNT_PER_BLOCK = 25; // R$ de desconto por bloco de 500 km
 
 export enum KmTransactionType {
-  EARNED   = 'earned',    // km creditado ao completar viagem
-  REDEEMED = 'redeemed',  // km usado como desconto em booking
-  REFUNDED = 'refunded',  // km devolvido ao cancelar booking
+  EARNED = 'earned', // km creditado ao completar viagem
+  REDEEMED = 'redeemed', // km usado como desconto em booking
+  REFUNDED = 'refunded', // km devolvido ao cancelar booking
 }
 
 @Entity('km_transactions')
