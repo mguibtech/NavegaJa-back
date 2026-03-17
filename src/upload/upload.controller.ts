@@ -18,13 +18,30 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { memoryStorage, type FileFilterCallback } from 'multer';
+import * as path from 'path';
 import type { Request } from 'express';
 import { StorageService } from './storage.service';
 
 // Tipos de ficheiro permitidos por categoria
-const ALLOWED_IMAGES = /\/(jpg|jpeg|png|gif|webp)$/;
+const ALLOWED_IMAGES = /\/(jpg|jpeg|png|gif|webp|heic|heif|avif)$/;
 const ALLOWED_VIDEOS = /\/(mp4|mov|avi|webm|quicktime)$/;
-const ALLOWED_DOCUMENTS = /\/(jpg|jpeg|png|webp|pdf)$/;
+const ALLOWED_DOCUMENTS =
+  /(^application\/pdf$)|\/(jpg|jpeg|png|webp|heic|heif|avif)$/;
+const ALLOWED_IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|heic|heif|avif)$/i;
+const ALLOWED_DOCUMENT_EXTENSIONS =
+  /\.(jpg|jpeg|png|webp|heic|heif|avif|pdf)$/i;
+
+function matchesAllowedFile(
+  file: Express.Multer.File,
+  mimePattern: RegExp,
+  extensionPattern: RegExp,
+): boolean {
+  const extension = path.extname(file.originalname || '');
+  return (
+    mimePattern.test(file.mimetype || '') ||
+    extensionPattern.test(extension || '')
+  );
+}
 
 @ApiTags('Upload')
 @Controller('upload')
@@ -66,7 +83,9 @@ export class UploadController {
         file: Express.Multer.File,
         cb: FileFilterCallback,
       ) => {
-        if (!file.mimetype.match(ALLOWED_IMAGES)) {
+        if (
+          !matchesAllowedFile(file, ALLOWED_IMAGES, ALLOWED_IMAGE_EXTENSIONS)
+        ) {
           return cb(
             new BadRequestException(
               'Apenas imagens são permitidas (JPG, PNG, GIF, WEBP)',
@@ -126,7 +145,13 @@ export class UploadController {
         file: Express.Multer.File,
         cb: FileFilterCallback,
       ) => {
-        if (!file.mimetype.match(ALLOWED_DOCUMENTS)) {
+        if (
+          !matchesAllowedFile(
+            file,
+            ALLOWED_DOCUMENTS,
+            ALLOWED_DOCUMENT_EXTENSIONS,
+          )
+        ) {
           return cb(
             new BadRequestException(
               'Apenas imagens (JPG, PNG, WEBP) ou PDF são permitidos',

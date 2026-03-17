@@ -20,6 +20,7 @@ import {
   DISCOUNT_PER_BLOCK,
 } from './km-transaction.entity';
 import { User, UserRole } from '../users/user.entity';
+import { ensureReferralCode } from '../users/referral-code.util';
 
 @Injectable()
 export class GamificationService {
@@ -129,6 +130,7 @@ export class GamificationService {
   async getUserStats(userId: string) {
     const user = await this.usersRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado');
+    const referralCode = await ensureReferralCode(this.usersRepo, user);
 
     const levelInfo =
       LEVEL_THRESHOLDS.find((l) => user.totalPoints >= l.minPoints) ||
@@ -140,7 +142,7 @@ export class GamificationService {
       totalPoints: user.totalPoints,
       level: user.level,
       discount: levelInfo.discount,
-      referralCode: user.referralCode,
+      referralCode,
       nextLevel: nextLevel
         ? {
             level: nextLevel.level,
@@ -257,6 +259,7 @@ export class GamificationService {
       select: ['id', 'referralCode'],
     });
     if (!user) throw new NotFoundException('Usuário não encontrado');
+    const referralCode = await ensureReferralCode(this.usersRepo, user);
 
     const referrals = await this.referralsRepo.find({
       where: { referrerId: userId },
@@ -270,7 +273,7 @@ export class GamificationService {
     ).length;
 
     return {
-      referralCode: user.referralCode,
+      referralCode,
       totalReferred,
       totalConverted,
       pendingConversions: totalReferred - totalConverted,

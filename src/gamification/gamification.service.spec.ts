@@ -9,15 +9,12 @@ import type { KmTransaction } from './km-transaction.entity';
 describe('GamificationService owner rewards', () => {
   it('awards boat owner trip points only once per trip', async () => {
     const pointsRepo = {
-      findOne: jest
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          id: 'tx-existing',
-          userId: 'owner-1',
-          action: PointAction.BOAT_OWNER_TRIP_COMPLETED,
-          referenceId: 'trip-1',
-        }),
+      findOne: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({
+        id: 'tx-existing',
+        userId: 'owner-1',
+        action: PointAction.BOAT_OWNER_TRIP_COMPLETED,
+        referenceId: 'trip-1',
+      }),
       create: jest.fn((value: Partial<PointTransaction>) => value),
       save: jest.fn((value: Partial<PointTransaction>) =>
         Promise.resolve({ id: 'tx-1', ...value }),
@@ -40,7 +37,10 @@ describe('GamificationService owner rewards', () => {
       {} as Repository<KmTransaction>,
     );
 
-    const first = await service.awardBoatOwnerTripCompleted('owner-1', 'trip-1');
+    const first = await service.awardBoatOwnerTripCompleted(
+      'owner-1',
+      'trip-1',
+    );
     const second = await service.awardBoatOwnerTripCompleted(
       'owner-1',
       'trip-1',

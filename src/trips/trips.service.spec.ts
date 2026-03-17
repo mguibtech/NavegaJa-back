@@ -399,6 +399,26 @@ describe('TripsService trip ownership and conflict rules', () => {
     expect(result.id).toBe('trip-new');
   });
 
+  it('returns a disabled shipment policy when the trip has no cargo price', async () => {
+    const { service } = createService({
+      conflictCount: 0,
+    });
+
+    const result = await service.create('captain-1', {
+      origin: 'Manaus',
+      destination: 'Itacoatiara',
+      departureTime: '2026-03-12T10:00:00.000Z',
+      arrivalTime: '2026-03-14T14:00:00.000Z',
+      price: 250,
+      totalSeats: 20,
+      boatId: 'boat-1',
+    });
+
+    expect(result.cargoPriceKg).toBeNull();
+    expect(result.acceptsShipments).toBe(false);
+    expect(result.shipmentPricePerKg).toBeNull();
+  });
+
   it('blocks creation when another active trip already occupies the boat time slot', async () => {
     const { service, tripsRepo } = createService({ conflictCount: 1 });
 

@@ -20,6 +20,11 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Trip, TripStatus } from './trip.entity';
 import { geocodeCity } from './city-coords';
 import {
+  getTripShipmentPolicy,
+  normalizeCargoPriceKg,
+  type TripShipmentPolicy,
+} from './trip-shipment-policy';
+import {
   CreateTripDto,
   UpdateTripStatusDto,
   UpdateLocationDto,
@@ -56,6 +61,8 @@ export interface WeatherWarning {
 export type TripStatusUpdateResult = Trip & {
   weatherWarning?: WeatherWarning;
 };
+
+type TripResponse = Trip & TripShipmentPolicy;
 
 @Injectable()
 export class TripsService {
@@ -118,11 +125,43 @@ export class TripsService {
     private locationsService: LocationsService,
   ) {}
 
+  private serializeTrip<T extends Trip>(trip: T): T & TripShipmentPolicy {
+    const shipmentPolicy = getTripShipmentPolicy(trip);
+
+    return {
+      ...trip,
+      cargoPriceKg: shipmentPolicy.shipmentPricePerKg,
+      ...shipmentPolicy,
+    };
+  }
+
+  private serializeTrips<T extends Trip>(
+    trips: T[],
+  ): Array<T & TripShipmentPolicy> {
+    return trips.map((trip) => this.serializeTrip(trip));
+  }
+
+  private async findTripByIdOrFail(id: string): Promise<Trip> {
+    const qb = this.tripsRepo
+      .createQueryBuilder('trip')
+      .leftJoin('trip.captain', 'captain')
+      .addSelect(TripsService.CAPTAIN_SAFE_FIELDS)
+      .leftJoinAndSelect('trip.boat', 'boat')
+      .leftJoinAndSelect('trip.bookings', 'bookings')
+      .leftJoin('bookings.passenger', 'passenger')
+      .addSelect(TripsService.PASSENGER_SAFE_FIELDS)
+      .where('trip.id = :id', { id });
+
+    const trip = await qb.getOne();
+    if (!trip) throw new NotFoundException('Viagem nÃ£o encontrada');
+    return trip;
+  }
+
   async create(
     userId: string,
     dto: CreateTripDto,
     role?: string,
-  ): Promise<Trip> {
+  ): Promise<TripResponse> {
     // Alias para compatibilidade interna (trip.captainId = quem criou)
     const captainId = userId;
     const departureAt = new Date(dto.departureTime);
@@ -236,11 +275,13 @@ export class TripsService {
       throw new BadRequestException('Preço deve ser maior que zero.');
     }
 
-    if (dto.cargoPriceKg && dto.cargoPriceKg < 0) {
+    if (dto.cargoPriceKg !== undefined && dto.cargoPriceKg < 0) {
       throw new BadRequestException('Preço de carga não pode ser negativo.');
     }
 
     // 6. Verificar risco de cheia EXTREME (bloqueia criação da viagem)
+    const normalizedCargoPriceKg = normalizeCargoPriceKg(dto.cargoPriceKg);
+
     try {
       const flood = await this.floodService.getFloodStatus(
         -3.119,
@@ -269,7 +310,7 @@ export class TripsService {
       price: dto.price,
       totalSeats: dto.totalSeats,
       availableSeats: dto.totalSeats,
-      cargoPriceKg: dto.cargoPriceKg || 0,
+      cargoPriceKg: normalizedCargoPriceKg,
       cargoCapacityKg: dto.cargoCapacityKg || null,
       availableCargoKg: dto.cargoCapacityKg || null, // Inicializa com capacidade total
       ...(await (async () => {
@@ -300,7 +341,7 @@ export class TripsService {
         .catch(() => {});
     }
 
-    return saved;
+    return this.serializeTrip(saved);
   }
 
   private async notifyFavoriteCaptainFans(
@@ -337,7 +378,10 @@ export class TripsService {
     });
   }
 
-  async findAvailable(routeId?: string, date?: string): Promise<Trip[]> {
+  async findAvailable(
+    routeId?: string,
+    date?: string,
+  ): Promise<TripResponse[]> {
     const where: {
       status: TripStatus;
       routeId?: string;
@@ -358,11 +402,13 @@ export class TripsService {
       where.departureAt = MoreThanOrEqual(new Date());
     }
 
-    return this.tripsRepo.find({
+    const trips = await this.tripsRepo.find({
       where,
       relations: ['captain', 'boat'],
       order: { departureAt: 'ASC' },
     });
+
+    return this.serializeTrips(trips);
   }
 
   async search(
@@ -374,7 +420,7 @@ export class TripsService {
     departureTime?: 'morning' | 'afternoon' | 'night',
     minRating?: number,
     routeId?: string,
-  ): Promise<Trip[]> {
+  ): Promise<TripResponse[]> {
     // ValidationPipe({ transform:true }) converte strings não numéricas para NaN — validar aqui
     if (minPrice !== undefined && !Number.isFinite(minPrice)) {
       throw new BadRequestException(
@@ -483,7 +529,7 @@ export class TripsService {
 
     qb.orderBy('trip.departure_at', 'ASC');
 
-    return qb.getMany();
+    return this.serializeTrips(await qb.getMany());
   }
 
   async findById(id: string): Promise<Trip> {
@@ -506,12 +552,16 @@ export class TripsService {
    * Endpoint de gestão do capitão — retorna bookings + shipments com todos os dados necessários.
    * Garante que o capitão só acede à sua própria viagem.
    */
+  async findByIdResponse(id: string): Promise<TripResponse> {
+    return this.serializeTrip(await this.findById(id));
+  }
+
   async findByIdForCaptain(
     id: string,
     userId: string,
     role?: string,
   ): Promise<
-    Trip & {
+    TripResponse & {
       passageiros: Array<{
         bookingId: string;
         status: BookingStatus;
@@ -620,7 +670,7 @@ export class TripsService {
     }));
 
     return {
-      ...trip,
+      ...this.serializeTrip(trip),
       passageiros,
       encomendas,
       totalPassageiros: passageiros.length,
@@ -784,10 +834,10 @@ export class TripsService {
       });
     }
 
-    return result.trip;
+    return this.serializeTrip(result.trip);
   }
 
-  async findByCaptain(captainId: string): Promise<Trip[]> {
+  async findByCaptain(captainId: string): Promise<TripResponse[]> {
     // Incluir viagens criadas directamente pelo capitão + viagens nos barcos do capitão
     // criadas por boat_managers (trip.captainId = gestor, mas boat.ownerId = capitão)
     const boats = await this.boatsRepo.find({
@@ -809,22 +859,25 @@ export class TripsService {
 
     // Deduplicar (viagem criada pelo próprio capitão no seu barco apareceria duas vezes)
     const seen = new Set<string>();
-    return trips.filter((t) => {
-      if (seen.has(t.id)) return false;
-      seen.add(t.id);
-      return true;
-    });
+    return this.serializeTrips(
+      trips.filter((t) => {
+        if (seen.has(t.id)) return false;
+        seen.add(t.id);
+        return true;
+      }),
+    );
   }
 
   /** Viagens de todos os barcos geridos pelo boat_manager */
-  async findByManagedBoats(managerId: string): Promise<Trip[]> {
+  async findByManagedBoats(managerId: string): Promise<TripResponse[]> {
     const boatIds = await this.boatStaffService.getAssignedBoatIds(managerId);
     if (!boatIds.length) return [];
-    return this.tripsRepo.find({
+    const trips = await this.tripsRepo.find({
       where: { boatId: In(boatIds) },
       relations: ['boat'],
       order: { departureAt: 'DESC' },
     });
+    return this.serializeTrips(trips);
   }
 
   async update(
@@ -832,7 +885,7 @@ export class TripsService {
     userId: string,
     dto: CreateTripDto,
     role?: string,
-  ): Promise<Trip> {
+  ): Promise<TripResponse> {
     const trip = await this.tripsRepo.findOne({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
     await this.assertCanManageTrip(trip, userId, role);
@@ -851,7 +904,9 @@ export class TripsService {
     const bookedSeats = trip.totalSeats - trip.availableSeats;
     trip.availableSeats = dto.totalSeats - bookedSeats;
 
-    if (dto.cargoPriceKg !== undefined) trip.cargoPriceKg = dto.cargoPriceKg;
+    if (dto.cargoPriceKg !== undefined) {
+      trip.cargoPriceKg = normalizeCargoPriceKg(dto.cargoPriceKg);
+    }
     if (dto.cargoCapacityKg !== undefined) {
       const usedCargo =
         trip.cargoCapacityKg != null && trip.availableCargoKg != null
@@ -861,7 +916,7 @@ export class TripsService {
       trip.availableCargoKg = dto.cargoCapacityKg - usedCargo;
     }
 
-    return this.tripsRepo.save(trip);
+    return this.serializeTrip(await this.tripsRepo.save(trip));
   }
 
   async delete(tripId: string, userId: string, role?: string): Promise<void> {
@@ -895,7 +950,7 @@ export class TripsService {
     dto: UpdateTripStatusDto,
     role?: string,
   ): Promise<TripStatusUpdateResult> {
-    const trip = await this.findById(tripId);
+    const trip = await this.findTripByIdOrFail(tripId);
     await this.assertCanManageTrip(trip, userId, role);
 
     const oldStatus = trip.status;
@@ -908,7 +963,7 @@ export class TripsService {
           notifyBoatOwner: role === 'boat_manager',
         });
       }
-      return trip;
+      return this.serializeTrip(trip);
     }
 
     // Validar transições de status permitidas
@@ -1029,10 +1084,10 @@ export class TripsService {
 
     // Incluir weatherWarning no response quando capitão inicia viagem com alerta
     if (weatherWarning) {
-      return { ...saved, weatherWarning };
+      return { ...this.serializeTrip(saved), weatherWarning };
     }
 
-    return saved;
+    return this.serializeTrip(saved);
   }
 
   async updateLocation(

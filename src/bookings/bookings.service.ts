@@ -556,12 +556,19 @@ export class BookingsService {
     if (booking.status === BookingStatus.CANCELLED) {
       throw new BadRequestException('Reserva já cancelada');
     }
+    if (booking.status === BookingStatus.CHECKED_IN) {
+      throw new BadRequestException(
+        'Cancelamento não permitido: o passageiro já realizou check-in/embarque.',
+      );
+    }
+    if (booking.status === BookingStatus.COMPLETED) {
+      throw new BadRequestException(
+        'Cancelamento não permitido: a viagem já foi concluída.',
+      );
+    }
 
     // Só devolve assentos se estava CONFIRMED (pagamento confirmado)
-    if (
-      booking.status === BookingStatus.CONFIRMED ||
-      booking.status === BookingStatus.CHECKED_IN
-    ) {
+    if (booking.status === BookingStatus.CONFIRMED) {
       const trip = await this.tripsRepo.findOne({
         where: { id: booking.tripId },
       });

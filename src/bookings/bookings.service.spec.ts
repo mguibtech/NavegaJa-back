@@ -1,9 +1,6 @@
+import { BadRequestException } from '@nestjs/common';
 import { BookingsService } from './bookings.service';
-import {
-  BookingStatus,
-  PaymentMethod,
-  PaymentStatus,
-} from './booking.entity';
+import { BookingStatus, PaymentMethod, PaymentStatus } from './booking.entity';
 import type { Repository } from 'typeorm';
 import type { Booking } from './booking.entity';
 import type { Trip } from '../trips/trip.entity';
@@ -33,9 +30,7 @@ describe('BookingsService owner rewards', () => {
       awardPoints: jest.fn().mockResolvedValue(undefined),
       checkFirstTripOfMonthBonus: jest.fn().mockResolvedValue(undefined),
       convertReferral: jest.fn().mockResolvedValue(undefined),
-      awardBoatOwnerPassengerCompleted: jest
-        .fn()
-        .mockResolvedValue(undefined),
+      awardBoatOwnerPassengerCompleted: jest.fn().mockResolvedValue(undefined),
       creditKm: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -53,9 +48,43 @@ describe('BookingsService owner rewards', () => {
 
     await service.complete('booking-1');
 
-    expect(gamificationService.awardBoatOwnerPassengerCompleted).toHaveBeenCalledWith(
-      'owner-1',
-      'booking-1',
+    expect(
+      gamificationService.awardBoatOwnerPassengerCompleted,
+    ).toHaveBeenCalledWith('owner-1', 'booking-1');
+  });
+});
+
+describe('BookingsService cancellation policy', () => {
+  it('rejects cancellation after check-in', async () => {
+    const booking = {
+      id: 'booking-2',
+      passengerId: 'passenger-1',
+      tripId: 'trip-1',
+      status: BookingStatus.CHECKED_IN,
+      paymentStatus: PaymentStatus.PAID,
+    } as unknown as Booking;
+
+    const service = new BookingsService(
+      {
+        findOne: jest.fn().mockResolvedValue(booking),
+      } as unknown as Repository<Booking>,
+      {} as Repository<Trip>,
+      {} as Repository<User>,
+      {} as GamificationService,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(service.cancel('booking-2', 'passenger-1')).rejects.toMatchObject(
+      {
+        response: {
+          message:
+            'Cancelamento não permitido: o passageiro já realizou check-in/embarque.',
+        },
+      },
     );
   });
 });

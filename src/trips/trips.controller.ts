@@ -30,6 +30,8 @@ import {
   UpdateTripStatusDto,
   UpdateLocationDto,
   PopularDestinationsResponseDto,
+  TripManageResponseDto,
+  TripResponseDto,
 } from './dto/trip.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
@@ -93,6 +95,12 @@ export class TripsController {
     required: false,
     description:
       'UUID da rota (filtro exacto — preferido ao origin/destination)',
+  })
+  @ApiOkResponse({
+    type: TripResponseDto,
+    isArray: true,
+    description:
+      'Lista de viagens com acceptsShipments como fonte unica de verdade para o app.',
   })
   search(
     @Query('origin') origin?: string,
@@ -161,6 +169,12 @@ export class TripsController {
     summary:
       'Viagens do capitão logado (ou todos os barcos geridos pelo boat_manager)',
   })
+  @ApiOkResponse({
+    type: TripResponseDto,
+    isArray: true,
+    description:
+      'Lista de viagens gerenciaveis com policy de encomendas normalizada.',
+  })
   myTrips(@Request() req: AuthenticatedRequest) {
     if (req.user.role === UserRole.BOAT_MANAGER) {
       return this.tripsService.findByManagedBoats(req.user.sub);
@@ -177,6 +191,11 @@ export class TripsController {
       'Retorna passageiros e encomendas da viagem para o ecrã "Gerenciar Viagem". Inclui validationCode das encomendas para o capitão confirmar coleta/entrega.',
   })
   @ApiParam({ name: 'id', description: 'UUID da viagem' })
+  @ApiOkResponse({
+    type: TripManageResponseDto,
+    description:
+      'Retorna a viagem com passageiros, encomendas e acceptsShipments normalizado.',
+  })
   manageTrip(
     @Param('id', ParseUUIDPipe) id: string,
     @Request() req: AuthenticatedRequest,
@@ -227,16 +246,26 @@ export class TripsController {
     description: 'UUID da viagem',
     example: '2b5b9cab-4a3d-4eb6-8e5c-fa11153f587d',
   })
+  @ApiOkResponse({
+    type: TripResponseDto,
+    description:
+      'Detalhe da viagem com acceptsShipments e campos normalizados de encomendas.',
+  })
   findById(
     @Param('id', new ParseUUIDPipe({ errorHttpStatusCode: 400 })) id: string,
   ) {
-    return this.tripsService.findById(id);
+    return this.tripsService.findByIdResponse(id);
   }
 
   @Post()
   @UseGuards(RolesGuard)
   @Roles('captain', 'boat_manager')
   @ApiOperation({ summary: 'Criar nova viagem (captain ou boat_manager)' })
+  @ApiOkResponse({
+    type: TripResponseDto,
+    description:
+      'Retorna a viagem criada com acceptsShipments como fonte unica de verdade.',
+  })
   create(@Request() req: AuthenticatedRequest, @Body() dto: CreateTripDto) {
     return this.tripsService.create(req.user.sub, dto, req.user.role);
   }
@@ -246,6 +275,11 @@ export class TripsController {
   @Roles('captain', 'boat_manager')
   @ApiOperation({ summary: 'Atualizar viagem (captain ou boat_manager)' })
   @ApiParam({ name: 'id', description: 'UUID da viagem' })
+  @ApiOkResponse({
+    type: TripResponseDto,
+    description:
+      'Retorna a viagem atualizada com acceptsShipments como fonte unica de verdade.',
+  })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Request() req: AuthenticatedRequest,
@@ -271,6 +305,11 @@ export class TripsController {
   @Roles('captain', 'boat_manager')
   @ApiOperation({ summary: 'Atualizar status da viagem' })
   @ApiParam({ name: 'id', description: 'UUID da viagem' })
+  @ApiOkResponse({
+    type: TripResponseDto,
+    description:
+      'Retorna a viagem com acceptsShipments preservado e weatherWarning quando aplicavel.',
+  })
   updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Request() req: AuthenticatedRequest,

@@ -14,7 +14,7 @@ export class StorageService {
   private s3Client: S3Client | null = null;
   private bucket: string;
   private region: string;
-  private useS3: boolean;
+  private useS3 = false;
 
   constructor(private configService: ConfigService) {
     this.bucket =
@@ -27,7 +27,7 @@ export class StorageService {
     );
 
     // Só inicializa S3 se tiver credenciais configuradas
-    this.useS3 = !!(awsAccessKey && awsSecretKey);
+    this.useS3 = false;
 
     if (this.useS3) {
       const config: S3ClientConfig = {

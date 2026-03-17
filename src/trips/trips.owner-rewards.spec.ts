@@ -71,9 +71,8 @@ describe('TripsService owner rewards', () => {
       'captain',
     );
 
-    expect(gamificationService.awardBoatOwnerTripCompleted).toHaveBeenCalledWith(
-      'owner-1',
-      'trip-1',
-    );
+    expect(
+      gamificationService.awardBoatOwnerTripCompleted,
+    ).toHaveBeenCalledWith('owner-1', 'trip-1');
   });
 });

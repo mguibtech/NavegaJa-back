@@ -12,6 +12,10 @@ import { PaymentMethod } from '../common/enums/payment-method.enum';
 import { PaidBy } from '../common/enums/paid-by.enum';
 import { ShipmentTimeline } from './shipment-timeline.entity';
 import { Trip } from '../trips/trip.entity';
+import {
+  normalizeCargoPriceKg,
+  tripAcceptsShipments,
+} from '../trips/trip-shipment-policy';
 import { Coupon, CouponType } from '../coupons/coupon.entity';
 import { User } from '../users/user.entity';
 import { CreateShipmentDto } from './dto/create-shipment.dto';
@@ -98,6 +102,16 @@ export class ShipmentsService {
     return (length * width * height) / 6000;
   }
 
+  private assertTripAcceptsShipments(trip: Trip): number {
+    if (!tripAcceptsShipments(trip)) {
+      throw new BadRequestException(
+        'Esta viagem não aceita encomendas (preço de frete não definido pelo capitão)',
+      );
+    }
+
+    return normalizeCargoPriceKg(trip.cargoPriceKg) as number;
+  }
+
   /**
    * Calcula preço da encomenda com peso volumétrico e desconto de cupom
    */
@@ -107,12 +121,12 @@ export class ShipmentsService {
     const trip = await this.tripsRepo.findOne({ where: { id: dto.tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
 
-    if (trip.cargoPriceKg === null || trip.cargoPriceKg === undefined) {
+    if (!tripAcceptsShipments(trip)) {
       throw new BadRequestException(
         'Esta viagem não aceita encomendas (preço de carga não definido pelo capitão)',
       );
     }
-    const pricePerKg = Number(trip.cargoPriceKg);
+    const pricePerKg = this.assertTripAcceptsShipments(trip);
 
     // Processar dimensions: aceita objeto OU campos separados (backward compatibility)
     let length = dto.length;
@@ -893,12 +907,19 @@ export class ShipmentsService {
 
     if (shipment.status === ShipmentStatus.DELIVERED) {
       throw new BadRequestException(
-        'Não é possível cancelar uma encomenda já entregue',
+        'Cancelamento não permitido: a encomenda já foi entregue.',
       );
     }
 
     if (shipment.status === ShipmentStatus.CANCELLED) {
       throw new BadRequestException('Esta encomenda já foi cancelada');
+    }
+    if (
+      ![ShipmentStatus.PENDING, ShipmentStatus.PAID].includes(shipment.status)
+    ) {
+      throw new BadRequestException(
+        'Cancelamento não permitido: a encomenda já foi coletada e entrou na operação logística.',
+      );
     }
 
     shipment.status = ShipmentStatus.CANCELLED;

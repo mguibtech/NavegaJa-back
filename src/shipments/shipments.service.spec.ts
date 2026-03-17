@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { ShipmentsService } from './shipments.service';
 import { ShipmentStatus } from './shipment.entity';
 import { PointAction } from '../gamification/point-transaction.entity';
@@ -55,9 +56,80 @@ describe('ShipmentsService owner rewards', () => {
 
     await service.validateDelivery('TRK-1', '123456');
 
-    expect(gamificationService.awardBoatOwnerShipmentDelivered).toHaveBeenCalledWith(
-      'owner-1',
-      'shipment-1',
+    expect(
+      gamificationService.awardBoatOwnerShipmentDelivered,
+    ).toHaveBeenCalledWith('owner-1', 'shipment-1');
+  });
+});
+
+describe('ShipmentsService shipment availability policy', () => {
+  it('rejects price calculation when cargoPriceKg is zero', async () => {
+    const service = new ShipmentsService(
+      {
+        findOne: jest.fn().mockResolvedValue({
+          id: 'trip-1',
+          cargoPriceKg: 0,
+          origin: 'Manaus',
+          destination: 'Parintins',
+        } as Trip),
+        find: jest.fn().mockResolvedValue([]),
+      } as unknown as Repository<Shipment>,
+      {} as Repository<ShipmentTimeline>,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          id: 'trip-1',
+          cargoPriceKg: 0,
+          origin: 'Manaus',
+          destination: 'Parintins',
+        } as Trip),
+      } as unknown as Repository<Trip>,
+      {} as Repository<Coupon>,
+      {} as Repository<User>,
+      {} as GamificationService,
+      {} as NotificationsService,
+    );
+
+    await expect(
+      service.calculatePrice({
+        tripId: 'trip-1',
+        weight: 10,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('ShipmentsService cancellation policy', () => {
+  it('rejects cancellation after collection', async () => {
+    const shipment = {
+      id: 'shipment-2',
+      senderId: 'sender-1',
+      status: ShipmentStatus.COLLECTED,
+      trip: {
+        id: 'trip-1',
+        availableCargoKg: 100,
+      },
+    } as unknown as Shipment;
+
+    const service = new ShipmentsService(
+      {
+        findOne: jest.fn().mockResolvedValue(shipment),
+        find: jest.fn().mockResolvedValue([]),
+      } as unknown as Repository<Shipment>,
+      {} as Repository<ShipmentTimeline>,
+      {} as Repository<Trip>,
+      {} as Repository<Coupon>,
+      {} as Repository<User>,
+      {} as GamificationService,
+      {} as NotificationsService,
+    );
+
+    await expect(service.cancel('shipment-2', 'sender-1')).rejects.toMatchObject(
+      {
+        response: {
+          message:
+            'Cancelamento não permitido: a encomenda já foi coletada e entrou na operação logística.',
+        },
+      },
     );
   });
 });

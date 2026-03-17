@@ -12,6 +12,7 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { User, UserRole } from '../users/user.entity';
+import { ensureReferralCode } from '../users/referral-code.util';
 import {
   RegisterDto,
   LoginDto,
@@ -72,10 +73,7 @@ export class AuthService {
 
     const saved = await this.usersRepo.save(user);
 
-    // Gera código de indicação
-    const referralCode = `NVJ-${saved.id.substring(0, 6).toUpperCase()}`;
-    await this.usersRepo.update(saved.id, { referralCode });
-    saved.referralCode = referralCode;
+    await ensureReferralCode(this.usersRepo, saved);
 
     // Processa indicação se informada
     if (dto.referralCode) {
@@ -104,6 +102,7 @@ export class AuthService {
       throw new UnauthorizedException('Telefone ou senha incorretos');
     }
 
+    await ensureReferralCode(this.usersRepo, user);
     const tokens = this.generateTokens(user);
     return {
       user: this.sanitizeUser(user),
@@ -133,6 +132,7 @@ export class AuthService {
       );
     }
 
+    await ensureReferralCode(this.usersRepo, user);
     const tokens = this.generateTokens(user);
     return {
       user: this.sanitizeUser(user),
@@ -164,6 +164,7 @@ export class AuthService {
       relations: ['boats'],
     });
     if (!user) throw new UnauthorizedException('Usuário não encontrado');
+    await ensureReferralCode(this.usersRepo, user);
     return this.sanitizeUser(user);
   }
 

@@ -16,7 +16,8 @@ import {
   CommunityLocationStatus,
 } from './community-location.entity';
 import { SuggestLocationDto } from './dto/suggest-location.dto';
-import { AMAZON_CITY_COORDS } from '../trips/city-coords';
+import { AMAZON_CITY_SUGGESTIONS } from '../trips/city-coords';
+import { normalizeLocationText } from './location-text';
 
 export interface CepResponseDto {
   cep: string;
@@ -93,11 +94,7 @@ const normalizeRequiredString = (value?: string): string => value?.trim() ?? '';
 
 /** Normaliza nome para deduplicação: minúsculas, sem acento */
 function normalizeName(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+  return normalizeLocationText(name);
 }
 
 /** Distância em km (Haversine simplificado) */
@@ -125,6 +122,10 @@ export interface LocationSuggestion {
   municipio: string | null;
   source: 'lookup' | 'community';
 }
+
+type RankedLocationSuggestion = LocationSuggestion & {
+  normalizedName: string;
+};
 
 @Injectable()
 export class LocationsService {
@@ -388,24 +389,24 @@ export class LocationsService {
     if (!q || q.length < 2) return [];
 
     const qNorm = normalizeName(q);
-    const results: LocationSuggestion[] = [];
+    const results: RankedLocationSuggestion[] = [];
 
     // 1. Lookup table estática (city-coords.ts)
-    for (const [key, coords] of Object.entries(AMAZON_CITY_COORDS)) {
-      if (key.includes(qNorm) || qNorm.includes(key)) {
-        const displayName = key
-          .split(' ')
-          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-          .join(' ');
-        results.push({
-          name: displayName,
-          lat: coords.lat,
-          lng: coords.lng,
+    for (const city of AMAZON_CITY_SUGGESTIONS) {
+      if (
+        city.normalizedName.includes(qNorm) ||
+        qNorm.includes(city.normalizedName)
+      ) {
+        this.pushUniqueSuggestion(results, {
+          name: city.displayName,
+          lat: city.lat,
+          lng: city.lng,
           municipio: null,
           source: 'lookup',
+          normalizedName: city.normalizedName,
         });
-        if (results.length >= 3) break;
       }
+      if (results.filter((item) => item.source === 'lookup').length >= 3) break;
     }
 
     // 2. Comunidades confirmadas na BD
@@ -419,19 +420,14 @@ export class LocationsService {
     });
 
     for (const c of dbResults) {
-      if (
-        !results.find(
-          (r) => distanceKm(r.lat, r.lng, Number(c.lat), Number(c.lng)) < 1,
-        )
-      ) {
-        results.push({
-          name: c.name,
-          lat: Number(c.lat),
-          lng: Number(c.lng),
-          municipio: c.municipio,
-          source: 'community',
-        });
-      }
+      this.pushUniqueSuggestion(results, {
+        name: c.name,
+        lat: Number(c.lat),
+        lng: Number(c.lng),
+        municipio: c.municipio,
+        source: 'community',
+        normalizedName: normalizeName(c.name),
+      });
     }
 
     // Ordenar por proximidade se coords fornecidas
@@ -443,7 +439,13 @@ export class LocationsService {
       );
     }
 
-    return results.slice(0, 5);
+    return results.slice(0, 5).map((result) => ({
+      name: result.name,
+      lat: result.lat,
+      lng: result.lng,
+      municipio: result.municipio,
+      source: result.source,
+    }));
   }
 
   /** Aprovar sugestão manualmente (admin) */
@@ -509,5 +511,33 @@ export class LocationsService {
     if (geo.city && geo.state) return `Próximo a ${geo.city}, ${geo.state}`;
     if (geo.city) return geo.city;
     return `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+  }
+
+  private pushUniqueSuggestion(
+    results: RankedLocationSuggestion[],
+    candidate: RankedLocationSuggestion,
+  ): void {
+    const alreadyExists = results.some((existing) =>
+      this.areEquivalentSuggestions(existing, candidate),
+    );
+
+    if (!alreadyExists) {
+      results.push(candidate);
+    }
+  }
+
+  private areEquivalentSuggestions(
+    left: RankedLocationSuggestion,
+    right: RankedLocationSuggestion,
+  ): boolean {
+    const distance = distanceKm(left.lat, left.lng, right.lat, right.lng);
+
+    if (distance < 1) {
+      return true;
+    }
+
+    return (
+      left.normalizedName === right.normalizedName && distance < DEDUP_RADIUS_KM
+    );
   }
 }

@@ -3,6 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from '../users/user.entity';
+import {
+  assignUniqueReferralCode,
+  ensureReferralCode,
+} from '../users/referral-code.util';
 
 @Injectable()
 export class SeedService implements OnModuleInit {
@@ -52,7 +56,7 @@ export class SeedService implements OnModuleInit {
         where: { email: a.email },
       });
       if (!exists) {
-        await this.usersRepo.save({
+        const savedAdmin = await this.usersRepo.save({
           name: a.name,
           email: a.email,
           phone: a.phone,
@@ -62,6 +66,7 @@ export class SeedService implements OnModuleInit {
           isVerified: true,
           state: 'AM',
         });
+        await assignUniqueReferralCode(this.usersRepo, savedAdmin);
         created++;
       } else {
         await this.usersRepo.update(exists.id, {
@@ -69,6 +74,7 @@ export class SeedService implements OnModuleInit {
           role: UserRole.ADMIN,
           isActive: true,
         });
+        await ensureReferralCode(this.usersRepo, exists);
         updated++;
       }
     }
@@ -85,7 +91,7 @@ export class SeedService implements OnModuleInit {
       where: { email: managerEmail },
     });
     if (!existsManager) {
-      await this.usersRepo.save({
+      const savedManager = await this.usersRepo.save({
         name: 'Gestor Teste',
         email: managerEmail,
         phone: '92994001001',
@@ -95,6 +101,7 @@ export class SeedService implements OnModuleInit {
         isVerified: true,
         state: 'AM',
       });
+      await assignUniqueReferralCode(this.usersRepo, savedManager);
       this.logger.log(
         `🚢 Boat manager de teste criado (gestor@navegaja.com / gestor123)`,
       );
@@ -104,6 +111,7 @@ export class SeedService implements OnModuleInit {
         role: UserRole.BOAT_MANAGER,
         isActive: true,
       });
+      await ensureReferralCode(this.usersRepo, existsManager);
     }
   }
 }

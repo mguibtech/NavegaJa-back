@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike, FindOptionsWhere } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Route } from './route.entity';
+import { normalizeLocationText } from '../locations/location-text';
 
 @Injectable()
 export class RoutesService {
@@ -21,9 +22,39 @@ export class RoutesService {
   }
 
   async search(origin?: string, dest?: string): Promise<Route[]> {
-    const where: FindOptionsWhere<Route> = {};
-    if (origin) where.originName = ILike(`%${origin}%`);
-    if (dest) where.destinationName = ILike(`%${dest}%`);
-    return this.routesRepo.find({ where });
+    const originNorm = normalizeLocationText(origin);
+    const destNorm = normalizeLocationText(dest);
+
+    if (!originNorm && !destNorm) {
+      return this.findAll();
+    }
+
+    const routes = await this.routesRepo.find();
+
+    return routes
+      .filter((route) => {
+        const routeOrigin = normalizeLocationText(route.originName);
+        const routeDestination = normalizeLocationText(route.destinationName);
+
+        return (
+          (!originNorm || routeOrigin.includes(originNorm)) &&
+          (!destNorm || routeDestination.includes(destNorm))
+        );
+      })
+      .sort((left, right) => {
+        const originCompare = left.originName.localeCompare(
+          right.originName,
+          'pt-BR',
+        );
+
+        if (originCompare !== 0) {
+          return originCompare;
+        }
+
+        return left.destinationName.localeCompare(
+          right.destinationName,
+          'pt-BR',
+        );
+      });
   }
 }

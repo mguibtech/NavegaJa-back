@@ -17,6 +17,7 @@ import { GamificationService } from '../gamification/gamification.service';
 import { LoyaltyLevel } from '../gamification/point-transaction.entity';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole, KycStatus } from '../users/user.entity';
+import { ensureReferralCode } from '../users/referral-code.util';
 import { Trip, TripStatus } from '../trips/trip.entity';
 import { TripsService } from '../trips/trips.service';
 import { Shipment, ShipmentStatus } from '../shipments/shipment.entity';
@@ -134,8 +135,11 @@ export class AdminService {
       isActive: true,
       isVerified: false, // aguarda verificação de documentos
     });
+    await ensureReferralCode(this.usersRepo, captain);
 
-    const safeCaptain = { ...captain } as Partial<User> & { passwordHash?: string };
+    const safeCaptain = { ...captain } as Partial<User> & {
+      passwordHash?: string;
+    };
     delete safeCaptain.passwordHash;
     return safeCaptain;
   }

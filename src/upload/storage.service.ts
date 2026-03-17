@@ -1,6 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as admin from 'firebase-admin';
 import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -8,119 +7,52 @@ import * as fs from 'fs';
 @Injectable()
 export class StorageService implements OnModuleInit {
   private readonly logger = new Logger(StorageService.name);
-  private bucket: ReturnType<admin.storage.Storage['bucket']> | null = null;
-  private isEnabled = false;
 
   constructor(private configService: ConfigService) {}
 
   onModuleInit() {
-    const projectId = this.configService.get<string>('FIREBASE_PROJECT_ID');
-    if (!projectId) {
-      this.logger.warn(
-        'FIREBASE_PROJECT_ID não definido — uploads salvos em disco local',
-      );
-      return;
-    }
-
-    try {
-      // Reutiliza o app Firebase já inicializado (pelo NotificationsService) ou cria um novo
-      const app = admin.apps.find((a) => a?.name === '[DEFAULT]');
-      if (!app) {
-        const privateKey = this.configService.get<string>(
-          'FIREBASE_PRIVATE_KEY',
-        );
-        const clientEmail = this.configService.get<string>(
-          'FIREBASE_CLIENT_EMAIL',
-        );
-        admin.initializeApp({
-          credential: admin.credential.cert({
-            projectId,
-            privateKey: privateKey?.replace(/\\n/g, '\n'),
-            clientEmail,
-          }),
-          storageBucket: `${projectId}.appspot.com`,
-        });
-      }
-
-      this.bucket = admin.storage().bucket(`${projectId}.appspot.com`);
-      this.isEnabled = true;
-      this.logger.log('Firebase Storage inicializado');
-    } catch (error) {
-      this.logger.warn(
-        `Erro ao inicializar Firebase Storage: ${error instanceof Error ? error.message : String(error)} — usando disco local`,
-      );
-    }
+    this.logger.log(
+      'Storage local ativo para validacao/testes. Uploads serao salvos em disco.',
+    );
   }
 
-  /**
-   * Faz upload de um buffer para Firebase Storage (ou disco local como fallback).
-   * Retorna a URL pública permanente.
-   */
-  async upload(
+  upload(
     buffer: Buffer,
     originalname: string,
-    mimetype: string,
+    _mimetype: string,
     folder = 'uploads',
   ): Promise<string> {
     const ext = path.extname(originalname).toLowerCase();
     const filename = `${uuidv4()}${ext}`;
-    const destination = `${folder}/${filename}`;
-
-    if (this.isEnabled && this.bucket) {
-      try {
-        return await this.uploadToFirebase(buffer, destination, mimetype);
-      } catch (error) {
-        this.logger.warn(
-          `Firebase upload falhou (${error instanceof Error ? error.message : String(error)}) — usando disco local como fallback`,
-        );
-      }
-    }
-
-    return this.uploadToDisk(buffer, filename);
+    return Promise.resolve(this.uploadToDisk(buffer, folder, filename));
   }
 
-  // ── Firebase Storage ───────────────────────────────────────────────────────
-
-  private async uploadToFirebase(
+  private uploadToDisk(
     buffer: Buffer,
-    destination: string,
-    mimetype: string,
-  ): Promise<string> {
-    const bucket = this.bucket;
-    if (!bucket) {
-      throw new Error('Firebase Storage nÃ£o inicializado');
+    folder: string,
+    filename: string,
+  ): string {
+    const rootDir = './uploads';
+    const normalizedFolder = folder
+      .replace(/^\/+/, '')
+      .replace(/\\/g, '/')
+      .replace(/\.\./g, '');
+    const targetDir = path.join(rootDir, normalizedFolder);
+
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
     }
 
-    const file = bucket.file(destination);
-
-    await file.save(buffer, {
-      metadata: {
-        contentType: mimetype,
-        cacheControl: 'public, max-age=31536000',
-      },
-      public: true, // torna o ficheiro público
-    });
-
-    // URL pública: https://storage.googleapis.com/{bucket}/{destination}
-    return file.publicUrl();
-  }
-
-  // ── Fallback: disco local ──────────────────────────────────────────────────
-
-  private uploadToDisk(buffer: Buffer, filename: string): string {
-    const dir = './uploads';
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
-    const filepath = path.join(dir, filename);
+    const filepath = path.join(targetDir, filename);
     fs.writeFileSync(filepath, buffer);
 
-    // Retorna URL completa para que web e app consigam carregar o ficheiro
-    // APP_URL deve ser o endereço público do servidor (ex: http://192.168.1.100:3000)
     const appUrl =
       this.configService.get<string>('APP_URL') ||
       `http://localhost:${process.env.PORT || 3000}`;
-    return `${appUrl}/uploads/${filename}`;
+
+    return `${appUrl}/uploads/${normalizedFolder}/${filename}`.replace(
+      /([^:]\/)\/+/g,
+      '$1',
+    );
   }
 }
