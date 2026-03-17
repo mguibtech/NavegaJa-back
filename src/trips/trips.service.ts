@@ -41,6 +41,7 @@ import { BoatStaffService } from '../boat-staff/boat-staff.service';
 import { LocationsService } from '../locations/locations.service';
 import { GamificationService } from '../gamification/gamification.service';
 import { PdfStream } from '../pdf/pdf.types';
+import { PaidBy } from '../common/enums/paid-by.enum';
 import { Boat } from '../boats/boat.entity';
 import { User } from '../users/user.entity';
 import { Shipment } from '../shipments/shipment.entity';
@@ -714,12 +715,33 @@ export class TripsService {
       });
       if (!trip) throw new NotFoundException('Viagem não encontrada');
 
-      if (trip.status !== TripStatus.CANCELLED) {
-        trip.status = TripStatus.CANCELLED;
-        await tripRepo.save(trip);
+      if (trip.status === TripStatus.CANCELLED) {
+        return {
+          trip,
+          passengerIds: [] as string[],
+          bookingsToRefundKm: [] as Array<{
+            id: string;
+            passengerId: string;
+            kmRedeemed: number;
+          }>,
+          shipmentsToNotify: [] as Array<{
+            shipmentId: string;
+            senderId: string;
+            trackingCode: string;
+            title: string;
+            body: string;
+            notificationType: string;
+          }>,
+          boatOwnerId: trip.boat?.ownerId ?? null,
+          hadPaidBookings: false,
+        };
       }
 
+      trip.status = TripStatus.CANCELLED;
+
       const passengerIds = new Set<string>();
+      let seatsToRestore = 0;
+      let hadPaidBookings = false;
       const bookings = await bookingRepo.find({
         where: {
           tripId,
@@ -732,12 +754,28 @@ export class TripsService {
       });
 
       for (const booking of bookings) {
+        const consumedSeat = [
+          BookingStatus.CONFIRMED,
+          BookingStatus.CHECKED_IN,
+        ].includes(booking.status);
+        if (consumedSeat) {
+          seatsToRestore += booking.seats;
+        }
+
         booking.status = BookingStatus.CANCELLED;
         if (booking.paymentStatus === PaymentStatus.PAID) {
-          booking.paymentStatus = PaymentStatus.REFUNDED;
+          booking.paymentStatus = PaymentStatus.REFUND_PENDING;
+          hadPaidBookings = true;
         }
         await bookingRepo.save(booking);
         passengerIds.add(booking.passengerId);
+      }
+
+      if (seatsToRestore > 0) {
+        trip.availableSeats = Math.min(
+          trip.totalSeats,
+          trip.availableSeats + seatsToRestore,
+        );
       }
 
       const bookingsToRefundKm = bookings
@@ -749,10 +787,14 @@ export class TripsService {
         }));
 
       const shipments = await shipmentRepo.find({ where: { tripId } });
+      let cargoToRestore = 0;
       const shipmentsToNotify: {
         shipmentId: string;
         senderId: string;
         trackingCode: string;
+        title: string;
+        body: string;
+        notificationType: string;
       }[] = [];
 
       for (const shipment of shipments) {
@@ -764,13 +806,67 @@ export class TripsService {
           continue;
         }
 
-        shipment.status = ShipmentStatus.CANCELLED;
-        await shipmentRepo.save(shipment);
+        const canCancelShipment = [
+          ShipmentStatus.PENDING,
+          ShipmentStatus.PAID,
+        ].includes(shipment.status);
+
+        if (canCancelShipment) {
+          const previousStatus = shipment.status;
+          if (
+            trip.availableCargoKg !== null &&
+            trip.availableCargoKg !== undefined
+          ) {
+            let volumetricWeight = 0;
+            if (shipment.length && shipment.width && shipment.height) {
+              volumetricWeight =
+                (Number(shipment.length) *
+                  Number(shipment.width) *
+                  Number(shipment.height)) /
+                6000;
+            }
+            cargoToRestore += Math.max(
+              Number(shipment.weight ?? shipment.weightKg ?? 0),
+              volumetricWeight,
+            );
+          }
+
+          shipment.status = ShipmentStatus.CANCELLED;
+          await shipmentRepo.save(shipment);
+
+          const refundWarning =
+            previousStatus === ShipmentStatus.PAID &&
+            shipment.paidBy !== PaidBy.RECIPIENT
+              ? ' O valor pago ficará pendente para reembolso manual.'
+              : '';
+
+          const timelineEvent = timelineRepo.create({
+            shipmentId: shipment.id,
+            status: ShipmentStatus.CANCELLED,
+            description:
+              `Viagem cancelada - Encomenda cancelada automaticamente.${refundWarning}`.trim(),
+            createdBy: userId ?? undefined,
+          });
+          await timelineRepo.save(timelineEvent);
+
+          shipmentsToNotify.push({
+            shipmentId: shipment.id,
+            senderId: shipment.senderId,
+            trackingCode: shipment.trackingCode,
+            title: '❌ Encomenda cancelada',
+            body:
+              `Sua encomenda ${shipment.trackingCode} foi cancelada porque a viagem foi cancelada.` +
+              refundWarning,
+            notificationType: 'shipment_cancelled',
+          });
+          continue;
+        }
 
         const timelineEvent = timelineRepo.create({
           shipmentId: shipment.id,
-          status: ShipmentStatus.CANCELLED,
-          description: 'Viagem cancelada - Encomenda cancelada automaticamente',
+          status: shipment.status,
+          description:
+            'Viagem cancelada - Encomenda em operação logística. Tratativa manual necessária.',
           createdBy: userId ?? undefined,
         });
         await timelineRepo.save(timelineEvent);
@@ -779,8 +875,30 @@ export class TripsService {
           shipmentId: shipment.id,
           senderId: shipment.senderId,
           trackingCode: shipment.trackingCode,
+          title: '⚠️ Viagem cancelada',
+          body:
+            `A viagem da encomenda ${shipment.trackingCode} foi cancelada, ` +
+            'mas ela já entrou na operação logística e seguirá para tratativa manual.',
+          notificationType: 'shipment_manual_resolution_required',
         });
       }
+
+      if (
+        cargoToRestore > 0 &&
+        trip.availableCargoKg !== null &&
+        trip.availableCargoKg !== undefined
+      ) {
+        const maxCargo =
+          trip.cargoCapacityKg !== null && trip.cargoCapacityKg !== undefined
+            ? trip.cargoCapacityKg
+            : trip.availableCargoKg + cargoToRestore;
+        trip.availableCargoKg = Math.min(
+          maxCargo,
+          trip.availableCargoKg + cargoToRestore,
+        );
+      }
+
+      await tripRepo.save(trip);
 
       return {
         trip,
@@ -788,6 +906,7 @@ export class TripsService {
         bookingsToRefundKm,
         shipmentsToNotify,
         boatOwnerId: trip.boat?.ownerId ?? null,
+        hadPaidBookings,
       };
     });
 
@@ -796,7 +915,11 @@ export class TripsService {
     if (result.passengerIds.length > 0) {
       await this.notificationsService.sendToUsers(result.passengerIds, {
         title: '❌ Viagem cancelada',
-        body: `A viagem ${route} foi cancelada. A sua reserva foi automaticamente cancelada.`,
+        body:
+          `A viagem ${route} foi cancelada. A sua reserva foi automaticamente cancelada.` +
+          (result.hadPaidBookings
+            ? ' Se houve pagamento, o valor ficará pendente para reembolso manual.'
+            : ''),
         data: { type: 'trip_cancelled', tripId },
       });
     }
@@ -811,10 +934,10 @@ export class TripsService {
 
     for (const shipment of result.shipmentsToNotify) {
       await this.notificationsService.sendToUser(shipment.senderId, {
-        title: '❌ Encomenda cancelada',
-        body: `Sua encomenda ${shipment.trackingCode} foi cancelada porque a viagem foi cancelada.`,
+        title: shipment.title,
+        body: shipment.body,
         data: {
-          type: 'shipment_cancelled',
+          type: shipment.notificationType,
           shipmentId: shipment.shipmentId,
           trackingCode: shipment.trackingCode,
         },

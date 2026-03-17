@@ -123,13 +123,13 @@ describe('ShipmentsService cancellation policy', () => {
       {} as NotificationsService,
     );
 
-    await expect(service.cancel('shipment-2', 'sender-1')).rejects.toMatchObject(
-      {
-        response: {
-          message:
-            'Cancelamento não permitido: a encomenda já foi coletada e entrou na operação logística.',
-        },
+    await expect(
+      service.cancel('shipment-2', 'sender-1'),
+    ).rejects.toMatchObject({
+      response: {
+        message:
+          'Cancelamento não permitido: a encomenda já foi coletada e entrou na operação logística.',
       },
-    );
+    });
   });
 });

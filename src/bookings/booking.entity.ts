@@ -28,6 +28,7 @@ export enum PaymentMethod {
 export enum PaymentStatus {
   PENDING = 'pending',
   PAID = 'paid',
+  REFUND_PENDING = 'refund_pending',
   REFUNDED = 'refunded',
 }
 

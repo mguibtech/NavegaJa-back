@@ -550,6 +550,7 @@ export class BookingsService {
 
   async cancel(bookingId: string, userId: string): Promise<Booking> {
     const booking = await this.findById(bookingId);
+    const hadPaidBooking = booking.paymentStatus === PaymentStatus.PAID;
     if (booking.passengerId !== userId) {
       throw new BadRequestException('Apenas o passageiro pode cancelar');
     }
@@ -580,9 +581,9 @@ export class BookingsService {
 
     booking.status = BookingStatus.CANCELLED;
 
-    // Se estava pago, marca como reembolsado (processo manual de reembolso)
-    if (booking.paymentStatus === PaymentStatus.PAID) {
-      booking.paymentStatus = PaymentStatus.REFUNDED;
+    // Sem gateway integrado, o cancelamento apenas sinaliza o reembolso manual.
+    if (hadPaidBooking) {
+      booking.paymentStatus = PaymentStatus.REFUND_PENDING;
     }
 
     const saved = await this.bookingsRepo.save(booking);
@@ -599,8 +600,14 @@ export class BookingsService {
     // Notificar passageiro
     await this.notificationsService.sendToUser(userId, {
       title: '❌ Reserva cancelada',
-      body: 'Sua reserva foi cancelada com sucesso.',
-      data: { type: 'booking_cancelled', bookingId: booking.id },
+      body: hadPaidBooking
+        ? 'Sua reserva foi cancelada. O valor pago ficará pendente para reembolso manual.'
+        : 'Sua reserva foi cancelada com sucesso.',
+      data: {
+        type: 'booking_cancelled',
+        bookingId: booking.id,
+        paymentStatus: booking.paymentStatus,
+      },
     });
 
     return saved;

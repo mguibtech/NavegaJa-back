@@ -208,11 +208,13 @@ export class PdfService {
     const statusColors: Record<string, string> = {
       paid: '#00AA44',
       pending: '#FF8800',
+      refund_pending: '#CC6600',
       refunded: '#CC0000',
     };
     const statusLabels: Record<string, string> = {
       paid: 'Pago',
       pending: 'Pendente',
+      refund_pending: 'Reembolso pendente',
       refunded: 'Reembolsado',
     };
     doc
