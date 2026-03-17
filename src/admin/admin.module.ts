@@ -15,6 +15,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { LocationsModule } from '../locations/locations.module';
 import { GamificationModule } from '../gamification/gamification.module';
 import { TripsModule } from '../trips/trips.module';
+import { DocumentChangeRequestsModule } from '../document-change-requests/document-change-requests.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { TripsModule } from '../trips/trips.module';
     LocationsModule,
     GamificationModule,
     TripsModule,
+    DocumentChangeRequestsModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

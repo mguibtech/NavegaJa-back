@@ -1,4 +1,4 @@
-import {
+﻿import {
   Controller,
   Get,
   Patch,
@@ -10,6 +10,7 @@ import {
   UseGuards,
   ParseIntPipe,
   DefaultValuePipe,
+  Request,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -565,7 +566,8 @@ export class AdminController {
     name: 'paymentStatus',
     required: false,
     type: String,
-    description: 'Filtrar por status de pagamento (pending, paid, refunded)',
+    description:
+      'Filtrar por status de pagamento (pending, paid, refund_pending, refunded)',
   })
   @ApiQuery({
     name: 'search',
@@ -887,26 +889,36 @@ export class AdminController {
 
   @Patch('users/:id/verify')
   @ApiOperation({
-    summary: 'Aprovar ou rejeitar documentação de capitão (Admin)',
+    summary:
+      'Aprovar ou rejeitar solicitações pendentes de documentos do capitão (Admin)',
     description:
-      'Aprovação: { "verified": true } — Rejeição: { "verified": false, "rejectionReason": "Motivo..." }',
+      'Compatibilidade com o painel atual. verified=true aprova em lote as requests PENDING do capitão; verified=false rejeita em lote as requests PENDING do capitão.',
   })
   @ApiResponse({
     status: 200,
     schema: {
       example: {
-        message: 'Capitão aprovado com sucesso',
+        message: 'Solicitações aprovadas com sucesso',
         userId: 'uuid',
         isVerified: true,
+        kycStatus: 'approved',
+        requestsReviewed: 2,
+        requestIds: ['request-uuid-1', 'request-uuid-2'],
       },
     },
   })
   verifyCapt(
     @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
     @Body('verified') verified: boolean,
     @Body('rejectionReason') rejectionReason?: string,
   ) {
-    return this.adminService.verifyCapt(id, verified, rejectionReason);
+    return this.adminService.verifyCapt(
+      id,
+      verified,
+      rejectionReason,
+      req.user.sub,
+    );
   }
 
   // ==================== LOCALIDADES COMUNITÁRIAS ====================

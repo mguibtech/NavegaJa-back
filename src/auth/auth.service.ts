@@ -11,7 +11,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
-import { User, UserRole } from '../users/user.entity';
+import { KycStatus, User, UserRole } from '../users/user.entity';
 import { ensureReferralCode } from '../users/referral-code.util';
 import {
   RegisterDto,
@@ -249,7 +249,9 @@ export class AuthService {
     if (user.role === UserRole.CAPTAIN) {
       const isVerified = user.isVerified ?? false;
       const pendingVerification =
-        !isVerified && (!!user.licensePhotoUrl || !!user.certificatePhotoUrl);
+        user.kycStatus === KycStatus.PENDING ||
+        user.kycStatus === KycStatus.UNDER_REVIEW ||
+        (!isVerified && (!!user.licensePhotoUrl || !!user.certificatePhotoUrl));
 
       return {
         isVerified,

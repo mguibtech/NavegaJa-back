@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
-  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -11,6 +10,8 @@ import { Review, ReviewType } from '../reviews/review.entity';
 import { Trip } from '../trips/trip.entity';
 import { LocationsService } from '../locations/locations.service';
 import { CommunityLocationSource } from '../locations/community-location.entity';
+import { DocumentChangeRequestsService } from '../document-change-requests/document-change-requests.service';
+import { CaptainDocumentType } from '../document-change-requests/document-change-request.entity';
 
 type PublicUser = Omit<User, 'passwordHash'>;
 type RatingStats = {
@@ -57,6 +58,7 @@ export class UsersService {
     @InjectRepository(Trip)
     private tripsRepo: Repository<Trip>,
     private locationsService: LocationsService,
+    private documentChangeRequestsService: DocumentChangeRequestsService,
   ) {}
 
   async findById(id: string): Promise<UserProfile> {
@@ -85,7 +87,6 @@ export class UsersService {
     delete safeData.role;
     delete safeData.isActive;
 
-    // Se forneceu localização da comunidade → actualizar timestamp e criar sugestão
     if (safeData.homeCommunity && safeData.homeLat && safeData.homeLng) {
       safeData.locationUpdatedAt = new Date();
       this.locationsService
@@ -102,28 +103,27 @@ export class UsersService {
         .catch(() => {});
     }
 
-    // Se o capitão actualizou documentos, marcar como não verificado
-    // para forçar nova revisão pelo admin
-    const docFields: Array<keyof User> = [
-      'licensePhotoUrl',
-      'certificatePhotoUrl',
-    ];
-    const updatingDocs = docFields.some((f) => safeData[f] !== undefined);
-    if (updatingDocs) {
-      safeData.isVerified = false;
-      safeData.verifiedAt = null;
-      safeData.rejectionReason = null; // limpa rejeição anterior ao reenviar docs
+    await this.documentChangeRequestsService.createRequestsFromDocumentMap(id, {
+      [CaptainDocumentType.LICENSE_NAVIGATION]:
+        safeData.licensePhotoUrl ?? undefined,
+      [CaptainDocumentType.SAFETY_CERTIFICATE]:
+        safeData.certificatePhotoUrl ?? undefined,
+    });
+
+    delete safeData.licensePhotoUrl;
+    delete safeData.certificatePhotoUrl;
+    delete safeData.selfieUrl;
+
+    if (Object.keys(safeData).length > 0) {
+      await this.usersRepo.update(id, safeData);
     }
 
-    await this.usersRepo.update(id, safeData);
     return this.findById(id);
   }
 
   async updateRating(captainId: string, newRating: number): Promise<void> {
     await this.usersRepo.update(captainId, { rating: newRating });
   }
-
-  // ── KYC — Verificação de Identidade do Capitão ─────────────────────────────
 
   async submitKyc(
     userId: string,
@@ -141,26 +141,28 @@ export class UsersService {
         'Somente capitães podem enviar documentos KYC',
       );
     }
-    if (user.kycStatus === KycStatus.UNDER_REVIEW) {
-      throw new BadRequestException(
-        'Seus documentos já estão em análise. Aguarde a revisão do admin.',
-      );
-    }
+
+    await this.documentChangeRequestsService.createRequestsFromDocumentMap(
+      userId,
+      {
+        [CaptainDocumentType.SELFIE]: data.selfieUrl,
+        [CaptainDocumentType.LICENSE_NAVIGATION]: data.licensePhotoUrl,
+        [CaptainDocumentType.SAFETY_CERTIFICATE]: data.certificatePhotoUrl,
+      },
+    );
 
     await this.usersRepo.update(userId, {
-      selfieUrl: data.selfieUrl,
-      licensePhotoUrl: data.licensePhotoUrl,
       rnaqNumber: data.rnaqNumber || null,
-      certificatePhotoUrl: data.certificatePhotoUrl || null,
-      kycStatus: KycStatus.UNDER_REVIEW,
-      isVerified: false,
-      rejectionReason: null,
+    });
+
+    const refreshedUser = await this.usersRepo.findOne({
+      where: { id: userId },
+      select: ['id', 'kycStatus'],
     });
 
     return {
-      kycStatus: KycStatus.UNDER_REVIEW,
-      message:
-        'Documentos enviados com sucesso. Um administrador irá analisá-los em breve.',
+      kycStatus: refreshedUser?.kycStatus ?? KycStatus.PENDING,
+      message: 'Sua solicitação será enviada para análise do administrador.',
     };
   }
 
@@ -173,6 +175,9 @@ export class UsersService {
     certificatePhotoUrl: string | null;
     rnaqNumber: string | null;
     verifiedAt: Date | null;
+    documentRequests: Awaited<
+      ReturnType<DocumentChangeRequestsService['getLatestRequestsForUser']>
+    >;
   }> {
     const user = await this.usersRepo.findOne({
       where: { id: userId },
@@ -189,6 +194,10 @@ export class UsersService {
       ],
     });
     if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    const documentRequests =
+      await this.documentChangeRequestsService.getLatestRequestsForUser(userId);
+
     return {
       kycStatus: user.kycStatus,
       isVerified: user.isVerified,
@@ -198,10 +207,9 @@ export class UsersService {
       certificatePhotoUrl: user.certificatePhotoUrl,
       rnaqNumber: user.rnaqNumber,
       verifiedAt: user.verifiedAt,
+      documentRequests,
     };
   }
-
-  // ── Perfil completo do Capitão ──────────────────────────────────────────────
 
   private async buildCaptainProfile(user: PublicUser): Promise<CaptainProfile> {
     const [reviews, totalTrips] = await Promise.all([
@@ -249,8 +257,6 @@ export class UsersService {
     };
   }
 
-  // ── Perfil completo do Passageiro ──────────────────────────────────────────
-
   private async buildPassengerProfile(
     user: PublicUser,
   ): Promise<PassengerProfile> {
@@ -292,8 +298,6 @@ export class UsersService {
       passengerRatingStats: stats,
     };
   }
-
-  // ── Helpers ────────────────────────────────────────────────────────────────
 
   private buildRatingStats(ratings: (number | null)[]) {
     const valid = ratings.filter((r): r is number => r !== null);

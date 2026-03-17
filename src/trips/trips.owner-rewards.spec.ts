@@ -19,7 +19,22 @@ import type { LocationsService } from '../locations/locations.service';
 
 describe('TripsService owner rewards', () => {
   it('awards boat owner points when a trip is completed', async () => {
+    const qb = {
+      leftJoin: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({
+        id: 'trip-1',
+        status: TripStatus.IN_PROGRESS,
+        origin: 'Manaus',
+        destination: 'Parintins',
+        boat: { ownerId: 'owner-1' },
+        bookings: [],
+      } as Trip),
+    };
     const tripsRepo = {
+      createQueryBuilder: jest.fn(() => qb),
       save: jest.fn((value: Trip) => Promise.resolve(value)),
     };
     const bookingsService = {
@@ -52,14 +67,6 @@ describe('TripsService owner rewards', () => {
       {} as BoatStaffService,
       {} as LocationsService,
     );
-
-    jest.spyOn(service, 'findById').mockResolvedValue({
-      id: 'trip-1',
-      status: TripStatus.IN_PROGRESS,
-      origin: 'Manaus',
-      destination: 'Parintins',
-      boat: { ownerId: 'owner-1' },
-    } as unknown as Trip);
     jest
       .spyOn(service as never, 'assertCanManageTrip')
       .mockResolvedValue(undefined);

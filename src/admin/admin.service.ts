@@ -1,4 +1,4 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   BadRequestException,
@@ -16,7 +16,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { GamificationService } from '../gamification/gamification.service';
 import { LoyaltyLevel } from '../gamification/point-transaction.entity';
 import * as bcrypt from 'bcryptjs';
-import { User, UserRole, KycStatus } from '../users/user.entity';
+import { User, UserRole } from '../users/user.entity';
 import { ensureReferralCode } from '../users/referral-code.util';
 import { Trip, TripStatus } from '../trips/trip.entity';
 import { TripsService } from '../trips/trips.service';
@@ -31,6 +31,7 @@ import {
 import { Coupon, CouponType } from '../coupons/coupon.entity';
 import { Review, ReviewType } from '../reviews/review.entity';
 import { Boat } from '../boats/boat.entity';
+import { DocumentChangeRequestsService } from '../document-change-requests/document-change-requests.service';
 
 export interface AdminActivity {
   type: string;
@@ -99,6 +100,7 @@ export class AdminService {
     private notificationsService: NotificationsService,
     private gamificationService: GamificationService,
     private tripsService: TripsService,
+    private documentChangeRequestsService: DocumentChangeRequestsService,
   ) {}
 
   // ==================== USUÁRIOS ====================
@@ -927,7 +929,11 @@ export class AdminService {
     recentBookings.forEach((booking) => {
       const statusInfo = this.getBookingStatusInfo(booking.status);
       const paymentInfo =
-        booking.paymentStatus === PaymentStatus.PAID ? ' (Pago)' : '';
+        booking.paymentStatus === PaymentStatus.PAID
+          ? ' (Pago)'
+          : booking.paymentStatus === PaymentStatus.REFUND_PENDING
+            ? ' (Reembolso pendente)'
+            : '';
       activities.push({
         type: `booking_${booking.status}`,
         category: 'booking',
@@ -1279,6 +1285,8 @@ export class AdminService {
       cancelled,
       paymentPending,
       paid,
+      refundPending,
+      refunded,
       newToday,
       newThisWeek,
       newThisMonth,
@@ -1295,6 +1303,12 @@ export class AdminService {
         where: { paymentStatus: PaymentStatus.PENDING },
       }),
       this.bookingsRepo.count({ where: { paymentStatus: PaymentStatus.PAID } }),
+      this.bookingsRepo.count({
+        where: { paymentStatus: PaymentStatus.REFUND_PENDING },
+      }),
+      this.bookingsRepo.count({
+        where: { paymentStatus: PaymentStatus.REFUNDED },
+      }),
       this.bookingsRepo.count({ where: { createdAt: MoreThan(today) } }),
       this.bookingsRepo.count({ where: { createdAt: MoreThan(weekAgo) } }),
       this.bookingsRepo.count({ where: { createdAt: MoreThan(monthAgo) } }),
@@ -1315,7 +1329,12 @@ export class AdminService {
     return {
       total,
       byStatus: { pending, confirmed, checkedIn, completed, cancelled },
-      byPaymentStatus: { pending: paymentPending, paid },
+      byPaymentStatus: {
+        pending: paymentPending,
+        paid,
+        refund_pending: refundPending,
+        refunded,
+      },
       revenue: {
         total: Number(totalRevenue.toFixed(2)),
         confirmed: Number(confirmedRevenue.toFixed(2)),
@@ -1644,66 +1663,48 @@ export class AdminService {
 
   // ==================== VERIFICAÇÃO DE CAPITÃO ====================
 
-  async verifyCapt(id: string, verified: boolean, rejectionReason?: string) {
-    const user = await this.usersRepo.findOne({ where: { id } });
-    if (!user) throw new NotFoundException('Usuário não encontrado');
+  async verifyCapt(
+    id: string,
+    verified: boolean,
+    rejectionReason?: string,
+    adminId = 'admin-legacy-bulk',
+  ) {
+    const existingUser = await this.usersRepo.findOne({ where: { id } });
+    if (!existingUser) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
 
     if (!verified && !rejectionReason) {
       throw new BadRequestException('Informe o motivo da rejeição');
     }
 
-    await this.usersRepo.update(id, {
-      isVerified: verified,
-      kycStatus: verified ? KycStatus.APPROVED : KycStatus.REJECTED,
-      verifiedAt: verified ? new Date() : null,
-      rejectionReason: verified ? null : rejectionReason,
-    });
-
-    // Notificação push ao capitão
     if (verified) {
-      await this.notificationsService.sendToUser(id, {
-        title: '✅ Documentação aprovada!',
-        body: 'Seus documentos foram verificados. Já pode cadastrar sua embarcação e criar viagens.',
-        data: { type: 'captain_verified' },
-      });
-    } else {
-      await this.notificationsService.sendToUser(id, {
-        title: '❌ Documentação rejeitada',
-        body: `Motivo: ${rejectionReason}. Acesse o app para reenviar seus documentos.`,
-        data: { type: 'captain_rejected', reason: rejectionReason! },
-      });
+      return this.documentChangeRequestsService.approvePendingRequestsForUser(
+        id,
+        adminId,
+      );
     }
 
-    const action = verified ? 'aprovado' : 'rejeitado';
-    return {
-      message: `Capitão ${action} com sucesso`,
-      userId: id,
-      isVerified: verified,
-    };
+    return this.documentChangeRequestsService.rejectPendingRequestsForUser(
+      id,
+      adminId,
+      rejectionReason,
+    );
   }
 
   async getPendingVerifications() {
-    const [pendingBoats, pendingCaptains] = await Promise.all([
+    const [reviewPendingBoats, reviewPendingCaptains] = await Promise.all([
       this.boatsRepo.find({
         where: { isVerified: false, rejectionReason: IsNull() },
         relations: ['owner'],
         order: { createdAt: 'ASC' },
         take: 50,
       }),
-      this.usersRepo.find({
-        where: {
-          role: UserRole.CAPTAIN,
-          isVerified: false,
-          isActive: true,
-          rejectionReason: IsNull(),
-        },
-        order: { createdAt: 'ASC' },
-        take: 50,
-      }),
+      this.documentChangeRequestsService.getPendingCaptainSummaries(50),
     ]);
 
     return {
-      pendingBoats: pendingBoats.map((b) => ({
+      pendingBoats: reviewPendingBoats.map((b) => ({
         id: b.id,
         name: b.name,
         type: b.type,
@@ -1716,19 +1717,8 @@ export class AdminService {
           ? { id: b.owner.id, name: b.owner.name, phone: b.owner.phone }
           : null,
       })),
-      pendingCaptains: pendingCaptains.map((u) => ({
-        id: u.id,
-        name: u.name,
-        phone: u.phone,
-        email: u.email,
-        cpf: u.cpf,
-        city: u.city,
-        state: u.state,
-        licensePhotoUrl: u.licensePhotoUrl,
-        certificatePhotoUrl: u.certificatePhotoUrl,
-        createdAt: u.createdAt,
-      })),
-      totalPending: pendingBoats.length + pendingCaptains.length,
+      pendingCaptains: reviewPendingCaptains,
+      totalPending: reviewPendingBoats.length + reviewPendingCaptains.length,
     };
   }
 
@@ -1741,53 +1731,44 @@ export class AdminService {
   async getAdminNotifications() {
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    const [sosAlerts, pendingBoats, pendingCaptains, newTrips] =
-      await Promise.all([
-        // SOS activos — mais urgente
-        this.sosRepo.find({
-          where: { status: SosAlertStatus.ACTIVE },
-          relations: ['user'],
-          order: { createdAt: 'DESC' },
-          take: 5,
-        }),
-        // Barcos pendentes (nunca revistos — rejectionReason IS NULL)
-        this.boatsRepo.find({
-          where: { isVerified: false, rejectionReason: IsNull() },
-          relations: ['owner'],
-          order: { createdAt: 'DESC' },
-          take: 5,
-        }),
-        // Capitães pendentes (nunca revistos — rejectionReason IS NULL)
-        this.usersRepo.find({
-          where: {
-            role: UserRole.CAPTAIN,
-            isVerified: false,
-            isActive: true,
-            rejectionReason: IsNull(),
-          },
-          order: { createdAt: 'DESC' },
-          take: 5,
-        }),
-        // Viagens criadas nas últimas 24h
-        this.tripsRepo.find({
-          where: { createdAt: MoreThan(since24h) },
-          relations: ['captain'],
-          order: { createdAt: 'DESC' },
-          take: 5,
-        }),
-      ]);
+    const [
+      notificationSosAlerts,
+      notificationPendingBoats,
+      notificationPendingCaptains,
+      notificationNewTrips,
+    ] = await Promise.all([
+      this.sosRepo.find({
+        where: { status: SosAlertStatus.ACTIVE },
+        relations: ['user'],
+        order: { createdAt: 'DESC' },
+        take: 5,
+      }),
+      this.boatsRepo.find({
+        where: { isVerified: false, rejectionReason: IsNull() },
+        relations: ['owner'],
+        order: { createdAt: 'DESC' },
+        take: 5,
+      }),
+      this.documentChangeRequestsService.getPendingCaptainSummaries(5),
+      this.tripsRepo.find({
+        where: { createdAt: MoreThan(since24h) },
+        relations: ['captain'],
+        order: { createdAt: 'DESC' },
+        take: 5,
+      }),
+    ]);
 
-    const totalUnread =
-      sosAlerts.length +
-      pendingBoats.length +
-      pendingCaptains.length +
-      newTrips.length;
+    const notificationTotalUnread =
+      notificationSosAlerts.length +
+      notificationPendingBoats.length +
+      notificationPendingCaptains.length +
+      notificationNewTrips.length;
 
     return {
-      totalUnread,
+      totalUnread: notificationTotalUnread,
       sos: {
-        count: sosAlerts.length,
-        items: sosAlerts.map((a) => ({
+        count: notificationSosAlerts.length,
+        items: notificationSosAlerts.map((a) => ({
           id: a.id,
           type: a.type,
           description: a.description,
@@ -1798,8 +1779,9 @@ export class AdminService {
         })),
       },
       pendingVerifications: {
-        count: pendingBoats.length + pendingCaptains.length,
-        boats: pendingBoats.map((b) => ({
+        count:
+          notificationPendingBoats.length + notificationPendingCaptains.length,
+        boats: notificationPendingBoats.map((b) => ({
           id: b.id,
           name: b.name,
           type: b.type,
@@ -1807,7 +1789,7 @@ export class AdminService {
           createdAt: b.createdAt,
           link: `/admin/boats/${b.id}`,
         })),
-        captains: pendingCaptains.map((u) => ({
+        captains: notificationPendingCaptains.map((u) => ({
           id: u.id,
           name: u.name,
           phone: u.phone,
@@ -1817,8 +1799,8 @@ export class AdminService {
         })),
       },
       newTrips: {
-        count: newTrips.length,
-        items: newTrips.map((t) => ({
+        count: notificationNewTrips.length,
+        items: notificationNewTrips.map((t) => ({
           id: t.id,
           origin: t.origin,
           destination: t.destination,

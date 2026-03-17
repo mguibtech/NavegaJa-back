@@ -74,6 +74,10 @@ describe('TripsService.cancelTripWithPropagation', () => {
       status: TripStatus.SCHEDULED,
       origin: 'Manaus',
       destination: 'Parintins',
+      totalSeats: 20,
+      availableSeats: 17,
+      cargoCapacityKg: 100,
+      availableCargoKg: 82,
       boat: { ownerId: 'owner1' },
     } as Trip;
 
@@ -83,6 +87,7 @@ describe('TripsService.cancelTripWithPropagation', () => {
         passengerId: 'p1',
         tripId: 'trip1',
         status: BookingStatus.CONFIRMED,
+        seats: 3,
         paymentStatus: PaymentStatus.PAID,
         kmRedeemed: 500,
       },
@@ -91,6 +96,7 @@ describe('TripsService.cancelTripWithPropagation', () => {
         passengerId: 'p2',
         tripId: 'trip1',
         status: BookingStatus.PENDING,
+        seats: 1,
         paymentStatus: PaymentStatus.PENDING,
         kmRedeemed: 0,
       },
@@ -101,13 +107,24 @@ describe('TripsService.cancelTripWithPropagation', () => {
         id: 's1',
         senderId: 's1u',
         trackingCode: 'TRK1',
+        paidBy: 'sender',
         status: ShipmentStatus.PENDING,
+        weight: 10,
       },
       {
         id: 's2',
         senderId: 's2u',
         trackingCode: 'TRK2',
+        paidBy: 'sender',
         status: ShipmentStatus.CANCELLED,
+      },
+      {
+        id: 's3',
+        senderId: 's3u',
+        trackingCode: 'TRK3',
+        paidBy: 'sender',
+        status: ShipmentStatus.COLLECTED,
+        weight: 8,
       },
     ] as Shipment[];
 
@@ -152,18 +169,30 @@ describe('TripsService.cancelTripWithPropagation', () => {
     expect(tripRepoTx.save).toHaveBeenCalledTimes(1);
     expect(bookingRepoTx.save).toHaveBeenCalledTimes(2);
     expect(bookings[0].status).toBe(BookingStatus.CANCELLED);
-    expect(bookings[0].paymentStatus).toBe(PaymentStatus.REFUNDED);
+    expect(bookings[0].paymentStatus).toBe(PaymentStatus.REFUND_PENDING);
+    expect(trip.availableSeats).toBe(20);
+    expect(trip.availableCargoKg).toBe(92);
     expect(shipmentRepoTx.save).toHaveBeenCalledTimes(1);
-    expect(timelineRepoTx.save).toHaveBeenCalledTimes(1);
+    expect(timelineRepoTx.save).toHaveBeenCalledTimes(2);
+    expect(shipments[2].status).toBe(ShipmentStatus.COLLECTED);
 
-    expect(notificationsService.sendToUsers).toHaveBeenCalledWith(
-      expect.arrayContaining(['p1', 'p2']),
-      expect.any(Object),
-    );
+    const [passengerIds, passengerNotification] = notificationsService
+      .sendToUsers.mock.calls[0] as [string[], { body: string }];
+    expect(passengerIds).toEqual(expect.arrayContaining(['p1', 'p2']));
+    expect(passengerNotification.body).toContain('reembolso manual');
     expect(gamificationService.refundKm).toHaveBeenCalledWith('p1', 500, 'b1');
     expect(notificationsService.sendToUser).toHaveBeenCalledWith(
       's1u',
       expect.any(Object),
+    );
+    const userNotificationCalls = notificationsService.sendToUser.mock
+      .calls as Array<[string, { data?: { type?: string } }]>;
+    const shipmentNotificationCall = userNotificationCalls.find(
+      ([recipientId]) => recipientId === 's3u',
+    );
+    expect(shipmentNotificationCall).toBeDefined();
+    expect(shipmentNotificationCall?.[1].data.type).toBe(
+      'shipment_manual_resolution_required',
     );
     expect(notificationsService.sendToUser).toHaveBeenCalledWith(
       'owner1',
@@ -327,7 +356,7 @@ describe('TripsService trip ownership and conflict rules', () => {
       captainId: 'manager-1',
       boatId: 'boat-1',
       status: TripStatus.SCHEDULED,
-      departureAt: new Date('2026-03-11T10:00:00.000Z'),
+      departureAt: new Date('2030-03-11T10:00:00.000Z'),
     } as Trip;
 
     const { service } = createService({
@@ -347,8 +376,8 @@ describe('TripsService trip ownership and conflict rules', () => {
     await service.create('captain-1', {
       origin: 'Manaus',
       destination: 'Parintins',
-      departureTime: '2026-03-12T10:00:00.000Z',
-      arrivalTime: '2026-03-12T14:00:00.000Z',
+      departureTime: '2030-03-12T10:00:00.000Z',
+      arrivalTime: '2030-03-12T14:00:00.000Z',
       price: 100,
       totalSeats: 10,
       boatId: 'boat-1',
@@ -367,8 +396,8 @@ describe('TripsService trip ownership and conflict rules', () => {
     expect(conflictQueryBuilder.andWhere).toHaveBeenCalledWith(
       'trip.departure_at < :newArrivalAt AND COALESCE(trip.estimated_arrival_at, trip.departure_at) > :newDepartureAt',
       expect.objectContaining({
-        newDepartureAt: new Date('2026-03-12T10:00:00.000Z'),
-        newArrivalAt: new Date('2026-03-12T14:00:00.000Z'),
+        newDepartureAt: new Date('2030-03-12T10:00:00.000Z'),
+        newArrivalAt: new Date('2030-03-12T14:00:00.000Z'),
       }),
     );
   });
@@ -381,8 +410,8 @@ describe('TripsService trip ownership and conflict rules', () => {
     const result = await service.create('captain-1', {
       origin: 'Manaus',
       destination: 'Itacoatiara',
-      departureTime: '2026-03-12T10:00:00.000Z',
-      arrivalTime: '2026-03-14T14:00:00.000Z',
+      departureTime: '2030-03-12T10:00:00.000Z',
+      arrivalTime: '2030-03-14T14:00:00.000Z',
       price: 250,
       cargoPriceKg: 35,
       totalSeats: 20,
@@ -407,8 +436,8 @@ describe('TripsService trip ownership and conflict rules', () => {
     const result = await service.create('captain-1', {
       origin: 'Manaus',
       destination: 'Itacoatiara',
-      departureTime: '2026-03-12T10:00:00.000Z',
-      arrivalTime: '2026-03-14T14:00:00.000Z',
+      departureTime: '2030-03-12T10:00:00.000Z',
+      arrivalTime: '2030-03-14T14:00:00.000Z',
       price: 250,
       totalSeats: 20,
       boatId: 'boat-1',
@@ -426,8 +455,8 @@ describe('TripsService trip ownership and conflict rules', () => {
       service.create('captain-1', {
         origin: 'Manaus',
         destination: 'Parintins',
-        departureTime: '2026-03-12T10:00:00.000Z',
-        arrivalTime: '2026-03-12T14:00:00.000Z',
+        departureTime: '2030-03-12T10:00:00.000Z',
+        arrivalTime: '2030-03-12T14:00:00.000Z',
         price: 100,
         totalSeats: 10,
         boatId: 'boat-1',

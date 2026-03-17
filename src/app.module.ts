@@ -29,6 +29,7 @@ import { CaptainModule } from './captain/captain.module';
 import { StopReviewsModule } from './stop-reviews/stop-reviews.module';
 import { ChatModule } from './chat/chat.module';
 import { BoatStaffModule } from './boat-staff/boat-staff.module';
+import { DocumentChangeRequestsModule } from './document-change-requests/document-change-requests.module';
 
 @Module({
   imports: [
@@ -79,6 +80,7 @@ import { BoatStaffModule } from './boat-staff/boat-staff.module';
     StopReviewsModule,
     ChatModule,
     BoatStaffModule,
+    DocumentChangeRequestsModule,
     SeedModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

@@ -1,4 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
 import { BookingsService } from './bookings.service';
 import { BookingStatus, PaymentMethod, PaymentStatus } from './booking.entity';
 import type { Repository } from 'typeorm';
@@ -78,13 +77,71 @@ describe('BookingsService cancellation policy', () => {
       {} as never,
     );
 
-    await expect(service.cancel('booking-2', 'passenger-1')).rejects.toMatchObject(
-      {
-        response: {
-          message:
-            'Cancelamento não permitido: o passageiro já realizou check-in/embarque.',
-        },
+    await expect(
+      service.cancel('booking-2', 'passenger-1'),
+    ).rejects.toMatchObject({
+      response: {
+        message:
+          'Cancelamento não permitido: o passageiro já realizou check-in/embarque.',
       },
+    });
+  });
+
+  it('marks paid bookings as refund_pending and restores seats', async () => {
+    const booking = {
+      id: 'booking-3',
+      passengerId: 'passenger-1',
+      tripId: 'trip-1',
+      seats: 2,
+      status: BookingStatus.CONFIRMED,
+      paymentStatus: PaymentStatus.PAID,
+      kmRedeemed: 500,
+    } as unknown as Booking;
+    const trip = {
+      id: 'trip-1',
+      availableSeats: 8,
+    } as Trip;
+
+    const bookingsRepo = {
+      findOne: jest.fn().mockResolvedValue(booking),
+      save: jest.fn((value: Booking) => Promise.resolve(value)),
+    };
+    const tripsRepo = {
+      findOne: jest.fn().mockResolvedValue(trip),
+      save: jest.fn((value: Trip) => Promise.resolve(value)),
+    };
+    const gamificationService = {
+      refundKm: jest.fn().mockResolvedValue(undefined),
+    };
+    const notificationsService = {
+      sendToUser: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const service = new BookingsService(
+      bookingsRepo as unknown as Repository<Booking>,
+      tripsRepo as unknown as Repository<Trip>,
+      {} as Repository<User>,
+      gamificationService as unknown as GamificationService,
+      {} as never,
+      {} as never,
+      notificationsService as never,
+      {} as never,
+      {} as never,
     );
+
+    const saved = await service.cancel('booking-3', 'passenger-1');
+
+    expect(saved.status).toBe(BookingStatus.CANCELLED);
+    expect(saved.paymentStatus).toBe(PaymentStatus.REFUND_PENDING);
+    expect(trip.availableSeats).toBe(10);
+    expect(gamificationService.refundKm).toHaveBeenCalledWith(
+      'passenger-1',
+      500,
+      'booking-3',
+    );
+    const [recipientId, notification] = notificationsService.sendToUser.mock
+      .calls[0] as [string, { body: string }];
+    expect(recipientId).toBe('passenger-1');
+    expect(notification.body).toContain('reembolso manual');
   });
 });
