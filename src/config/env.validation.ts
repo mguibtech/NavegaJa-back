@@ -174,6 +174,10 @@ function ensureRequired(env: EnvConfig, keys: string[]): void {
       continue;
     }
 
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      continue;
+    }
+
     if (typeof value !== 'string' || value.trim().length === 0) {
       throw new Error(`Environment variable ${key} is required in production.`);
     }
