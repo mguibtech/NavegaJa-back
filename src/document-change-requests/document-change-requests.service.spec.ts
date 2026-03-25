@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { ConflictException } from '@nestjs/common';
 import type { Repository } from 'typeorm';
 import { DocumentChangeRequestsService } from './document-change-requests.service';
@@ -432,5 +433,182 @@ describe('DocumentChangeRequestsService', () => {
     expect(requests.get('request-license')?.status).toBe(
       DocumentChangeRequestStatus.REJECTED,
     );
+  });
+
+  it('creates requests from document map ignoring empty values', async () => {
+    const result = await service.createRequestsFromDocumentMap('captain-1', {
+      [CaptainDocumentType.SELFIE]:
+        'https://cdn.navegaja.com/documents/selfie-new.jpg',
+      [CaptainDocumentType.LICENSE_NAVIGATION]:
+        'https://cdn.navegaja.com/documents/license-new.pdf',
+      [CaptainDocumentType.SAFETY_CERTIFICATE]: '   ',
+    });
+
+    expect(result).toHaveLength(2);
+    expect(
+      Array.from(requests.values()).every(
+        (request) => request.status === DocumentChangeRequestStatus.PENDING,
+      ),
+    ).toBe(true);
+  });
+
+  it('blocks createRequest for invalid URL and equal official document', async () => {
+    users.set('captain-1', {
+      ...(users.get('captain-1') as UserState),
+      licensePhotoUrl: 'https://cdn.navegaja.com/documents/current-license.pdf',
+    });
+
+    await expect(
+      service.createRequest('captain-1', {
+        documentType: CaptainDocumentType.LICENSE_NAVIGATION,
+        newDocumentUrl: 'ftp://cdn.navegaja.com/file.pdf',
+      }),
+    ).rejects.toMatchObject({
+      response: { message: expect.any(String) },
+    });
+
+    await expect(
+      service.createRequest('captain-1', {
+        documentType: CaptainDocumentType.LICENSE_NAVIGATION,
+        newDocumentUrl:
+          'https://cdn.navegaja.com/documents/current-license.pdf',
+      }),
+    ).rejects.toMatchObject({
+      response: { message: expect.any(String) },
+    });
+  });
+
+  it('lists requests by actor role and applies filters', async () => {
+    users.set('captain-2', {
+      id: 'captain-2',
+      role: UserRole.CAPTAIN,
+      name: 'Captain Two',
+      phone: '92988888888',
+      email: 'captain2@navegaja.com',
+      isVerified: false,
+      kycStatus: KycStatus.NONE,
+      selfieUrl: null,
+      licensePhotoUrl: null,
+      certificatePhotoUrl: null,
+    });
+
+    requests.set('request-1', {
+      id: 'request-1',
+      userId: 'captain-1',
+      documentType: CaptainDocumentType.SELFIE,
+      status: DocumentChangeRequestStatus.PENDING,
+      currentDocumentUrl: null,
+      newDocumentUrl: 'https://cdn.navegaja.com/documents/selfie-1.jpg',
+      createdAt: new Date('2026-03-17T10:00:00Z'),
+      updatedAt: new Date('2026-03-17T10:00:00Z'),
+    });
+    requests.set('request-2', {
+      id: 'request-2',
+      userId: 'captain-2',
+      documentType: CaptainDocumentType.LICENSE_NAVIGATION,
+      status: DocumentChangeRequestStatus.PENDING,
+      currentDocumentUrl: null,
+      newDocumentUrl: 'https://cdn.navegaja.com/documents/license-2.pdf',
+      createdAt: new Date('2026-03-17T10:01:00Z'),
+      updatedAt: new Date('2026-03-17T10:01:00Z'),
+    });
+
+    const captainView = await service.listForActor(
+      { sub: 'captain-1', role: UserRole.CAPTAIN },
+      {},
+    );
+    const adminView = await service.listForActor(
+      { sub: 'admin-1', role: UserRole.ADMIN },
+      { userId: 'captain-2' },
+    );
+
+    expect(captainView).toHaveLength(1);
+    expect(captainView[0]?.userId).toBe('captain-1');
+    expect(adminView).toHaveLength(1);
+    expect(adminView[0]?.userId).toBe('captain-2');
+  });
+
+  it('approves and rejects individual requests with notifications', async () => {
+    requests.set('request-approve', {
+      id: 'request-approve',
+      userId: 'captain-1',
+      documentType: CaptainDocumentType.SELFIE,
+      status: DocumentChangeRequestStatus.PENDING,
+      currentDocumentUrl: null,
+      newDocumentUrl: 'https://cdn.navegaja.com/documents/selfie-approved.jpg',
+      createdAt: new Date('2026-03-17T10:00:00Z'),
+      updatedAt: new Date('2026-03-17T10:00:00Z'),
+    });
+    requests.set('request-reject', {
+      id: 'request-reject',
+      userId: 'captain-1',
+      documentType: CaptainDocumentType.SAFETY_CERTIFICATE,
+      status: DocumentChangeRequestStatus.PENDING,
+      currentDocumentUrl: null,
+      newDocumentUrl:
+        'https://cdn.navegaja.com/documents/certificate-reject.pdf',
+      createdAt: new Date('2026-03-17T10:01:00Z'),
+      updatedAt: new Date('2026-03-17T10:01:00Z'),
+    });
+
+    const approved = await service.approveRequest('request-approve', 'admin-1');
+    const rejected = await service.rejectRequest(
+      'request-reject',
+      'admin-1',
+      'Documento ilegÃ­vel',
+    );
+
+    expect(approved.status).toBe(DocumentChangeRequestStatus.APPROVED);
+    expect(rejected.status).toBe(DocumentChangeRequestStatus.REJECTED);
+    expect(rejected.rejectionReason).toBe('Documento ilegÃ­vel');
+    expect(notificationsService.sendToUser).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns pending captain summaries and distinct pending count', async () => {
+    users.set('captain-2', {
+      id: 'captain-2',
+      role: UserRole.CAPTAIN,
+      name: 'Captain Two',
+      phone: '92988888888',
+      email: 'captain2@navegaja.com',
+      isVerified: false,
+      kycStatus: KycStatus.NONE,
+      selfieUrl: null,
+      licensePhotoUrl: null,
+      certificatePhotoUrl: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    });
+
+    requests.set('request-1', {
+      id: 'request-1',
+      userId: 'captain-1',
+      documentType: CaptainDocumentType.LICENSE_NAVIGATION,
+      status: DocumentChangeRequestStatus.PENDING,
+      currentDocumentUrl: null,
+      newDocumentUrl: 'https://cdn.navegaja.com/documents/license-1.pdf',
+      createdAt: new Date('2026-03-17T10:00:00Z'),
+      updatedAt: new Date('2026-03-17T10:00:00Z'),
+      user: users.get('captain-1') as User,
+    });
+    requests.set('request-2', {
+      id: 'request-2',
+      userId: 'captain-2',
+      documentType: CaptainDocumentType.SELFIE,
+      status: DocumentChangeRequestStatus.PENDING,
+      currentDocumentUrl: null,
+      newDocumentUrl: 'https://cdn.navegaja.com/documents/selfie-2.jpg',
+      createdAt: new Date('2026-03-17T10:01:00Z'),
+      updatedAt: new Date('2026-03-17T10:01:00Z'),
+      user: users.get('captain-2') as User,
+    });
+
+    const summaries = await service.getPendingCaptainSummaries();
+    const count = await service.countPendingCaptains();
+
+    expect(summaries).toHaveLength(2);
+    expect(
+      summaries.every((summary) => summary.documentChangeRequests.length > 0),
+    ).toBe(true);
+    expect(count).toBe(2);
   });
 });
