@@ -146,6 +146,79 @@ describe('BookingsService cancellation policy', () => {
   });
 });
 
+describe('BookingsService creation flows', () => {
+  it('confirms cash bookings immediately with check-in QR and seat reservation', async () => {
+    const trip = {
+      id: 'trip-10',
+      origin: 'Manaus',
+      destination: 'Parintins',
+      captainId: 'captain-10',
+      availableSeats: 5,
+    } as Trip;
+
+    const bookingsRepo = {
+      findOne: jest.fn().mockResolvedValue(null),
+      create: jest.fn((value: Partial<Booking>) => value),
+      save: jest
+        .fn()
+        .mockImplementationOnce((value: Partial<Booking>) =>
+          Promise.resolve({
+            ...value,
+            id: 'booking-10',
+          }),
+        )
+        .mockImplementation((value: Booking) => Promise.resolve(value)),
+    };
+    const tripsRepo = {
+      findOne: jest
+        .fn()
+        .mockResolvedValueOnce(trip)
+        .mockResolvedValueOnce(trip),
+      save: jest.fn((value: Trip) => Promise.resolve(value)),
+    };
+    const notificationsService = {
+      sendToUser: jest.fn().mockResolvedValue(undefined),
+    };
+    const floodService = {
+      getFloodStatus: jest.fn().mockResolvedValue({ severity: 'NO_FLOODING' }),
+    };
+
+    const service = new BookingsService(
+      bookingsRepo as unknown as Repository<Booking>,
+      tripsRepo as unknown as Repository<Trip>,
+      {} as Repository<User>,
+      {} as GamificationService,
+      {} as never,
+      {} as never,
+      notificationsService as never,
+      {} as never,
+      floodService as never,
+    );
+
+    jest.spyOn(service, 'calculatePrice').mockResolvedValue({
+      finalPrice: 180,
+      kmRedeemed: 0,
+      kmDiscount: 0,
+      freeChildrenCount: 0,
+      children: [],
+      couponDiscount: 0,
+    });
+
+    const saved = await service.create('passenger-10', {
+      tripId: 'trip-10',
+      quantity: 2,
+      paymentMethod: PaymentMethod.CASH,
+    } as never);
+
+    expect(saved.status).toBe(BookingStatus.CONFIRMED);
+    expect(saved.paymentStatus).toBe(PaymentStatus.PENDING);
+    expect(saved.qrCodeCheckin).toBe('NVGJ-booking-10');
+    expect(trip.availableSeats).toBe(3);
+    expect(tripsRepo.save).toHaveBeenCalledWith(trip);
+    expect(notificationsService.sendToUser).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('BookingsService payment confirmation flows', () => {
   it('blocks captain payment confirmation when the captain is not verified', async () => {
     const usersRepo = {
