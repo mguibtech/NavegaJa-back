@@ -426,6 +426,24 @@ export class AdminService {
     };
   }
 
+  private getEligibleUserRoleFilters() {
+    return [{ role: UserRole.PASSENGER }, { role: UserRole.CAPTAIN }];
+  }
+
+  private async getUserRoleCounts() {
+    const [passenger, captain, admin] = await Promise.all([
+      this.usersRepo.count({ where: { role: UserRole.PASSENGER } }),
+      this.usersRepo.count({ where: { role: UserRole.CAPTAIN } }),
+      this.usersRepo.count({ where: { role: UserRole.ADMIN } }),
+    ]);
+
+    return {
+      passenger,
+      captain,
+      admin,
+    };
+  }
+
   private roundMetric(value: number): number {
     return Number(value.toFixed(2));
   }
@@ -515,10 +533,7 @@ export class AdminService {
 
   private async getEligibleUserGrowthStats() {
     const { today, weekAgo, monthAgo } = this.getStatsDateThresholds();
-    const eligibleRoles = [
-      { role: UserRole.PASSENGER },
-      { role: UserRole.CAPTAIN },
-    ];
+    const eligibleRoles = this.getEligibleUserRoleFilters();
 
     const [
       totalEligibleUsers,
@@ -772,31 +787,15 @@ export class AdminService {
 
   async getUserStats() {
     const { today, weekAgo, monthAgo } = this.getStatsDateThresholds();
-    const [
-      total,
-      passengerCount,
-      captainCount,
-      adminCount,
-      newToday,
-      newThisWeek,
-      newThisMonth,
-      activeUsers,
-    ] = await Promise.all([
-      this.usersRepo.count(),
-      this.usersRepo.count({ where: { role: UserRole.PASSENGER } }),
-      this.usersRepo.count({ where: { role: UserRole.CAPTAIN } }),
-      this.usersRepo.count({ where: { role: UserRole.ADMIN } }),
-      this.usersRepo.count({ where: { createdAt: MoreThan(today) } }),
-      this.usersRepo.count({ where: { createdAt: MoreThan(weekAgo) } }),
-      this.usersRepo.count({ where: { createdAt: MoreThan(monthAgo) } }),
-      this.usersRepo.count({ where: { isActive: true } }),
-    ]);
-
-    const byRole = {
-      passenger: passengerCount,
-      captain: captainCount,
-      admin: adminCount,
-    };
+    const [total, byRole, newToday, newThisWeek, newThisMonth, activeUsers] =
+      await Promise.all([
+        this.usersRepo.count(),
+        this.getUserRoleCounts(),
+        this.usersRepo.count({ where: { createdAt: MoreThan(today) } }),
+        this.usersRepo.count({ where: { createdAt: MoreThan(weekAgo) } }),
+        this.usersRepo.count({ where: { createdAt: MoreThan(monthAgo) } }),
+        this.usersRepo.count({ where: { isActive: true } }),
+      ]);
 
     return {
       total,
