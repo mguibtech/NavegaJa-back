@@ -316,6 +316,50 @@ export class AdminService {
     return stats;
   }
 
+  private async getAverageReviewRating(
+    selectExpression: string,
+    reviewType?: ReviewType,
+  ): Promise<number> {
+    const qb = this.reviewsRepo
+      .createQueryBuilder('r')
+      .select(selectExpression, 'avg');
+
+    if (reviewType) {
+      qb.where('r.review_type = :type', { type: reviewType });
+    } else {
+      qb.where('r.boat_rating IS NOT NULL');
+    }
+
+    const row = await qb.getRawOne<{ avg: string | null }>();
+    return Number(row?.avg || 0);
+  }
+
+  private async getCaptainRatingDistribution() {
+    const distributionRows = await this.reviewsRepo
+      .createQueryBuilder('r')
+      .select('r.rating', 'stars')
+      .addSelect('COUNT(*)', 'count')
+      .where('r.review_type = :type', { type: ReviewType.PASSENGER_TO_CAPTAIN })
+      .groupBy('r.rating')
+      .getRawMany<{ stars: number | null; count: string }>();
+
+    const distribution: Record<number, number> = {
+      5: 0,
+      4: 0,
+      3: 0,
+      2: 0,
+      1: 0,
+    };
+
+    for (const row of distributionRows) {
+      if (row.stars) {
+        distribution[row.stars] = parseInt(row.count, 10);
+      }
+    }
+
+    return distribution;
+  }
+
   // ==================== USUÁRIOS ====================
 
   async createCaptain(dto: {
@@ -1173,15 +1217,17 @@ export class AdminService {
   }
 
   async getReviewStats() {
+    const { today, weekAgo, monthAgo } = this.getStatsDateThresholds();
     const [
       totalPassengerReviews,
       totalCaptainReviews,
-      avgCaptainRow,
-      avgBoatRow,
-      avgPassengerRow,
+      captainAverage,
+      boatAverage,
+      passengerAverage,
       newToday,
       newThisWeek,
       newThisMonth,
+      captainRatingDistribution,
     ] = await Promise.all([
       this.reviewsRepo.count({
         where: { reviewType: ReviewType.PASSENGER_TO_CAPTAIN },
@@ -1189,66 +1235,37 @@ export class AdminService {
       this.reviewsRepo.count({
         where: { reviewType: ReviewType.CAPTAIN_TO_PASSENGER },
       }),
-      this.reviewsRepo
-        .createQueryBuilder('r')
-        .select('ROUND(AVG(r.rating)::numeric, 2)', 'avg')
-        .where('r.review_type = :type', {
-          type: ReviewType.PASSENGER_TO_CAPTAIN,
-        })
-        .getRawOne<{ avg: string | null }>(),
-      this.reviewsRepo
-        .createQueryBuilder('r')
-        .select('ROUND(AVG(r.boat_rating)::numeric, 2)', 'avg')
-        .where('r.boat_rating IS NOT NULL')
-        .getRawOne<{ avg: string | null }>(),
-      this.reviewsRepo
-        .createQueryBuilder('r')
-        .select('ROUND(AVG(r.passenger_rating)::numeric, 2)', 'avg')
-        .where('r.review_type = :type', {
-          type: ReviewType.CAPTAIN_TO_PASSENGER,
-        })
-        .getRawOne<{ avg: string | null }>(),
+      this.getAverageReviewRating(
+        'ROUND(AVG(r.rating)::numeric, 2)',
+        ReviewType.PASSENGER_TO_CAPTAIN,
+      ),
+      this.getAverageReviewRating('ROUND(AVG(r.boat_rating)::numeric, 2)'),
+      this.getAverageReviewRating(
+        'ROUND(AVG(r.passenger_rating)::numeric, 2)',
+        ReviewType.CAPTAIN_TO_PASSENGER,
+      ),
       this.reviewsRepo.count({
-        where: { createdAt: MoreThan(this.startOfToday()) },
+        where: { createdAt: MoreThan(today) },
       }),
       this.reviewsRepo.count({
-        where: { createdAt: MoreThan(this.daysAgo(7)) },
+        where: { createdAt: MoreThan(weekAgo) },
       }),
       this.reviewsRepo.count({
-        where: { createdAt: MoreThan(this.daysAgo(30)) },
+        where: { createdAt: MoreThan(monthAgo) },
       }),
+      this.getCaptainRatingDistribution(),
     ]);
-
-    // Distribuição de estrelas (capitão)
-    const distributionRows = await this.reviewsRepo
-      .createQueryBuilder('r')
-      .select('r.rating', 'stars')
-      .addSelect('COUNT(*)', 'count')
-      .where('r.review_type = :type', { type: ReviewType.PASSENGER_TO_CAPTAIN })
-      .groupBy('r.rating')
-      .getRawMany<{ stars: number | null; count: string }>();
-
-    const distribution: Record<number, number> = {
-      5: 0,
-      4: 0,
-      3: 0,
-      2: 0,
-      1: 0,
-    };
-    for (const row of distributionRows) {
-      if (row.stars) distribution[row.stars] = parseInt(row.count, 10);
-    }
 
     return {
       total: totalPassengerReviews + totalCaptainReviews,
       passengerToCapitain: totalPassengerReviews,
       captainToPassenger: totalCaptainReviews,
       averages: {
-        captain: Number(avgCaptainRow?.avg || 0),
-        boat: Number(avgBoatRow?.avg || 0),
-        passenger: Number(avgPassengerRow?.avg || 0),
+        captain: captainAverage,
+        boat: boatAverage,
+        passenger: passengerAverage,
       },
-      captainRatingDistribution: distribution,
+      captainRatingDistribution,
       newToday,
       newThisWeek,
       newThisMonth,
