@@ -11,6 +11,7 @@ import {
   Between,
   IsNull,
   FindOptionsWhere,
+  SelectQueryBuilder,
 } from 'typeorm';
 import { NotificationsService } from '../notifications/notifications.service';
 import { GamificationService } from '../gamification/gamification.service';
@@ -506,6 +507,72 @@ export class AdminService {
     return distribution;
   }
 
+  private applyUserListFilters(
+    qb: SelectQueryBuilder<User>,
+    role?: UserRole,
+    search?: string,
+  ): void {
+    if (role) {
+      qb.andWhere('user.role = :role', { role });
+    }
+
+    if (search) {
+      qb.andWhere(
+        '(LOWER(user.name) LIKE LOWER(:search) OR LOWER(user.email) LIKE LOWER(:search) OR user.phone LIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+  }
+
+  private applyTripListFilters(
+    qb: SelectQueryBuilder<Trip>,
+    status?: string,
+    captainId?: string,
+  ): void {
+    if (status) {
+      qb.andWhere('trip.status = :status', { status });
+    }
+
+    if (captainId) {
+      qb.andWhere('trip.captainId = :captainId', { captainId });
+    }
+  }
+
+  private applyShipmentListFilters(
+    qb: SelectQueryBuilder<Shipment>,
+    status?: string,
+    trackingCode?: string,
+  ): void {
+    if (status) {
+      qb.andWhere('shipment.status = :status', { status });
+    }
+
+    if (trackingCode) {
+      qb.andWhere('LOWER(shipment.trackingCode) LIKE LOWER(:code)', {
+        code: `%${trackingCode}%`,
+      });
+    }
+  }
+
+  private applyBoatListFilters(
+    qb: SelectQueryBuilder<Boat>,
+    verified?: string,
+    search?: string,
+  ): void {
+    if (verified === 'true') {
+      qb.andWhere('boat.isVerified = true');
+    } else if (verified === 'false') {
+      qb.andWhere('boat.isVerified = false');
+    }
+
+    if (search) {
+      qb.andWhere(
+        '(LOWER(boat.name) LIKE LOWER(:s) OR LOWER(boat.registrationNum) LIKE LOWER(:s) OR LOWER(owner.name) LIKE LOWER(:s))',
+        { s: `%${search}%` },
+      );
+    }
+  }
+
   // ==================== USUÁRIOS ====================
 
   async createCaptain(dto: {
@@ -553,17 +620,7 @@ export class AdminService {
   ) {
     const skip = (page - 1) * limit;
     const qb = this.usersRepo.createQueryBuilder('user');
-
-    if (role) {
-      qb.andWhere('user.role = :role', { role });
-    }
-
-    if (search) {
-      qb.andWhere(
-        '(LOWER(user.name) LIKE LOWER(:search) OR LOWER(user.email) LIKE LOWER(:search) OR user.phone LIKE :search)',
-        { search: `%${search}%` },
-      );
-    }
+    this.applyUserListFilters(qb, role, search);
 
     const [users, total] = await qb
       .orderBy('user.createdAt', 'DESC')
@@ -687,14 +744,7 @@ export class AdminService {
       .leftJoin('trip.captain', 'captain')
       .addSelect(AdminService.CAPTAIN_SAFE_FIELDS)
       .leftJoinAndSelect('trip.boat', 'boat');
-
-    if (status) {
-      qb.andWhere('trip.status = :status', { status });
-    }
-
-    if (captainId) {
-      qb.andWhere('trip.captainId = :captainId', { captainId });
-    }
+    this.applyTripListFilters(qb, status, captainId);
 
     const [trips, total] = await qb
       .orderBy('trip.createdAt', 'DESC')
@@ -792,16 +842,7 @@ export class AdminService {
       .leftJoinAndSelect('shipment.trip', 'trip')
       .leftJoin('trip.captain', 'captain')
       .addSelect(AdminService.CAPTAIN_SAFE_FIELDS);
-
-    if (status) {
-      qb.andWhere('shipment.status = :status', { status });
-    }
-
-    if (trackingCode) {
-      qb.andWhere('LOWER(shipment.trackingCode) LIKE LOWER(:code)', {
-        code: `%${trackingCode}%`,
-      });
-    }
+    this.applyShipmentListFilters(qb, status, trackingCode);
 
     const [shipments, total] = await qb
       .orderBy('shipment.createdAt', 'DESC')
@@ -1410,19 +1451,7 @@ export class AdminService {
     const qb = this.boatsRepo
       .createQueryBuilder('boat')
       .leftJoinAndSelect('boat.owner', 'owner');
-
-    if (verified === 'true') {
-      qb.andWhere('boat.isVerified = true');
-    } else if (verified === 'false') {
-      qb.andWhere('boat.isVerified = false');
-    }
-
-    if (search) {
-      qb.andWhere(
-        '(LOWER(boat.name) LIKE LOWER(:s) OR LOWER(boat.registrationNum) LIKE LOWER(:s) OR LOWER(owner.name) LIKE LOWER(:s))',
-        { s: `%${search}%` },
-      );
-    }
+    this.applyBoatListFilters(qb, verified, search);
 
     qb.orderBy('boat.createdAt', 'DESC').skip(skip).take(limit);
 
