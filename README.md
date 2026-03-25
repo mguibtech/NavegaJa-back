@@ -1,173 +1,98 @@
-# NavegaJa - Backend API
+# NavegaJa Backend
 
-API REST para o marketplace de transporte fluvial na Amazonia. Conecta passageiros e remetentes de cargas a barqueiros atraves de reservas, rastreio GPS e QR Code de embarque.
+API REST em NestJS para o marketplace de transporte fluvial do NavegaJa. O backend cobre autenticacao, viagens, reservas, encomendas, carga, operacao de capitaes, administracao, notificacoes, pagamentos e servicos auxiliares.
 
 ## Stack
 
-- **NestJS** + TypeScript
-- **PostgreSQL** + TypeORM
-- **JWT** (access token 15min + refresh token 30d)
-- **Swagger** para documentacao
-- **bcryptjs** para hash de senhas
+- NestJS 11 + TypeScript
+- PostgreSQL + TypeORM
+- JWT com access token e refresh token
+- Swagger em `/api/docs`
+- Jest + Supertest para testes unitarios e e2e
+
+## Estado Atual
+
+- Build, lint, testes unitarios e testes e2e configurados no projeto
+- Rate limiting global via `@nestjs/throttler`
+- Validacao central de ambiente no bootstrap
+- CORS e HTTP logging configuraveis por variavel de ambiente
+- CI para `main` e pull requests em [`.github/workflows/ci.yml`](/C:/www/softLive/projects/navegaja/backend/.github/workflows/ci.yml)
+
+## Modulos Principais
+
+O backend atual expoe mais do que o conjunto original descrito na documentacao legada. Os modulos ativos em `src/` incluem:
+
+- `auth`, `users`, `boats`, `boat-staff`, `captain`
+- `routes`, `trips`, `bookings`, `shipments`, `cargo`
+- `payments`, `payment-methods`, `coupons`, `gamification`
+- `admin`, `document-change-requests`, `notifications`, `chat`
+- `favorites`, `reviews`, `stop-reviews`, `safety`, `weather`, `locations`
+- `upload`, `mail`, `database`, `common`, `config`
 
 ## Requisitos
 
-- Node.js 18+
+- Node.js 22 recomendado
 - PostgreSQL 14+
-- Yarn ou npm
+- npm
 
 ## Setup
 
 ```bash
-# Instalar dependencias
-yarn install
-
-# Configurar banco PostgreSQL
-# Criar database "navegaja" no PostgreSQL local (porta 5432)
-
-# Rodar em modo desenvolvimento (com hot reload)
-yarn start:dev
-
-# Rodar em modo producao
-yarn start:prod
+npm ci
+cp .env.example .env
+npm run start:dev
 ```
 
-O servidor sobe em `http://localhost:3000`.
-Swagger docs em `http://localhost:3000/api/docs`.
+Servidor local: `http://localhost:3000`
 
-Na primeira execucao, o banco e populado automaticamente com dados seed (9 usuarios, 6 barcos, 8 rotas, 10 viagens, 5 reservas, 3 encomendas, 8 cargas comerciais, 5 avaliacoes).
+Swagger: `http://localhost:3000/api/docs`
 
-## Contas de Teste
+## Variaveis de Ambiente
 
-| Tipo | Nome | Telefone | Senha |
-|------|------|----------|-------|
-| Passageiro | Joao Silva | 92991001001 | 123456 |
-| Capitao | Carlos Ribeiro | 92992001001 | 123456 |
+O bootstrap valida o ambiente em [`src/config/env.validation.ts`](/C:/www/softLive/projects/navegaja/backend/src/config/env.validation.ts).
 
-## Endpoints (37 rotas)
+Variaveis operacionais principais:
 
-### Auth (publico)
-| Metodo | Rota | Descricao |
-|--------|------|-----------|
-| POST | `/auth/register` | Cadastrar usuario |
-| POST | `/auth/login` | Login (telefone + senha) |
-| POST | `/auth/refresh` | Renovar tokens |
-| GET | `/auth/me` | Dados do usuario logado* |
+- `NODE_ENV`
+- `PORT`
+- `APP_URL`
+- `BASE_URL`
+- `CORS_ORIGINS`
+- `HTTP_LOGGING`
+- `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE`
+- `DB_SYNCHRONIZE`
+- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`
+- `PAYMENT_WEBHOOK_SECRET`
 
-### Rotas*
-| Metodo | Rota | Descricao |
-|--------|------|-----------|
-| GET | `/routes` | Listar todas as rotas |
-| GET | `/routes/search?origin=X&dest=Y` | Buscar rotas |
-| GET | `/routes/:id` | Detalhes da rota |
+Consulte [`.env.example`](/C:/www/softLive/projects/navegaja/backend/.env.example) para o conjunto completo.
 
-### Viagens*
-| Metodo | Rota | Descricao |
-|--------|------|-----------|
-| GET | `/trips` | Viagens disponiveis |
-| GET | `/trips/:id` | Detalhes da viagem |
-| POST | `/trips` | Criar viagem (capitao) |
-| PATCH | `/trips/:id/status` | Atualizar status (capitao) |
-| PATCH | `/trips/:id/location` | Atualizar GPS (capitao) |
-| GET | `/trips/captain/my-trips` | Viagens do capitao |
+## Scripts
 
-### Reservas*
-| Metodo | Rota | Descricao |
-|--------|------|-----------|
-| POST | `/bookings` | Criar reserva (gera QR code) |
-| GET | `/bookings/my-bookings` | Minhas reservas |
-| GET | `/bookings/:id` | Detalhes da reserva |
-| GET | `/bookings/trip/:tripId` | Passageiros da viagem (capitao) |
-| PATCH | `/bookings/:id/checkin` | Check-in (capitao) |
-| PATCH | `/bookings/:id/cancel` | Cancelar reserva |
-
-### Encomendas
-| Metodo | Rota | Descricao |
-|--------|------|-----------|
-| POST | `/shipments` | Enviar encomenda* |
-| GET | `/shipments/my-shipments` | Minhas encomendas* |
-| GET | `/shipments/track/:code` | Rastrear (publico) |
-| PATCH | `/shipments/:id/status` | Atualizar status (capitao)* |
-| PATCH | `/shipments/:id/deliver` | Marcar entregue (capitao)* |
-
-### Carga Comercial
-| Metodo | Rota | Descricao |
-|--------|------|-----------|
-| GET | `/cargo/types` | Tipos de carga com precos (publico) |
-| GET | `/cargo/track/:code` | Rastrear carga (publico) |
-| POST | `/cargo` | Solicitar envio de carga* |
-| GET | `/cargo/my-cargo` | Minhas cargas* |
-| GET | `/cargo/trip/:tripId` | Cargas da viagem (capitao)* |
-| PATCH | `/cargo/:id/quote` | Cotar preco (capitao)* |
-| PATCH | `/cargo/:id/confirm` | Confirmar carga cotada* |
-| PATCH | `/cargo/:id/status` | Atualizar status (capitao)* |
-| PATCH | `/cargo/:id/deliver` | Marcar entregue (capitao)* |
-
-### Avaliacoes*
-| Metodo | Rota | Descricao |
-|--------|------|-----------|
-| POST | `/reviews` | Avaliar capitao |
-| GET | `/reviews/captain/:id` | Avaliacoes do capitao |
-
-### Barcos*
-| Metodo | Rota | Descricao |
-|--------|------|-----------|
-| POST | `/boats` | Cadastrar barco (capitao) |
-| GET | `/boats/my-boats` | Meus barcos (capitao) |
-| GET | `/boats/:id` | Detalhes do barco |
-
-### Upload*
-| Metodo | Rota | Descricao |
-|--------|------|-----------|
-| POST | `/upload/image` | Upload de imagem (multipart) |
-
-> *Requer `Authorization: Bearer <accessToken>`
-
-## Autenticacao
-
-Login e register retornam dois tokens:
-
-```json
-{
-  "user": { ... },
-  "accessToken": "...",
-  "refreshToken": "..."
-}
+```bash
+npm run lint
+npm run lint:fix
+npm run build
+npm test -- --runInBand
+npm run test:e2e -- --runInBand
+npm run ci
 ```
 
-- **accessToken**: expira em 15 minutos. Enviar no header `Authorization: Bearer <accessToken>`.
-- **refreshToken**: expira em 30 dias. Usar em `POST /auth/refresh` para obter novo par de tokens.
+## Qualidade
 
-## Banco de Dados
+- `lint`: validacao sem alterar arquivos
+- `lint:fix`: correcoes automaticas locais
+- `test`: suites unitarias em `src/**/*.spec.ts`
+- `test:e2e`: suites HTTP em `test/*.e2e-spec.ts`
+- `ci`: lint + build + test + test:e2e
 
-8 tabelas: `users`, `boats`, `routes`, `trips`, `bookings`, `shipments`, `cargo_shipments`, `reviews`.
+## Documentacao Tecnica
 
-### Rotas Seed (reais da regiao de Manaus)
+- Visao tecnica geral em [`docs/README.md`](/C:/www/softLive/projects/navegaja/backend/docs/README.md)
+- Padroes operacionais em [`docs/engineering-standards.md`](/C:/www/softLive/projects/navegaja/backend/docs/engineering-standards.md)
 
-| Origem | Destino | Distancia | Duracao |
-|--------|---------|-----------|---------|
-| Manaus | Manacapuru | 84 km | 2h30 |
-| Manaus | Iranduba | 27 km | 45 min |
-| Manaus | Careiro da Varzea | 25 km | 40 min |
-| Manaus | Novo Airao | 180 km | 6h |
-| Manaus | Parintins | 369 km | 18h |
-| Manaus | Itacoatiara | 176 km | 8h |
-| Manaus | Autazes | 108 km | 4h |
+## Observacoes Operacionais
 
-## Estrutura
-
-```
-src/
-├── auth/          # Login, register, refresh token, JWT
-├── boats/         # CRUD de embarcacoes
-├── bookings/      # Reservas com QR code
-├── cargo/         # Carga comercial (motos, carros, rancho, etc.)
-├── common/        # Guards (roles)
-├── database/      # Seed com dados de teste
-├── reviews/       # Avaliacoes de capitaes
-├── routes/        # Rotas fluviais
-├── shipments/     # Encomendas com rastreio
-├── trips/         # Viagens com tracking GPS
-├── upload/        # Upload de imagens
-└── users/         # Perfis de usuarios
-```
+- `DB_SYNCHRONIZE` deve ficar desligado em producao.
+- `CORS_ORIGINS` deve ser definido explicitamente fora de desenvolvimento.
+- `HTTP_LOGGING` pode registrar metadados de request; campos sensiveis sao mascarados no bootstrap.
+- Os endpoints publicados devem ser consultados pelo Swagger, nao por contagem fixa no README.
