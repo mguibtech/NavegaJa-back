@@ -89,6 +89,7 @@ npm run ci
 
 - Visao tecnica geral em [`docs/README.md`](/C:/www/softLive/projects/navegaja/backend/docs/README.md)
 - Padroes operacionais em [`docs/engineering-standards.md`](/C:/www/softLive/projects/navegaja/backend/docs/engineering-standards.md)
+- Backlog tecnico consolidado em [`docs/technical-backlog.md`](/C:/www/softLive/projects/navegaja/backend/docs/technical-backlog.md)
 
 ## Observacoes Operacionais
 
