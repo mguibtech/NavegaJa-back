@@ -5,6 +5,7 @@ import {
   BadRequestException,
   Inject,
   forwardRef,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
@@ -67,6 +68,8 @@ type TripResponse = Trip & TripShipmentPolicy;
 
 @Injectable()
 export class TripsService {
+  private readonly logger = new Logger(TripsService.name);
+
   private static readonly BLOCKING_CONFLICT_STATUSES = [
     TripStatus.SCHEDULED,
     TripStatus.IN_PROGRESS,
@@ -1447,13 +1450,13 @@ export class TripsService {
 
     for (const trip of expired) {
       await this.cancelTripWithPropagation(trip.id);
-      console.log(
+      this.logger.log(
         `Trip ${trip.id} auto-cancelada (partida expirada: ${trip.departureAt.toISOString()})`,
       );
     }
 
     if (expired.length > 0) {
-      console.log(
+      this.logger.log(
         `[Cron] ${expired.length} viagem(ns) auto-cancelada(s) por expiração.`,
       );
     }

@@ -182,15 +182,12 @@ export class ShipmentsController {
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
     const baseUrl =
-      this.configService.get<string>('BASE_URL') || `http://localhost:3000`;
+      this.configService.get<string>('BASE_URL') ||
+      this.configService.get<string>('APP_URL', 'http://localhost:3000');
 
     // Converter arquivos recebidos em URLs públicas
     const uploadedPhotoUrls = (files || []).map(
       (f) => `${baseUrl}/uploads/shipments/${f.filename}`,
-    );
-
-    console.log(
-      `[Shipment Create] files recebidos: ${(files || []).length}, URLs: ${JSON.stringify(uploadedPhotoUrls)}`,
     );
 
     // Normalizar dados (aceitar tanto JSON quanto FormData)
@@ -291,7 +288,9 @@ export class ShipmentsController {
     @Body('secret') secret?: string,
   ) {
     // Valida segredo partilhado para evitar chamadas não autorizadas
-    const expectedSecret = process.env.PAYMENT_WEBHOOK_SECRET;
+    const expectedSecret = this.configService.get<string>(
+      'PAYMENT_WEBHOOK_SECRET',
+    );
     if (expectedSecret && secret !== expectedSecret) {
       return { received: false, error: 'Unauthorized' };
     }

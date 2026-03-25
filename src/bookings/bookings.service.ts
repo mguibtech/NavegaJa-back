@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ForbiddenException,
   ConflictException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, LessThan, FindOptionsWhere } from 'typeorm';
@@ -30,6 +31,8 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Injectable()
 export class BookingsService {
+  private readonly logger = new Logger(BookingsService.name);
+
   constructor(
     @InjectRepository(Booking)
     private bookingsRepo: Repository<Booking>,
@@ -884,7 +887,7 @@ export class BookingsService {
       booking.status = BookingStatus.CANCELLED;
       await this.bookingsRepo.save(booking);
 
-      console.log(`Booking ${booking.id} cancelado por PIX expirado`);
+      this.logger.log(`Booking ${booking.id} cancelado por PIX expirado`);
     }
 
     return { cancelled: expiredBookings.length };

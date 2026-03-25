@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { validateEnv } from './config/env.validation';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { BoatsModule } from './boats/boats.module';
@@ -33,7 +34,7 @@ import { DocumentChangeRequestsModule } from './document-change-requests/documen
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     ThrottlerModule.forRoot([
       { name: 'default', ttl: 60000, limit: 300 }, // 300 req/min globalmente
       { name: 'strict', ttl: 60000, limit: 10 }, // 10 req/min em auth sensível
@@ -49,7 +50,7 @@ import { DocumentChangeRequestsModule } from './document-change-requests/documen
         password: config.get('DB_PASSWORD', '1234'),
         database: config.get('DB_DATABASE', 'navegaja'),
         autoLoadEntities: true,
-        synchronize: true, // DEV only - cria tabelas automaticamente
+        synchronize: config.get<boolean>('DB_SYNCHRONIZE', false),
         logging: false,
         extra: {
           client_encoding: 'UTF8',

@@ -46,9 +46,10 @@ export class StorageService implements OnModuleInit {
     const filepath = path.join(targetDir, filename);
     fs.writeFileSync(filepath, buffer);
 
-    const appUrl =
-      this.configService.get<string>('APP_URL') ||
-      `http://localhost:${process.env.PORT || 3000}`;
+    const appUrl = this.configService.get<string>(
+      'APP_URL',
+      `http://localhost:${this.configService.get<number>('PORT', 3000)}`,
+    );
 
     return `${appUrl}/uploads/${normalizedFolder}/${filename}`.replace(
       /([^:]\/)\/+/g,
