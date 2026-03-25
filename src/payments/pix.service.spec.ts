@@ -87,6 +87,51 @@ describe('PixService', () => {
     expect(mockedToDataUrl).not.toHaveBeenCalled();
   });
 
+  it('uses the default txid prefix when configuration is missing', async () => {
+    const service = new PixService({
+      get: jest.fn((key: string, defaultValue?: string) => {
+        const values: Record<string, string> = {
+          PIX_KEY: 'pix-key',
+          PIX_MERCHANT_NAME: 'NavegaJa',
+          PIX_MERCHANT_CITY: 'Manaus',
+        };
+
+        return values[key] ?? defaultValue;
+      }),
+    } as never);
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1700000000123);
+
+    mockedCreateStaticPix.mockReturnValue({
+      toBRCode: jest.fn().mockReturnValue('br-code'),
+    });
+    mockedHasError.mockReturnValue(false);
+    mockedToDataUrl.mockResolvedValue('data:image/png;base64,qr-image');
+
+    await service.generatePixPayment('booking-1234', 75, 'Reserva');
+
+    expect(mockedCreateStaticPix).toHaveBeenCalledWith(
+      expect.objectContaining({
+        txid: 'NVGJ00000123BOOKING1',
+      }),
+    );
+
+    nowSpy.mockRestore();
+  });
+
+  it('propagates QR code renderer failures', async () => {
+    const service = new PixService(configService as never);
+
+    mockedCreateStaticPix.mockReturnValue({
+      toBRCode: jest.fn().mockReturnValue('br-code'),
+    });
+    mockedHasError.mockReturnValue(false);
+    mockedToDataUrl.mockRejectedValue(new Error('qr renderer failed'));
+
+    await expect(
+      service.generatePixPayment('booking-1', 50, 'Reserva'),
+    ).rejects.toThrow('qr renderer failed');
+  });
+
   it('detects whether a PIX payment has expired', () => {
     const service = new PixService(configService as never);
     jest.useFakeTimers().setSystemTime(new Date(1700000000123));

@@ -88,6 +88,17 @@ describe('PaymentsController (e2e)', () => {
     await app.close();
   });
 
+  it('rejects unauthenticated access to PIX generation', async () => {
+    allowAuth = false;
+
+    await request(app.getHttpServer())
+      .post('/payments/pix/booking/booking-1')
+      .expect(401);
+
+    expect(bookingsRepo.findOne).not.toHaveBeenCalled();
+    expect(pixService.generatePixPayment).not.toHaveBeenCalled();
+  });
+
   it('returns 404 when the booking does not exist', async () => {
     bookingsRepo.findOne.mockResolvedValue(null);
 
@@ -170,6 +181,55 @@ describe('PaymentsController (e2e)', () => {
       'shipment-1',
       45,
       'NavegaJá — Encomenda TRK-ABC123',
+    );
+  });
+  it('returns 404 when the shipment does not exist', async () => {
+    shipmentsRepo.findOne.mockResolvedValue(null);
+
+    await request(app.getHttpServer())
+      .post('/payments/pix/shipment/shipment-404')
+      .expect(404);
+
+    expect(pixService.generatePixPayment).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when the shipment belongs to another sender', async () => {
+    shipmentsRepo.findOne.mockResolvedValue({
+      id: 'shipment-1',
+      senderId: 'other-user',
+      totalPrice: 45,
+      trackingCode: 'TRK-ABC123',
+    });
+
+    await request(app.getHttpServer())
+      .post('/payments/pix/shipment/shipment-1')
+      .expect(403);
+
+    expect(pixService.generatePixPayment).not.toHaveBeenCalled();
+  });
+
+  it('propagates PIX generation failures as server errors', async () => {
+    bookingsRepo.findOne.mockResolvedValue({
+      id: 'booking-1',
+      passengerId: 'user-1',
+      totalPrice: 120.5,
+      trip: {
+        origin: 'Manaus',
+        destination: 'Parintins',
+      },
+    });
+    pixService.generatePixPayment.mockRejectedValue(
+      new Error('pix generation failed'),
+    );
+
+    await request(app.getHttpServer())
+      .post('/payments/pix/booking/booking-1')
+      .expect(500);
+
+    expect(pixService.generatePixPayment).toHaveBeenCalledWith(
+      'booking-1',
+      120.5,
+      expect.stringContaining('Reserva Manaus'),
     );
   });
 });
