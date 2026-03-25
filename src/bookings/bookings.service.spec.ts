@@ -236,6 +236,70 @@ describe('BookingsService payment confirmation flows', () => {
       }),
     );
   });
+
+  it('confirms payment for already confirmed bookings without reducing seats twice', async () => {
+    const booking = {
+      id: 'booking-8',
+      passengerId: 'passenger-1',
+      tripId: 'trip-2',
+      seats: 2,
+      status: BookingStatus.CONFIRMED,
+      paymentStatus: PaymentStatus.PENDING,
+      paymentMethod: PaymentMethod.CASH,
+      qrCodeCheckin: 'NVGJ-booking-8',
+      trip: {
+        id: 'trip-2',
+        origin: 'Manaus',
+        destination: 'Iranduba',
+      },
+    } as unknown as Booking;
+    const trip = {
+      id: 'trip-2',
+      availableSeats: 10,
+    } as Trip;
+
+    const bookingsRepo = {
+      findOne: jest.fn().mockResolvedValue(booking),
+      save: jest.fn((value: Booking) => Promise.resolve(value)),
+    };
+    const tripsRepo = {
+      findOne: jest.fn().mockResolvedValue(trip),
+      save: jest.fn((value: Trip) => Promise.resolve(value)),
+    };
+    const pixService = {
+      isExpired: jest.fn().mockReturnValue(false),
+    };
+    const notificationsService = {
+      sendToUser: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const service = new BookingsService(
+      bookingsRepo as unknown as Repository<Booking>,
+      tripsRepo as unknown as Repository<Trip>,
+      {} as Repository<User>,
+      {} as GamificationService,
+      {} as never,
+      pixService as never,
+      notificationsService as never,
+      {} as never,
+      {} as never,
+    );
+
+    const saved = await service.confirmPayment('booking-8');
+
+    expect(saved.paymentStatus).toBe(PaymentStatus.PAID);
+    expect(saved.status).toBe(BookingStatus.CONFIRMED);
+    expect(saved.qrCodeCheckin).toBe('NVGJ-booking-8');
+    expect(trip.availableSeats).toBe(10);
+    expect(bookingsRepo.save).toHaveBeenCalledTimes(1);
+    expect(tripsRepo.save).not.toHaveBeenCalled();
+    expect(notificationsService.sendToUser).toHaveBeenCalledWith(
+      'passenger-1',
+      expect.objectContaining({
+        data: { type: 'payment_confirmed', bookingId: 'booking-8' },
+      }),
+    );
+  });
 });
 
 describe('BookingsService PIX expiration job', () => {

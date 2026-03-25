@@ -77,6 +77,30 @@ export class BookingsService {
     return trip;
   }
 
+  private async ensureCheckinQrCode(booking: Booking): Promise<Booking> {
+    if (booking.qrCodeCheckin) {
+      return booking;
+    }
+
+    booking.qrCodeCheckin = `NVGJ-${booking.id}`;
+    return this.bookingsRepo.save(booking);
+  }
+
+  private async finalizeConfirmedBooking(
+    booking: Booking,
+    reserveSeats: boolean,
+  ): Promise<{ booking: Booking; trip: Trip | null }> {
+    const savedBooking = await this.ensureCheckinQrCode(booking);
+    const trip = reserveSeats
+      ? await this.adjustTripAvailableSeats(
+          savedBooking.tripId,
+          -savedBooking.seats,
+        )
+      : null;
+
+    return { booking: savedBooking, trip };
+  }
+
   private getBookingDistanceKm(booking: Booking): number {
     return Math.round(Number(booking.trip?.route?.distanceKm ?? 0));
   }
@@ -410,15 +434,10 @@ export class BookingsService {
       saved = await this.bookingsRepo.save(saved);
     }
 
-    // Se já está confirmado (CASH ou CARD): gerar QR code de check-in e reduzir assentos
+    // Se já está confirmado (CASH ou CARD): gerar QR de check-in e reservar assentos
     if (saved.status === BookingStatus.CONFIRMED) {
-      const qrCodeData = `NVGJ-${saved.id}`;
-      saved.qrCodeCheckin = qrCodeData;
-      saved = await this.bookingsRepo.save(saved);
-
-      // Reduzir assentos disponíveis
-      trip.availableSeats -= quantity;
-      await this.tripsRepo.save(trip);
+      const confirmedBooking = await this.finalizeConfirmedBooking(saved, true);
+      saved = confirmedBooking.booking;
     }
 
     // Debitar km se foram resgatados
@@ -726,6 +745,7 @@ export class BookingsService {
     await this.assertCaptainCanConfirmPayments(confirmedBy, confirmedByRole);
 
     const booking = await this.findById(bookingId);
+    const wasAlreadyConfirmed = booking.status === BookingStatus.CONFIRMED;
 
     // Validações
     if (booking.paymentStatus === PaymentStatus.PAID) {
@@ -750,17 +770,12 @@ export class BookingsService {
     booking.pixPaidAt = new Date();
 
     const saved = await this.bookingsRepo.save(booking);
-
-    // Gerar QR Code de check-in
-    const qrCodeData = `NVGJ-${saved.id}`;
-    saved.qrCodeCheckin = qrCodeData;
-    await this.bookingsRepo.save(saved);
-
-    // Reduzir assentos disponíveis AGORA
-    const trip = await this.adjustTripAvailableSeats(
-      booking.tripId,
-      -booking.seats,
+    const confirmedBooking = await this.finalizeConfirmedBooking(
+      saved,
+      !wasAlreadyConfirmed,
     );
+    const updatedBooking = confirmedBooking.booking;
+    const trip = confirmedBooking.trip ?? booking.trip ?? null;
 
     // Notificar passageiro: pagamento confirmado
     await this.notificationsService.sendToUser(booking.passengerId, {
@@ -769,7 +784,7 @@ export class BookingsService {
       data: { type: 'payment_confirmed', bookingId: booking.id },
     });
 
-    return saved;
+    return updatedBooking;
   }
 
   /**
