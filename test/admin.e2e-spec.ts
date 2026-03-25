@@ -14,6 +14,7 @@ import {
 import { AdminController } from '../src/admin/admin.controller';
 import { AdminService } from '../src/admin/admin.service';
 import { UserRole } from '../src/users/user.entity';
+import { CommunityLocationStatus } from '../src/locations/community-location.entity';
 
 describe('AdminController (e2e)', () => {
   let app: INestApplication<App>;
@@ -22,6 +23,8 @@ describe('AdminController (e2e)', () => {
     createCaptain: jest.Mock;
     verifyCapt: jest.Mock;
     getPendingVerifications: jest.Mock;
+    getAdminNotifications: jest.Mock;
+    verifyBoat: jest.Mock;
   };
   let notificationsService: {
     broadcast: jest.Mock;
@@ -62,14 +65,48 @@ describe('AdminController (e2e)', () => {
         pendingCaptains: [],
         totalPending: 0,
       }),
+      getAdminNotifications: jest.fn().mockResolvedValue({
+        totalUnread: 2,
+        sos: {
+          count: 1,
+          items: [{ id: 'sos-1', link: '/admin/safety/sos/sos-1' }],
+        },
+        pendingVerifications: {
+          count: 1,
+          boats: [{ id: 'boat-1', link: '/admin/boats/boat-1' }],
+          captains: [],
+        },
+        newTrips: {
+          count: 0,
+          items: [],
+        },
+      }),
+      verifyBoat: jest.fn().mockResolvedValue({
+        message: 'Embarcação aprovada com sucesso',
+        boatId: 'boat-1',
+        isVerified: true,
+      }),
     };
     notificationsService = {
       broadcast: jest.fn().mockResolvedValue({ sent: 12 }),
     };
     locationsService = {
-      listForAdmin: jest.fn(),
-      approveLocation: jest.fn(),
-      rejectLocation: jest.fn(),
+      listForAdmin: jest.fn().mockResolvedValue([
+        {
+          id: 'location-1',
+          name: 'Comunidade Central',
+          status: CommunityLocationStatus.PENDING,
+        },
+      ]),
+      approveLocation: jest.fn().mockResolvedValue({
+        id: 'location-1',
+        status: CommunityLocationStatus.CONFIRMED,
+      }),
+      rejectLocation: jest.fn().mockResolvedValue({
+        id: 'location-1',
+        status: CommunityLocationStatus.REJECTED,
+        rejectionReason: 'Duplicada',
+      }),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -228,6 +265,107 @@ describe('AdminController (e2e)', () => {
         cities: ['Parintins'],
         roles: [UserRole.PASSENGER],
       } satisfies BroadcastFilters,
+    );
+  });
+
+  it('returns pending verifications for admins', async () => {
+    await request(app.getHttpServer())
+      .get('/admin/boats/pending')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual({
+          pendingBoats: [],
+          pendingCaptains: [],
+          totalPending: 0,
+        });
+      });
+
+    expect(adminService.getPendingVerifications).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns admin notifications for header badges', async () => {
+    await request(app.getHttpServer())
+      .get('/admin/notifications')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          totalUnread: 2,
+          sos: { count: 1 },
+          pendingVerifications: { count: 1 },
+        });
+      });
+
+    expect(adminService.getAdminNotifications).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes approval decisions to boat verification', async () => {
+    await request(app.getHttpServer())
+      .patch('/admin/boats/boat-1/verify')
+      .send({
+        approved: true,
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual({
+          message: 'Embarcação aprovada com sucesso',
+          boatId: 'boat-1',
+          isVerified: true,
+        });
+      });
+
+    expect(adminService.verifyBoat).toHaveBeenCalledWith(
+      'boat-1',
+      true,
+      undefined,
+    );
+  });
+
+  it('lists community locations with the requested status filter', async () => {
+    await request(app.getHttpServer())
+      .get('/admin/locations?status=pending')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual([
+          {
+            id: 'location-1',
+            name: 'Comunidade Central',
+            status: CommunityLocationStatus.PENDING,
+          },
+        ]);
+      });
+
+    expect(locationsService.listForAdmin).toHaveBeenCalledWith(
+      CommunityLocationStatus.PENDING,
+    );
+  });
+
+  it('approves and rejects community locations through admin endpoints', async () => {
+    await request(app.getHttpServer())
+      .patch('/admin/locations/location-1/approve')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual({
+          id: 'location-1',
+          status: CommunityLocationStatus.CONFIRMED,
+        });
+      });
+
+    await request(app.getHttpServer())
+      .patch('/admin/locations/location-1/reject')
+      .send({ reason: 'Duplicada' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual({
+          id: 'location-1',
+          status: CommunityLocationStatus.REJECTED,
+          rejectionReason: 'Duplicada',
+        });
+      });
+
+    expect(locationsService.approveLocation).toHaveBeenCalledWith('location-1');
+    expect(locationsService.rejectLocation).toHaveBeenCalledWith(
+      'location-1',
+      'Duplicada',
     );
   });
 });
