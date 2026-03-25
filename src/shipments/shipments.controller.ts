@@ -70,6 +70,7 @@ export class ShipmentsController {
     description: 'Cálculo realizado com sucesso',
     type: CalculatePriceResponseDto,
   })
+  @ApiResponse({ status: 401, description: 'Utilizador nÃ£o autenticado' })
   async calculatePrice(@Body() dto: CalculatePriceDto) {
     return this.shipmentsService.calculatePrice(dto);
   }
@@ -210,6 +211,11 @@ export class ShipmentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Minhas encomendas' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de encomendas do remetente autenticado',
+  })
+  @ApiResponse({ status: 401, description: 'Utilizador nÃ£o autenticado' })
   async myShipments(@Request() req: AuthenticatedRequest) {
     const shipments = await this.shipmentsService.findBySender(req.user.sub);
     return shipments.map((s) => this.serializeShipment(s));
@@ -217,6 +223,14 @@ export class ShipmentsController {
 
   @Get('track/:code')
   @ApiOperation({ summary: 'Rastrear encomenda por código (público)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Encomenda e timeline rastreadas com sucesso',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Encomenda nÃ£o encontrada para o cÃ³digo informado',
+  })
   async track(@Param('code') code: string) {
     const shipment = await this.shipmentsService.findByTrackingCode(code);
     const timeline = await this.shipmentsService.getTimeline(shipment.id);
@@ -264,6 +278,13 @@ export class ShipmentsController {
     summary:
       'Confirmar pagamento da encomenda (Pix/cartão — não usar para dinheiro)',
   })
+  @ApiResponse({ status: 201, description: 'Pagamento confirmado com sucesso' })
+  @ApiResponse({ status: 401, description: 'Utilizador nÃ£o autenticado' })
+  @ApiResponse({
+    status: 403,
+    description: 'Encomenda nÃ£o pertence ao utilizador autenticado',
+  })
+  @ApiResponse({ status: 404, description: 'Encomenda nÃ£o encontrada' })
   async confirmPayment(
     @Param('id') id: string,
     @Request() req: AuthenticatedRequest,
@@ -282,6 +303,7 @@ export class ShipmentsController {
   @Post('webhook/payment')
   @Public()
   @ApiOperation({ summary: 'Webhook do gateway de pagamento (uso interno)' })
+  @ApiResponse({ status: 201, description: 'Webhook recebido' })
   async paymentWebhook(
     @Body('trackingCode') trackingCode: string,
     @Body('gatewayRef') gatewayRef?: string,
@@ -309,6 +331,12 @@ export class ShipmentsController {
   @ApiOperation({
     summary:
       'Coletar encomenda do remetente (captain/boat_manager + validação QR/PIN)',
+  })
+  @ApiResponse({ status: 201, description: 'Encomenda coletada com sucesso' })
+  @ApiResponse({ status: 401, description: 'Utilizador nÃ£o autenticado' })
+  @ApiResponse({
+    status: 403,
+    description: 'Utilizador sem permissÃ£o para coletar encomendas',
   })
   collectShipment(
     @Param('id') id: string,
@@ -359,6 +387,12 @@ export class ShipmentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Cancelar encomenda' })
+  @ApiResponse({ status: 201, description: 'Encomenda cancelada com sucesso' })
+  @ApiResponse({ status: 401, description: 'Utilizador nÃ£o autenticado' })
+  @ApiResponse({
+    status: 403,
+    description: 'Encomenda nÃ£o pertence ao utilizador autenticado',
+  })
   cancel(
     @Param('id') id: string,
     @Request() req: AuthenticatedRequest,
