@@ -709,16 +709,8 @@ export class AdminService {
     const total: number[] = [];
 
     for (let i = days - 1; i >= 0; i--) {
-      const start = new Date();
-      start.setDate(start.getDate() - i);
-      start.setHours(0, 0, 0, 0);
-
-      const end = new Date(start);
-      end.setHours(23, 59, 59, 999);
-
-      labels.push(
-        `${String(start.getDate()).padStart(2, '0')}/${String(start.getMonth() + 1).padStart(2, '0')}`,
-      );
+      const { start, end, label } = this.buildDayRange(i);
+      labels.push(label);
 
       const [bRow, sRow] = await Promise.all([
         this.bookingsRepo
@@ -770,16 +762,8 @@ export class AdminService {
     const trips: number[] = [];
 
     for (let i = days - 1; i >= 0; i--) {
-      const start = new Date();
-      start.setDate(start.getDate() - i);
-      start.setHours(0, 0, 0, 0);
-
-      const end = new Date(start);
-      end.setHours(23, 59, 59, 999);
-
-      labels.push(
-        `${String(start.getDate()).padStart(2, '0')}/${String(start.getMonth() + 1).padStart(2, '0')}`,
-      );
+      const { start, end, label } = this.buildDayRange(i);
+      labels.push(label);
 
       const [b, u, t] = await Promise.all([
         this.bookingsRepo.count({ where: { createdAt: Between(start, end) } }),
@@ -860,19 +844,7 @@ export class AdminService {
   private async getRevenueByPeriod(
     period: 'today' | 'week' | 'month',
   ): Promise<number> {
-    const now = new Date();
-    let startDate: Date;
-
-    if (period === 'today') {
-      startDate = new Date(now);
-      startDate.setHours(0, 0, 0, 0);
-    } else if (period === 'week') {
-      startDate = new Date(now);
-      startDate.setDate(startDate.getDate() - 7);
-    } else {
-      startDate = new Date(now);
-      startDate.setMonth(startDate.getMonth() - 1);
-    }
+    const startDate = this.getRevenuePeriodStart(period);
 
     const [bookingsRow, shipmentsRow] = await Promise.all([
       this.bookingsRepo
@@ -1531,6 +1503,38 @@ export class AdminService {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
+  }
+
+  private buildDayRange(daysAgo: number) {
+    const start = new Date();
+    start.setDate(start.getDate() - daysAgo);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(start);
+    end.setHours(23, 59, 59, 999);
+
+    return { start, end, label: this.formatDayLabel(start) };
+  }
+
+  private formatDayLabel(date: Date): string {
+    return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  private getRevenuePeriodStart(period: 'today' | 'week' | 'month'): Date {
+    const startDate = new Date();
+
+    if (period === 'today') {
+      startDate.setHours(0, 0, 0, 0);
+      return startDate;
+    }
+
+    if (period === 'week') {
+      startDate.setDate(startDate.getDate() - 7);
+      return startDate;
+    }
+
+    startDate.setMonth(startDate.getMonth() - 1);
+    return startDate;
   }
 
   private daysAgo(days: number): Date {
