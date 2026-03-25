@@ -20,6 +20,11 @@ describe('ShipmentsController (e2e)', () => {
     calculatePrice: jest.Mock;
     confirmPayment: jest.Mock;
     confirmPaymentByWebhook: jest.Mock;
+    findBySender: jest.Mock;
+    findByTrackingCode: jest.Mock;
+    getTimeline: jest.Mock;
+    cancel: jest.Mock;
+    collectShipment: jest.Mock;
   };
   let allowAuth = true;
   let currentRole = 'passenger';
@@ -52,6 +57,53 @@ describe('ShipmentsController (e2e)', () => {
         },
       }),
       confirmPaymentByWebhook: jest.fn().mockResolvedValue(undefined),
+      findBySender: jest.fn().mockResolvedValue([
+        {
+          id: 'shipment-1',
+          status: 'paid',
+          totalPrice: 45,
+          weightKg: 5.5,
+          photos: [],
+          trip: {
+            id: 'trip-1',
+            route: {
+              originName: 'Manaus',
+              destinationName: 'Parintins',
+            },
+          },
+        },
+      ]),
+      findByTrackingCode: jest.fn().mockResolvedValue({
+        id: 'shipment-1',
+        trackingCode: 'TRK-123',
+        status: 'paid',
+        totalPrice: 45,
+        weightKg: 5.5,
+        photos: [],
+        trip: {
+          id: 'trip-1',
+          route: {
+            originName: 'Manaus',
+            destinationName: 'Parintins',
+          },
+        },
+      }),
+      getTimeline: jest.fn().mockResolvedValue([
+        {
+          id: 'timeline-1',
+          status: 'paid',
+          description: 'Pagamento confirmado',
+          createdAt: '2026-03-25T12:00:00.000Z',
+        },
+      ]),
+      cancel: jest.fn().mockResolvedValue({
+        id: 'shipment-1',
+        status: 'cancelled',
+      }),
+      collectShipment: jest.fn().mockResolvedValue({
+        id: 'shipment-1',
+        status: 'collected',
+      }),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -133,6 +185,20 @@ describe('ShipmentsController (e2e)', () => {
     await app.close();
   });
 
+  it('rejects unauthenticated shipment price calculation', async () => {
+    allowAuth = false;
+
+    await request(app.getHttpServer())
+      .post('/shipments/calculate-price')
+      .send({
+        tripId: 'trip-1',
+        weight: 5.5,
+      })
+      .expect(401);
+
+    expect(shipmentsService.calculatePrice).not.toHaveBeenCalled();
+  });
+
   it('rejects invalid shipment price payloads before hitting the service', async () => {
     await request(app.getHttpServer())
       .post('/shipments/calculate-price')
@@ -195,6 +261,144 @@ describe('ShipmentsController (e2e)', () => {
     expect(shipmentsService.confirmPayment).toHaveBeenCalledWith(
       'shipment-1',
       'user-1',
+    );
+  });
+
+  it('rejects unauthenticated shipment payment confirmation', async () => {
+    allowAuth = false;
+
+    await request(app.getHttpServer())
+      .post('/shipments/shipment-1/confirm-payment')
+      .expect(401);
+
+    expect(shipmentsService.confirmPayment).not.toHaveBeenCalled();
+  });
+
+  it('returns serialized shipments for the authenticated sender', async () => {
+    await request(app.getHttpServer())
+      .get('/shipments/my-shipments')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual([
+          {
+            id: 'shipment-1',
+            status: 'paid',
+            totalPrice: 45,
+            weightKg: 5.5,
+            photos: [],
+            trip: {
+              id: 'trip-1',
+              route: {
+                originName: 'Manaus',
+                destinationName: 'Parintins',
+              },
+              origin: 'Manaus',
+              destination: 'Parintins',
+            },
+            weight: 5.5,
+            price: 45,
+            dimensions: null,
+          },
+        ]);
+      });
+
+    expect(shipmentsService.findBySender).toHaveBeenCalledWith('user-1');
+  });
+
+  it('tracks shipments publicly and exposes timeline timestamps', async () => {
+    await request(app.getHttpServer())
+      .get('/shipments/track/TRK-123')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual({
+          shipment: {
+            id: 'shipment-1',
+            trackingCode: 'TRK-123',
+            status: 'paid',
+            totalPrice: 45,
+            weightKg: 5.5,
+            photos: [],
+            trip: {
+              id: 'trip-1',
+              route: {
+                originName: 'Manaus',
+                destinationName: 'Parintins',
+              },
+              origin: 'Manaus',
+              destination: 'Parintins',
+            },
+            weight: 5.5,
+            price: 45,
+            dimensions: null,
+          },
+          timeline: [
+            {
+              id: 'timeline-1',
+              status: 'paid',
+              description: 'Pagamento confirmado',
+              createdAt: '2026-03-25T12:00:00.000Z',
+              timestamp: '2026-03-25T12:00:00.000Z',
+            },
+          ],
+        });
+      });
+
+    expect(shipmentsService.findByTrackingCode).toHaveBeenCalledWith('TRK-123');
+    expect(shipmentsService.getTimeline).toHaveBeenCalledWith('shipment-1');
+  });
+
+  it('cancels shipments for the authenticated sender', async () => {
+    await request(app.getHttpServer())
+      .post('/shipments/shipment-1/cancel')
+      .send({ reason: 'Mudança de plano' })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body).toEqual({
+          id: 'shipment-1',
+          status: 'cancelled',
+        });
+      });
+
+    expect(shipmentsService.cancel).toHaveBeenCalledWith(
+      'shipment-1',
+      'user-1',
+      'Mudança de plano',
+    );
+  });
+
+  it('blocks collection for users without the crew role', async () => {
+    currentRole = 'passenger';
+
+    await request(app.getHttpServer())
+      .post('/shipments/shipment-1/collect')
+      .send({ validationCode: '123456' })
+      .expect(403);
+
+    expect(shipmentsService.collectShipment).not.toHaveBeenCalled();
+  });
+
+  it('allows captains to collect shipments', async () => {
+    currentRole = 'captain';
+
+    await request(app.getHttpServer())
+      .post('/shipments/shipment-1/collect')
+      .send({
+        validationCode: '123456',
+        collectionPhotoUrl: 'https://cdn.example.com/collect.jpg',
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body).toEqual({
+          id: 'shipment-1',
+          status: 'collected',
+        });
+      });
+
+    expect(shipmentsService.collectShipment).toHaveBeenCalledWith(
+      'shipment-1',
+      'user-1',
+      '123456',
+      'https://cdn.example.com/collect.jpg',
     );
   });
 
