@@ -24,6 +24,7 @@ Plataforma de transporte fluvial na Amazónia que conecta **passageiros** e **ca
 | [02 — Componentes / Módulos](architecture/02-componentes.md) | Módulos NestJS e dependências |
 | [03 — Modelo de Dados (ERD)](architecture/03-modelo-dados.md) | Todas as entidades e relações |
 | [04 — Matriz de Permissões](architecture/04-matriz-permissoes.md) | Quem pode fazer o quê |
+| [Standards de Engenharia](engineering-standards.md) | Regras operacionais, testes e qualidade |
 
 ### Casos de Uso
 | Documento | Domínio |
