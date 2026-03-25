@@ -103,6 +103,23 @@ export class AdminService {
     private documentChangeRequestsService: DocumentChangeRequestsService,
   ) {}
 
+  private sanitizeUser(user: User): Partial<User> & {
+    passwordHash?: string;
+  } {
+    const safeUser = { ...user } as Partial<User> & { passwordHash?: string };
+    delete safeUser.passwordHash;
+    return safeUser;
+  }
+
+  private buildPagination(page: number, limit: number, total: number) {
+    return {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
   // ==================== USUÁRIOS ====================
 
   async createCaptain(dto: {
@@ -139,11 +156,7 @@ export class AdminService {
     });
     await ensureReferralCode(this.usersRepo, captain);
 
-    const safeCaptain = { ...captain } as Partial<User> & {
-      passwordHash?: string;
-    };
-    delete safeCaptain.passwordHash;
-    return safeCaptain;
+    return this.sanitizeUser(captain);
   }
 
   async getAllUsers(
@@ -173,20 +186,11 @@ export class AdminService {
       .getManyAndCount();
 
     // Remove password hash from response
-    const sanitizedUsers = users.map((user) => {
-      const safeUser = { ...user } as Partial<User> & { passwordHash?: string };
-      delete safeUser.passwordHash;
-      return safeUser;
-    });
+    const sanitizedUsers = users.map((user) => this.sanitizeUser(user));
 
     return {
       data: sanitizedUsers,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      pagination: this.buildPagination(page, limit, total),
     };
   }
 
@@ -278,11 +282,8 @@ export class AdminService {
       where: { senderId: id },
     });
 
-    const safeUser = { ...user } as Partial<User> & { passwordHash?: string };
-    delete safeUser.passwordHash;
-
     return {
-      ...safeUser,
+      ...this.sanitizeUser(user),
       stats,
     };
   }
@@ -296,9 +297,7 @@ export class AdminService {
     user.role = role;
     await this.usersRepo.save(user);
 
-    const safeUser = { ...user } as Partial<User> & { passwordHash?: string };
-    delete safeUser.passwordHash;
-    return safeUser;
+    return this.sanitizeUser(user);
   }
 
   async updateUserStatus(id: string, active: boolean) {
@@ -310,11 +309,9 @@ export class AdminService {
     user.isActive = active;
     await this.usersRepo.save(user);
 
-    const safeUser = { ...user } as Partial<User> & { passwordHash?: string };
-    delete safeUser.passwordHash;
     return {
       message: `Usuário ${active ? 'ativado' : 'desativado'} com sucesso`,
-      user: safeUser,
+      user: this.sanitizeUser(user),
     };
   }
 
@@ -377,12 +374,7 @@ export class AdminService {
 
     return {
       data: trips,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      pagination: this.buildPagination(page, limit, total),
     };
   }
 
@@ -517,12 +509,7 @@ export class AdminService {
 
     return {
       data: shipments,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      pagination: this.buildPagination(page, limit, total),
     };
   }
 
@@ -1257,12 +1244,7 @@ export class AdminService {
 
     return {
       data: bookings,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      pagination: this.buildPagination(page, limit, total),
     };
   }
 
@@ -1419,12 +1401,7 @@ export class AdminService {
 
     return {
       data: reviews,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      pagination: this.buildPagination(page, limit, total),
     };
   }
 
