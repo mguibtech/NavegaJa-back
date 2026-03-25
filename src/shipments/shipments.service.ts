@@ -102,6 +102,102 @@ export class ShipmentsService {
     return (length * width * height) / 6000;
   }
 
+  private resolveDimensions(
+    dto: Pick<CreateShipmentDto, 'dimensions' | 'length' | 'width' | 'height'>,
+  ): {
+    length?: number;
+    width?: number;
+    height?: number;
+  } {
+    if (dto.dimensions) {
+      return {
+        length: dto.dimensions.length,
+        width: dto.dimensions.width,
+        height: dto.dimensions.height,
+      };
+    }
+
+    return {
+      length: dto.length,
+      width: dto.width,
+      height: dto.height,
+    };
+  }
+
+  private calculateShipmentWeights(
+    actualWeight: number,
+    dimensions: { length?: number; width?: number; height?: number },
+  ): {
+    volumetricWeight?: number;
+    chargedWeight: number;
+  } {
+    const { length, width, height } = dimensions;
+    if (!length || !width || !height) {
+      return { chargedWeight: actualWeight };
+    }
+
+    const volumetricWeight = this.calculateVolumetricWeight(
+      length,
+      width,
+      height,
+    );
+
+    return {
+      volumetricWeight,
+      chargedWeight: Math.max(actualWeight, volumetricWeight),
+    };
+  }
+
+  private async resolveCouponDiscount(
+    couponCode: string | undefined,
+    trip: Trip,
+    actualWeight: number,
+    basePrice: number,
+  ): Promise<{ couponDiscount: number; couponCode?: string }> {
+    if (!couponCode) {
+      return { couponDiscount: 0 };
+    }
+
+    const coupon = await this.couponsRepo.findOne({
+      where: { code: couponCode, isActive: true },
+    });
+
+    if (!coupon || !this.isCouponApplicable(coupon, trip, actualWeight)) {
+      return { couponDiscount: 0 };
+    }
+
+    const rawDiscount =
+      coupon.type === CouponType.PERCENTAGE
+        ? (basePrice * coupon.value) / 100
+        : coupon.value;
+
+    return {
+      couponDiscount: coupon.maxDiscount
+        ? Math.min(rawDiscount, coupon.maxDiscount)
+        : rawDiscount,
+      couponCode: coupon.code,
+    };
+  }
+
+  private isCouponApplicable(
+    coupon: Coupon,
+    trip: Trip,
+    actualWeight: number,
+  ): boolean {
+    const now = new Date();
+    const isValidDate =
+      (!coupon.validFrom || new Date(coupon.validFrom) <= now) &&
+      (!coupon.validUntil || new Date(coupon.validUntil) >= now);
+    const isValidRoute =
+      (!coupon.fromCity || trip.origin === coupon.fromCity) &&
+      (!coupon.toCity || trip.destination === coupon.toCity);
+    const isValidWeight =
+      (!coupon.minWeight || actualWeight >= coupon.minWeight) &&
+      (!coupon.maxWeight || actualWeight <= coupon.maxWeight);
+
+    return isValidDate && isValidRoute && isValidWeight;
+  }
+
   private assertTripAcceptsShipments(trip: Trip): number {
     if (!tripAcceptsShipments(trip)) {
       throw new BadRequestException(
@@ -127,73 +223,21 @@ export class ShipmentsService {
       );
     }
     const pricePerKg = this.assertTripAcceptsShipments(trip);
-
-    // Processar dimensions: aceita objeto OU campos separados (backward compatibility)
-    let length = dto.length;
-    let width = dto.width;
-    let height = dto.height;
-
-    if (dto.dimensions) {
-      length = dto.dimensions.length;
-      width = dto.dimensions.width;
-      height = dto.dimensions.height;
-    }
-
+    const dimensions = this.resolveDimensions(dto);
     const actualWeight = dto.weight;
-    let volumetricWeight: number | undefined;
-    let chargedWeight = actualWeight;
-
-    // Calcula peso volumétrico se dimensões foram fornecidas
-    if (length && width && height) {
-      volumetricWeight = this.calculateVolumetricWeight(length, width, height);
-      chargedWeight = Math.max(actualWeight, volumetricWeight);
-    }
+    const { volumetricWeight, chargedWeight } = this.calculateShipmentWeights(
+      actualWeight,
+      dimensions,
+    );
 
     const basePrice = chargedWeight * pricePerKg;
     const weightCharge = basePrice;
-    let couponDiscount = 0;
-    let couponCode: string | undefined;
-
-    // Aplica cupom se fornecido
-    if (dto.couponCode) {
-      const coupon = await this.couponsRepo.findOne({
-        where: { code: dto.couponCode, isActive: true },
-      });
-
-      if (coupon) {
-        const now = new Date();
-
-        // Validação de datas
-        const isValidDate =
-          (!coupon.validFrom || new Date(coupon.validFrom) <= now) &&
-          (!coupon.validUntil || new Date(coupon.validUntil) >= now);
-
-        // Validação de rota (fromCity/toCity)
-        const isValidRoute =
-          (!coupon.fromCity || trip.origin === coupon.fromCity) &&
-          (!coupon.toCity || trip.destination === coupon.toCity);
-
-        // Validação de peso (minWeight/maxWeight)
-        const isValidWeight =
-          (!coupon.minWeight || dto.weight >= coupon.minWeight) &&
-          (!coupon.maxWeight || dto.weight <= coupon.maxWeight);
-
-        // Aplica desconto se todas as validações passarem
-        if (isValidDate && isValidRoute && isValidWeight) {
-          if (coupon.type === CouponType.PERCENTAGE) {
-            couponDiscount = (basePrice * coupon.value) / 100;
-          } else {
-            couponDiscount = coupon.value;
-          }
-
-          if (coupon.maxDiscount) {
-            couponDiscount = Math.min(couponDiscount, coupon.maxDiscount);
-          }
-
-          couponCode = coupon.code;
-        }
-      }
-    }
+    const { couponDiscount, couponCode } = await this.resolveCouponDiscount(
+      dto.couponCode,
+      trip,
+      actualWeight,
+      basePrice,
+    );
 
     const totalDiscount = couponDiscount;
     const finalPrice = Math.max(basePrice - totalDiscount, 0);
@@ -238,25 +282,12 @@ export class ShipmentsService {
   async create(senderId: string, dto: CreateShipmentDto): Promise<Shipment> {
     const trip = await this.tripsRepo.findOne({ where: { id: dto.tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
-
-    // Calcula preço
-    // Processar dimensions: aceita objeto OU campos separados (backward compatibility)
-    let length = dto.length;
-    let width = dto.width;
-    let height = dto.height;
-
-    if (dto.dimensions) {
-      length = dto.dimensions.length;
-      width = dto.dimensions.width;
-      height = dto.dimensions.height;
-    }
+    const dimensions = this.resolveDimensions(dto);
 
     const priceCalc = await this.calculatePrice({
       tripId: dto.tripId,
       weight: dto.weight,
-      length,
-      width,
-      height,
+      ...dimensions,
       couponCode: dto.couponCode,
     });
 
@@ -275,9 +306,9 @@ export class ShipmentsService {
       tripId: dto.tripId,
       description: dto.description,
       weightKg: dto.weight,
-      length,
-      width,
-      height,
+      length: dimensions.length,
+      width: dimensions.width,
+      height: dimensions.height,
       photos: dto.photos || [],
       recipientName: dto.recipientName,
       recipientPhone: dto.recipientPhone,
@@ -376,6 +407,66 @@ export class ShipmentsService {
         totalPrice: String(shipment.totalPrice),
       },
     });
+  }
+
+  private async notifySender(
+    shipment: Shipment,
+    title: string,
+    body: string,
+    type: string,
+  ): Promise<void> {
+    await this.notificationsService.sendToUser(shipment.senderId, {
+      title,
+      body,
+      data: {
+        type,
+        shipmentId: shipment.id,
+        trackingCode: shipment.trackingCode,
+      },
+    });
+  }
+
+  private async ensureVerifiedCaptain(captainId: string): Promise<void> {
+    const captain = await this.usersRepo.findOne({
+      where: { id: captainId },
+      select: ['id', 'isVerified'],
+    });
+
+    if (!captain?.isVerified) {
+      throw new ForbiddenException(
+        'Conta não verificada. Aguarde a aprovação do NavegaJá.',
+      );
+    }
+  }
+
+  private assertCaptainCanCollectShipment(
+    shipment: Shipment,
+    captainId: string,
+    validationCode: string,
+  ): void {
+    if (shipment.trip.captainId !== captainId) {
+      throw new BadRequestException('Você não é o capitão desta viagem');
+    }
+
+    const validStatuses = this.getCollectableStatuses(shipment);
+    if (!validStatuses.includes(shipment.status)) {
+      throw new BadRequestException(
+        'Esta encomenda não está pronta para coleta (pagamento pendente)',
+      );
+    }
+
+    if (shipment.validationCode !== validationCode) {
+      throw new BadRequestException('Código de validação inválido');
+    }
+  }
+
+  private getCollectableStatuses(shipment: Shipment): ShipmentStatus[] {
+    const isCash = shipment.paymentMethod === PaymentMethod.CASH;
+    const isRecipientPays = shipment.paidBy === PaidBy.RECIPIENT;
+
+    return isCash || isRecipientPays
+      ? [ShipmentStatus.PENDING, ShipmentStatus.PAID]
+      : [ShipmentStatus.PAID];
   }
 
   async findBySender(senderId: string): Promise<Shipment[]> {
@@ -562,16 +653,12 @@ export class ShipmentsService {
       : 'Pagamento confirmado pelo gateway.';
 
     await this.createTimelineEvent(saved.id, ShipmentStatus.PAID, description);
-
-    await this.notificationsService.sendToUser(saved.senderId, {
-      title: '✅ Pagamento confirmado!',
-      body: `Seu pagamento da encomenda ${saved.trackingCode} foi confirmado.`,
-      data: {
-        type: 'shipment_paid',
-        shipmentId: saved.id,
-        trackingCode: saved.trackingCode,
-      },
-    });
+    await this.notifySender(
+      saved,
+      '✅ Pagamento confirmado!',
+      `Seu pagamento da encomenda ${saved.trackingCode} foi confirmado.`,
+      'shipment_paid',
+    );
 
     return saved;
   }
@@ -585,16 +672,7 @@ export class ShipmentsService {
     validationCode: string,
     collectionPhotoUrl?: string,
   ): Promise<Shipment> {
-    // Capitão não verificado não pode recolher encomendas
-    const captain = await this.usersRepo.findOne({
-      where: { id: captainId },
-      select: ['id', 'isVerified'],
-    });
-    if (!captain?.isVerified) {
-      throw new ForbiddenException(
-        'Conta não verificada. Aguarde a aprovação do NavegaJá.',
-      );
-    }
+    await this.ensureVerifiedCaptain(captainId);
 
     const shipment = await this.shipmentsRepo.findOne({
       where: { id },
@@ -602,30 +680,7 @@ export class ShipmentsService {
     });
     if (!shipment) throw new NotFoundException('Encomenda não encontrada');
 
-    // Verificar se capitão pertence à viagem
-    if (shipment.trip.captainId !== captainId) {
-      throw new BadRequestException('Você não é o capitão desta viagem');
-    }
-
-    // Validar status
-    // Cash ou frete a cobrar: aceita PENDING (pagamento é feito na entrega/coleta)
-    const isCash = shipment.paymentMethod === PaymentMethod.CASH;
-    const isRecipientPays = shipment.paidBy === PaidBy.RECIPIENT;
-    const validStatuses =
-      isCash || isRecipientPays
-        ? [ShipmentStatus.PENDING, ShipmentStatus.PAID]
-        : [ShipmentStatus.PAID];
-
-    if (!validStatuses.includes(shipment.status)) {
-      throw new BadRequestException(
-        'Esta encomenda não está pronta para coleta (pagamento pendente)',
-      );
-    }
-
-    // Validar código
-    if (shipment.validationCode !== validationCode) {
-      throw new BadRequestException('Código de validação inválido');
-    }
+    this.assertCaptainCanCollectShipment(shipment, captainId, validationCode);
 
     shipment.status = ShipmentStatus.COLLECTED;
     shipment.collectedAt = new Date();
@@ -641,16 +696,12 @@ export class ShipmentsService {
       captainId,
     );
 
-    // Notificar remetente
-    await this.notificationsService.sendToUser(saved.senderId, {
-      title: '📦 Encomenda coletada!',
-      body: `Sua encomenda ${saved.trackingCode} foi coletada pelo capitão.`,
-      data: {
-        type: 'shipment_collected',
-        shipmentId: saved.id,
-        trackingCode: saved.trackingCode,
-      },
-    });
+    await this.notifySender(
+      saved,
+      '📦 Encomenda coletada!',
+      `Sua encomenda ${saved.trackingCode} foi coletada pelo capitão.`,
+      'shipment_collected',
+    );
 
     return saved;
   }
