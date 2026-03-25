@@ -384,6 +384,84 @@ export class AdminService {
     };
   }
 
+  private async getAdminLevelDistribution() {
+    const [marinheiro, navegador, capitao, almirante] = await Promise.all([
+      this.usersRepo.count({ where: { level: LoyaltyLevel.MARINHEIRO } }),
+      this.usersRepo.count({ where: { level: LoyaltyLevel.NAVEGADOR } }),
+      this.usersRepo.count({ where: { level: LoyaltyLevel.CAPITAO } }),
+      this.usersRepo.count({ where: { level: LoyaltyLevel.ALMIRANTE } }),
+    ]);
+
+    return {
+      Marinheiro: marinheiro,
+      Navegador: navegador,
+      Capitão: capitao,
+      Almirante: almirante,
+    };
+  }
+
+  private async getGamificationOverviewTotals() {
+    const [totalPointsRow, totalKmRow] = await Promise.all([
+      this.usersRepo
+        .createQueryBuilder('u')
+        .select('COALESCE(SUM(u.total_points), 0)', 'total')
+        .getRawOne<{ total: string | null }>(),
+      this.usersRepo
+        .createQueryBuilder('u')
+        .select('COALESCE(SUM(u.total_km_traveled), 0)', 'total')
+        .getRawOne<{ total: string | null }>(),
+    ]);
+
+    return {
+      totalNavegaCoinsDistributed: Number(totalPointsRow?.total || 0),
+      totalKmTraveled: Number(totalKmRow?.total || 0),
+    };
+  }
+
+  private async getEligibleUserGrowthStats() {
+    const { today, weekAgo, monthAgo } = this.getStatsDateThresholds();
+    const eligibleRoles = [
+      { role: UserRole.PASSENGER },
+      { role: UserRole.CAPTAIN },
+    ];
+
+    const [
+      totalEligibleUsers,
+      newUsersToday,
+      newUsersThisWeek,
+      newUsersThisMonth,
+    ] = await Promise.all([
+      this.usersRepo.count({
+        where: eligibleRoles,
+      }),
+      this.usersRepo.count({
+        where: eligibleRoles.map((role) => ({
+          ...role,
+          createdAt: MoreThan(today),
+        })),
+      }),
+      this.usersRepo.count({
+        where: eligibleRoles.map((role) => ({
+          ...role,
+          createdAt: MoreThan(weekAgo),
+        })),
+      }),
+      this.usersRepo.count({
+        where: eligibleRoles.map((role) => ({
+          ...role,
+          createdAt: MoreThan(monthAgo),
+        })),
+      }),
+    ]);
+
+    return {
+      totalEligibleUsers,
+      newUsersToday,
+      newUsersThisWeek,
+      newUsersThisMonth,
+    };
+  }
+
   private async getAverageReviewRating(
     selectExpression: string,
     reviewType?: ReviewType,
@@ -1475,70 +1553,20 @@ export class AdminService {
   // ==================== GAMIFICATION (ADMIN) ====================
 
   async getAdminGamificationStats() {
-    const leaderboard = await this.gamificationService.getLeaderboard(10);
-    const { today, weekAgo, monthAgo } = this.getStatsDateThresholds();
-
-    // Distribuição por nível
-    const [marinheiro, navegador, capitao, almirante] = await Promise.all([
-      this.usersRepo.count({ where: { level: LoyaltyLevel.MARINHEIRO } }),
-      this.usersRepo.count({ where: { level: LoyaltyLevel.NAVEGADOR } }),
-      this.usersRepo.count({ where: { level: LoyaltyLevel.CAPITAO } }),
-      this.usersRepo.count({ where: { level: LoyaltyLevel.ALMIRANTE } }),
-    ]);
-
-    // Total de NavegaCoins distribuídos e por acção
-    const totalPointsRow = await this.usersRepo
-      .createQueryBuilder('u')
-      .select('COALESCE(SUM(u.total_points), 0)', 'total')
-      .getRawOne<{ total: string | null }>();
-
-    const totalKmRow = await this.usersRepo
-      .createQueryBuilder('u')
-      .select('COALESCE(SUM(u.total_km_traveled), 0)', 'total')
-      .getRawOne<{ total: string | null }>();
-
-    // Referrals: total, convertidos, pendentes
-    const [totalUsers, newToday, newThisWeek, newThisMonth] = await Promise.all(
-      [
-        this.usersRepo.count({
-          where: [{ role: UserRole.PASSENGER }, { role: UserRole.CAPTAIN }],
-        }),
-        this.usersRepo.count({
-          where: [
-            { role: UserRole.PASSENGER, createdAt: MoreThan(today) },
-            { role: UserRole.CAPTAIN, createdAt: MoreThan(today) },
-          ],
-        }),
-        this.usersRepo.count({
-          where: [
-            { role: UserRole.PASSENGER, createdAt: MoreThan(weekAgo) },
-            { role: UserRole.CAPTAIN, createdAt: MoreThan(weekAgo) },
-          ],
-        }),
-        this.usersRepo.count({
-          where: [
-            { role: UserRole.PASSENGER, createdAt: MoreThan(monthAgo) },
-            { role: UserRole.CAPTAIN, createdAt: MoreThan(monthAgo) },
-          ],
-        }),
-      ],
-    );
+    const [leaderboard, levelDistribution, overviewTotals, growthStats] =
+      await Promise.all([
+        this.gamificationService.getLeaderboard(10),
+        this.getAdminLevelDistribution(),
+        this.getGamificationOverviewTotals(),
+        this.getEligibleUserGrowthStats(),
+      ]);
 
     return {
       overview: {
-        totalNavegaCoinsDistributed: Number(totalPointsRow?.total || 0),
-        totalKmTraveled: Number(totalKmRow?.total || 0),
-        totalEligibleUsers: totalUsers,
-        newUsersToday: newToday,
-        newUsersThisWeek: newThisWeek,
-        newUsersThisMonth: newThisMonth,
+        ...overviewTotals,
+        ...growthStats,
       },
-      levelDistribution: {
-        Marinheiro: marinheiro,
-        Navegador: navegador,
-        Capitão: capitao,
-        Almirante: almirante,
-      },
+      levelDistribution,
       leaderboard,
     };
   }
