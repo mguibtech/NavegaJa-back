@@ -300,6 +300,69 @@ describe('BookingsService payment confirmation flows', () => {
       }),
     );
   });
+
+  it('confirms payment without downgrading checked-in bookings', async () => {
+    const booking = {
+      id: 'booking-9',
+      passengerId: 'passenger-2',
+      tripId: 'trip-3',
+      seats: 1,
+      status: BookingStatus.CHECKED_IN,
+      paymentStatus: PaymentStatus.PENDING,
+      paymentMethod: PaymentMethod.CASH,
+      qrCodeCheckin: 'NVGJ-booking-9',
+      trip: {
+        id: 'trip-3',
+        origin: 'Careiro',
+        destination: 'Manaus',
+      },
+    } as unknown as Booking;
+    const trip = {
+      id: 'trip-3',
+      availableSeats: 7,
+    } as Trip;
+
+    const bookingsRepo = {
+      findOne: jest.fn().mockResolvedValue(booking),
+      save: jest.fn((value: Booking) => Promise.resolve(value)),
+    };
+    const tripsRepo = {
+      findOne: jest.fn().mockResolvedValue(trip),
+      save: jest.fn((value: Trip) => Promise.resolve(value)),
+    };
+    const pixService = {
+      isExpired: jest.fn().mockReturnValue(false),
+    };
+    const notificationsService = {
+      sendToUser: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const service = new BookingsService(
+      bookingsRepo as unknown as Repository<Booking>,
+      tripsRepo as unknown as Repository<Trip>,
+      {} as Repository<User>,
+      {} as GamificationService,
+      {} as never,
+      pixService as never,
+      notificationsService as never,
+      {} as never,
+      {} as never,
+    );
+
+    const saved = await service.confirmPayment('booking-9');
+
+    expect(saved.paymentStatus).toBe(PaymentStatus.PAID);
+    expect(saved.status).toBe(BookingStatus.CHECKED_IN);
+    expect(trip.availableSeats).toBe(7);
+    expect(bookingsRepo.save).toHaveBeenCalledTimes(1);
+    expect(tripsRepo.save).not.toHaveBeenCalled();
+    expect(notificationsService.sendToUser).toHaveBeenCalledWith(
+      'passenger-2',
+      expect.objectContaining({
+        data: { type: 'payment_confirmed', bookingId: 'booking-9' },
+      }),
+    );
+  });
 });
 
 describe('BookingsService PIX expiration job', () => {

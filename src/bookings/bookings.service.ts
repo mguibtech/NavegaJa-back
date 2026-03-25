@@ -101,6 +101,14 @@ export class BookingsService {
     return { booking: savedBooking, trip };
   }
 
+  private bookingStatusConsumesSeats(status: BookingStatus): boolean {
+    return [
+      BookingStatus.CONFIRMED,
+      BookingStatus.CHECKED_IN,
+      BookingStatus.COMPLETED,
+    ].includes(status);
+  }
+
   private getBookingDistanceKm(booking: Booking): number {
     return Math.round(Number(booking.trip?.route?.distanceKm ?? 0));
   }
@@ -745,7 +753,9 @@ export class BookingsService {
     await this.assertCaptainCanConfirmPayments(confirmedBy, confirmedByRole);
 
     const booking = await this.findById(bookingId);
-    const wasAlreadyConfirmed = booking.status === BookingStatus.CONFIRMED;
+    const hadReservedSeatBefore = this.bookingStatusConsumesSeats(
+      booking.status,
+    );
 
     // Validações
     if (booking.paymentStatus === PaymentStatus.PAID) {
@@ -766,13 +776,15 @@ export class BookingsService {
 
     // Atualizar status
     booking.paymentStatus = PaymentStatus.PAID;
-    booking.status = BookingStatus.CONFIRMED;
+    if (booking.status === BookingStatus.PENDING) {
+      booking.status = BookingStatus.CONFIRMED;
+    }
     booking.pixPaidAt = new Date();
 
     const saved = await this.bookingsRepo.save(booking);
     const confirmedBooking = await this.finalizeConfirmedBooking(
       saved,
-      !wasAlreadyConfirmed,
+      !hadReservedSeatBefore,
     );
     const updatedBooking = confirmedBooking.booking;
     const trip = confirmedBooking.trip ?? booking.trip ?? null;
