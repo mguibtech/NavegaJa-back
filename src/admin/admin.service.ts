@@ -955,25 +955,10 @@ export class AdminService {
     for (let i = days - 1; i >= 0; i--) {
       const { start, end, label } = this.buildDayRange(i);
       labels.push(label);
-
-      const [bRow, sRow] = await Promise.all([
-        this.bookingsRepo
-          .createQueryBuilder('b')
-          .select('COALESCE(SUM(b.total_price), 0)', 'revenue')
-          .where('b.created_at BETWEEN :start AND :end', { start, end })
-          .getRawOne<{ revenue: string | null }>(),
-        this.shipmentsRepo
-          .createQueryBuilder('s')
-          .select('COALESCE(SUM(s.total_price), 0)', 'revenue')
-          .where('s.created_at BETWEEN :start AND :end', { start, end })
-          .getRawOne<{ revenue: string | null }>(),
-      ]);
-
-      const b = Number(bRow?.revenue || 0);
-      const s = Number(sRow?.revenue || 0);
-      bookingsRevenue.push(Number(b.toFixed(2)));
-      shipmentsRevenue.push(Number(s.toFixed(2)));
-      total.push(Number((b + s).toFixed(2)));
+      const dailyRevenue = await this.getDailyRevenueMetrics(start, end);
+      bookingsRevenue.push(dailyRevenue.bookings);
+      shipmentsRevenue.push(dailyRevenue.shipments);
+      total.push(dailyRevenue.total);
     }
 
     const sumBookings = Number(
@@ -1008,16 +993,10 @@ export class AdminService {
     for (let i = days - 1; i >= 0; i--) {
       const { start, end, label } = this.buildDayRange(i);
       labels.push(label);
-
-      const [b, u, t] = await Promise.all([
-        this.bookingsRepo.count({ where: { createdAt: Between(start, end) } }),
-        this.usersRepo.count({ where: { createdAt: Between(start, end) } }),
-        this.tripsRepo.count({ where: { createdAt: Between(start, end) } }),
-      ]);
-
-      bookings.push(b);
-      users.push(u);
-      trips.push(t);
+      const dailyCounts = await this.getDailyDashboardCounts(start, end);
+      bookings.push(dailyCounts.bookings);
+      users.push(dailyCounts.users);
+      trips.push(dailyCounts.trips);
     }
 
     return { labels, bookings, users, trips };
@@ -1091,6 +1070,44 @@ export class AdminService {
       today,
       thisWeek,
       thisMonth,
+    };
+  }
+
+  private async getDailyRevenueMetrics(start: Date, end: Date) {
+    const [bookingsRow, shipmentsRow] = await Promise.all([
+      this.bookingsRepo
+        .createQueryBuilder('b')
+        .select('COALESCE(SUM(b.total_price), 0)', 'revenue')
+        .where('b.created_at BETWEEN :start AND :end', { start, end })
+        .getRawOne<{ revenue: string | null }>(),
+      this.shipmentsRepo
+        .createQueryBuilder('s')
+        .select('COALESCE(SUM(s.total_price), 0)', 'revenue')
+        .where('s.created_at BETWEEN :start AND :end', { start, end })
+        .getRawOne<{ revenue: string | null }>(),
+    ]);
+
+    const bookings = Number(bookingsRow?.revenue || 0);
+    const shipments = Number(shipmentsRow?.revenue || 0);
+
+    return {
+      bookings: this.roundMetric(bookings),
+      shipments: this.roundMetric(shipments),
+      total: this.roundMetric(bookings + shipments),
+    };
+  }
+
+  private async getDailyDashboardCounts(start: Date, end: Date) {
+    const [bookings, users, trips] = await Promise.all([
+      this.bookingsRepo.count({ where: { createdAt: Between(start, end) } }),
+      this.usersRepo.count({ where: { createdAt: Between(start, end) } }),
+      this.tripsRepo.count({ where: { createdAt: Between(start, end) } }),
+    ]);
+
+    return {
+      bookings,
+      users,
+      trips,
     };
   }
 
