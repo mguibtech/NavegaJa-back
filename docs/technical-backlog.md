@@ -2,13 +2,14 @@
 
 ## Contexto
 
-Auditoria local consolidada em 2026-03-25 apos a rodada de hardening, testes, CI, documentacao e refactors incrementais.
+Auditoria local consolidada em 2026-03-25 apos a rodada de hardening, testes, CI, documentacao, suites adicionais e refactors incrementais.
 
 ## Resumo Executivo
 
 - Swagger esta integrado e os controllers em `src/` estao anotados com `@ApiTags`.
 - O projeto ja tem lint, build, testes unitarios, testes e2e e pipeline de CI.
-- O principal debito remanescente esta em cobertura de testes por modulo e tamanho de alguns services centrais.
+- Estado validado nesta auditoria: 17 suites unitarias com 65 testes e 5 suites e2e com 18 testes.
+- O principal debito remanescente esta em cobertura por modulo ainda sem suite dedicada, auditoria fina de contratos Swagger e tamanho de alguns services centrais.
 
 ## Contratos e Swagger
 
@@ -20,67 +21,64 @@ Auditoria local consolidada em 2026-03-25 apos a rodada de hardening, testes, CI
 
 Levantamento por pasta em `src/`:
 
-- `admin`
 - `boat-staff`
 - `captain`
 - `cargo`
 - `chat`
+- `config`
 - `coupons`
 - `database`
 - `favorites`
 - `mail`
 - `notifications`
 - `payment-methods`
-- `payments`
 - `pdf`
 - `reviews`
-- `safety`
 - `stop-reviews`
 - `upload`
-- `users`
-- `weather`
 
 ## Cobertura E2E Atual
 
 - `test/app.e2e-spec.ts`
 - `test/auth.e2e-spec.ts`
+- `test/bookings.e2e-spec.ts`
+- `test/payments.e2e-spec.ts`
+- `test/shipments.e2e-spec.ts`
 
 Fluxos ainda sem e2e dedicado:
 
-- pagamentos
-- bookings
-- shipments
 - admin
 - captain / boat-staff
+- webhooks e cenarios de falha mais profundos de pagamento
 
 ## Prioridades de Refactor
 
 Services mais extensos nesta auditoria:
 
-- `src/admin/admin.service.ts`: 1859 linhas
-- `src/trips/trips.service.ts`: 1510 linhas
-- `src/weather/weather.service.ts`: 1063 linhas
-- `src/shipments/shipments.service.ts`: 1015 linhas
-- `src/bookings/bookings.service.ts`: 895 linhas
+- `src/admin/admin.service.ts`: 1516 linhas
+- `src/trips/trips.service.ts`: 1375 linhas
+- `src/shipments/shipments.service.ts`: 885 linhas
+- `src/bookings/bookings.service.ts`: 805 linhas
+- `src/weather/weather.service.ts`: 672 linhas
 
 ## Backlog Recomendado
 
 ### P0
 
-- Criar e2e para pagamentos, bookings e shipments cobrindo sucesso, falha, cancelamento e webhook.
-- Adicionar suites unitarias para `payments`, `users`, `safety` e `weather`.
 - Revisar respostas Swagger dos endpoints criticos para garantir exemplos e codigos HTTP coerentes com implementacao real.
+- Criar e2e dedicado para `admin` e para fluxos de `captain` / `boat-staff`.
+- Aprofundar cenarios de pagamento com webhook, falha, idempotencia e reprocessamento.
 
 ### P1
 
 - Quebrar `AdminService` por dominios internos: usuarios, viagens, reservas, encomendas e moderacao.
 - Continuar a extracao em `TripsService`, separando validacao de criacao, operacao do capitao, busca publica e atualizacao de status.
-- Separar `WeatherService` entre provedores externos, agregacao de previsao e regras de fallback/cache.
+- Continuar a reduzir `ShipmentsService` e `BookingsService` agora que os principais helpers compartilhados de stats/admin estao isolados.
 
 ### P2
 
 - Adicionar metricas operacionais basicas para filas/cron, webhook de pagamento e notificacoes.
-- Padronizar testes para modulos de suporte ainda sem cobertura: `favorites`, `chat`, `notifications`, `payment-methods`, `stop-reviews`.
+- Padronizar testes para modulos de suporte ainda sem cobertura: `favorites`, `chat`, `notifications`, `payment-methods`, `stop-reviews`, `coupons` e `upload`.
 - Revisar documentacao tecnica em `docs/` para ligar arquitetura, backlog e padroes operacionais.
 
 ## Conclusao
