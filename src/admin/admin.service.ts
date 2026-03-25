@@ -1296,6 +1296,40 @@ export class AdminService {
     return Number(total.toFixed(2));
   }
 
+  private loadPendingBoatVerifications(
+    limit: number,
+    createdAtOrder: 'ASC' | 'DESC',
+  ) {
+    return this.boatsRepo.find({
+      where: { isVerified: false, rejectionReason: IsNull() },
+      relations: ['owner'],
+      order: { createdAt: createdAtOrder },
+      take: limit,
+    });
+  }
+
+  private loadPendingCaptainVerifications(limit: number) {
+    return this.documentChangeRequestsService.getPendingCaptainSummaries(limit);
+  }
+
+  private loadActiveSosAlerts(limit: number) {
+    return this.sosRepo.find({
+      where: { status: SosAlertStatus.ACTIVE },
+      relations: ['user'],
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+  }
+
+  private loadRecentTripsSince(since: Date, limit: number) {
+    return this.tripsRepo.find({
+      where: { createdAt: MoreThan(since) },
+      relations: ['captain'],
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+  }
+
   async getRecentActivity(limit: number) {
     const activitySources = await this.loadRecentActivitySources();
     const activities = this.buildRecentActivitiesFromSources(activitySources);
@@ -1613,13 +1647,8 @@ export class AdminService {
 
   async getPendingVerifications(): Promise<PendingVerificationsPayload> {
     const [reviewPendingBoats, reviewPendingCaptains] = await Promise.all([
-      this.boatsRepo.find({
-        where: { isVerified: false, rejectionReason: IsNull() },
-        relations: ['owner'],
-        order: { createdAt: 'ASC' },
-        take: 50,
-      }),
-      this.documentChangeRequestsService.getPendingCaptainSummaries(50),
+      this.loadPendingBoatVerifications(50, 'ASC'),
+      this.loadPendingCaptainVerifications(50),
     ]);
 
     return buildPendingVerificationsPayload(
@@ -1643,25 +1672,10 @@ export class AdminService {
       notificationPendingCaptains,
       notificationNewTrips,
     ] = await Promise.all([
-      this.sosRepo.find({
-        where: { status: SosAlertStatus.ACTIVE },
-        relations: ['user'],
-        order: { createdAt: 'DESC' },
-        take: 5,
-      }),
-      this.boatsRepo.find({
-        where: { isVerified: false, rejectionReason: IsNull() },
-        relations: ['owner'],
-        order: { createdAt: 'DESC' },
-        take: 5,
-      }),
-      this.documentChangeRequestsService.getPendingCaptainSummaries(5),
-      this.tripsRepo.find({
-        where: { createdAt: MoreThan(since24h) },
-        relations: ['captain'],
-        order: { createdAt: 'DESC' },
-        take: 5,
-      }),
+      this.loadActiveSosAlerts(5),
+      this.loadPendingBoatVerifications(5, 'DESC'),
+      this.loadPendingCaptainVerifications(5),
+      this.loadRecentTripsSince(since24h, 5),
     ]);
 
     return buildAdminNotificationsPayload({
