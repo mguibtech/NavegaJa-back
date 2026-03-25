@@ -161,6 +161,50 @@ export class TripsService {
     return trip;
   }
 
+  private async ensureVerifiedCaptainForTripCreation(
+    captainId: string,
+    role?: string,
+  ): Promise<void> {
+    if (role === 'boat_manager') {
+      return;
+    }
+
+    const captain = await this.usersRepo.findOne({
+      where: { id: captainId },
+      select: ['id', 'isVerified'],
+    });
+    if (!captain?.isVerified) {
+      throw new ForbiddenException(
+        'Conta nÃ£o verificada. Envie sua habilitaÃ§Ã£o nÃ¡utica e aguarde a aprovaÃ§Ã£o do NavegaJÃ¡.',
+      );
+    }
+  }
+
+  private validateTripRouteAndSchedule(
+    dto: CreateTripDto,
+    departureAt: Date,
+    estimatedArrivalAt: Date,
+  ): void {
+    if (
+      dto.origin.trim().toLowerCase() === dto.destination.trim().toLowerCase()
+    ) {
+      throw new BadRequestException('Origem e destino nÃ£o podem ser iguais.');
+    }
+
+    const now = new Date();
+    if (departureAt < now) {
+      throw new BadRequestException(
+        'Data de partida deve ser futura. NÃ£o Ã© possÃ­vel criar viagens no passado.',
+      );
+    }
+
+    if (estimatedArrivalAt <= departureAt) {
+      throw new BadRequestException(
+        'Data de chegada deve ser posterior Ã  data de partida.',
+      );
+    }
+  }
+
   async create(
     userId: string,
     dto: CreateTripDto,
@@ -170,6 +214,8 @@ export class TripsService {
     const captainId = userId;
     const departureAt = new Date(dto.departureTime);
     const estimatedArrivalAt = new Date(dto.arrivalTime);
+    await this.ensureVerifiedCaptainForTripCreation(captainId, role);
+    this.validateTripRouteAndSchedule(dto, departureAt, estimatedArrivalAt);
 
     // ========== VALIDAÇÕES CRÍTICAS ==========
 
