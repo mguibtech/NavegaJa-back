@@ -261,10 +261,12 @@ describe('TripsService trip ownership and conflict rules', () => {
     conflictCount?: number;
     ownedBoats?: Array<{ id: string }>;
     trips?: Trip[];
+    tripForUpdate?: Trip | null;
   }) => {
     const conflictCount = overrides?.conflictCount ?? 0;
     const ownedBoats = overrides?.ownedBoats ?? [{ id: 'boat-1' }];
     const trips = overrides?.trips ?? [];
+    const tripForUpdate = overrides?.tripForUpdate ?? null;
 
     const conflictQueryBuilder = {
       where: jest.fn().mockReturnThis(),
@@ -282,6 +284,7 @@ describe('TripsService trip ownership and conflict rules', () => {
           ...value,
         } as Trip),
       ),
+      findOne: jest.fn().mockResolvedValue(tripForUpdate),
       find: jest.fn().mockResolvedValue(trips),
     };
 
@@ -460,6 +463,73 @@ describe('TripsService trip ownership and conflict rules', () => {
         price: 100,
         totalSeats: 10,
         boatId: 'boat-1',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(tripsRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('blocks reducing total seats below the number of booked seats', async () => {
+    const tripForUpdate = {
+      id: 'trip-update-1',
+      captainId: 'captain-1',
+      boatId: 'boat-1',
+      origin: 'Manaus',
+      destination: 'Parintins',
+      departureAt: new Date('2030-03-12T10:00:00.000Z'),
+      estimatedArrivalAt: new Date('2030-03-12T14:00:00.000Z'),
+      price: 100,
+      totalSeats: 20,
+      availableSeats: 17,
+      status: TripStatus.SCHEDULED,
+      cargoCapacityKg: 100,
+      availableCargoKg: 90,
+    } as Trip;
+    const { service, tripsRepo } = createService({ tripForUpdate });
+
+    await expect(
+      service.update('trip-update-1', 'captain-1', {
+        origin: 'Manaus',
+        destination: 'Parintins',
+        departureTime: '2030-03-12T10:00:00.000Z',
+        arrivalTime: '2030-03-12T14:00:00.000Z',
+        price: 100,
+        totalSeats: 2,
+        boatId: 'boat-1',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(tripsRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('blocks reducing cargo capacity below currently used cargo', async () => {
+    const tripForUpdate = {
+      id: 'trip-update-2',
+      captainId: 'captain-1',
+      boatId: 'boat-1',
+      origin: 'Manaus',
+      destination: 'Parintins',
+      departureAt: new Date('2030-03-12T10:00:00.000Z'),
+      estimatedArrivalAt: new Date('2030-03-12T14:00:00.000Z'),
+      price: 100,
+      totalSeats: 20,
+      availableSeats: 19,
+      status: TripStatus.SCHEDULED,
+      cargoCapacityKg: 100,
+      availableCargoKg: 70,
+    } as Trip;
+    const { service, tripsRepo } = createService({ tripForUpdate });
+
+    await expect(
+      service.update('trip-update-2', 'captain-1', {
+        origin: 'Manaus',
+        destination: 'Parintins',
+        departureTime: '2030-03-12T10:00:00.000Z',
+        arrivalTime: '2030-03-12T14:00:00.000Z',
+        price: 100,
+        totalSeats: 20,
+        boatId: 'boat-1',
+        cargoCapacityKg: 20,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
 

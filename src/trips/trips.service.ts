@@ -1088,9 +1088,15 @@ export class TripsService {
     trip.departureAt = departureAt;
     trip.estimatedArrivalAt = estimatedArrivalAt;
     trip.price = dto.price;
+    // Ajustar availableSeats mantendo os assentos ja reservados
+    const bookedSeats = trip.totalSeats - trip.availableSeats;
+    if (dto.totalSeats < bookedSeats) {
+      throw new BadRequestException(
+        `Nao e possivel reduzir lotacao para ${dto.totalSeats}. Ja existem ${bookedSeats} assentos reservados.`,
+      );
+    }
     trip.totalSeats = dto.totalSeats;
     // Ajustar availableSeats mantendo a diferença
-    const bookedSeats = trip.totalSeats - trip.availableSeats;
     trip.availableSeats = dto.totalSeats - bookedSeats;
 
     if (dto.cargoPriceKg !== undefined) {
@@ -1101,6 +1107,11 @@ export class TripsService {
         trip.cargoCapacityKg != null && trip.availableCargoKg != null
           ? trip.cargoCapacityKg - trip.availableCargoKg
           : 0;
+      if (dto.cargoCapacityKg < usedCargo) {
+        throw new BadRequestException(
+          `Nao e possivel reduzir capacidade de carga para ${dto.cargoCapacityKg} kg. Ja existem ${usedCargo} kg ocupados.`,
+        );
+      }
       trip.cargoCapacityKg = dto.cargoCapacityKg;
       trip.availableCargoKg = dto.cargoCapacityKg - usedCargo;
     }
