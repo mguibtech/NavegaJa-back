@@ -788,18 +788,13 @@ export class AdminService {
   // ==================== DASHBOARD OVERVIEW ====================
 
   async getDashboardOverview() {
-    const [users, trips, shipments, sosAlerts] = await Promise.all([
+    const [users, trips, shipments, sosAlerts, revenue] = await Promise.all([
       this.getUserStats(),
       this.getTripStats(),
       this.getShipmentStats(),
       this.getSosStats(),
+      this.getRevenueOverview(),
     ]);
-
-    const revenue = {
-      today: await this.getRevenueByPeriod('today'),
-      thisWeek: await this.getRevenueByPeriod('week'),
-      thisMonth: await this.getRevenueByPeriod('month'),
-    };
 
     return {
       users: {
@@ -827,23 +822,37 @@ export class AdminService {
   }
 
   private async getSosStats() {
-    const active = await this.sosRepo.count({
-      where: { status: SosAlertStatus.ACTIVE },
-    });
     const { today, weekAgo } = this.getStatsDateThresholds();
-
-    const totalToday = await this.sosRepo.count({
-      where: { createdAt: MoreThan(today) },
-    });
-
-    const totalThisWeek = await this.sosRepo.count({
-      where: { createdAt: MoreThan(weekAgo) },
-    });
+    const [active, totalToday, totalThisWeek] = await Promise.all([
+      this.sosRepo.count({
+        where: { status: SosAlertStatus.ACTIVE },
+      }),
+      this.sosRepo.count({
+        where: { createdAt: MoreThan(today) },
+      }),
+      this.sosRepo.count({
+        where: { createdAt: MoreThan(weekAgo) },
+      }),
+    ]);
 
     return {
       active,
       totalToday,
       totalThisWeek,
+    };
+  }
+
+  private async getRevenueOverview() {
+    const [today, thisWeek, thisMonth] = await Promise.all([
+      this.getRevenueByPeriod('today'),
+      this.getRevenueByPeriod('week'),
+      this.getRevenueByPeriod('month'),
+    ]);
+
+    return {
+      today,
+      thisWeek,
+      thisMonth,
     };
   }
 
