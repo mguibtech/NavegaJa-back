@@ -48,6 +48,104 @@ export class BookingsService {
     private floodService: FloodService,
   ) {}
 
+  private async findBookingByIdOrThrow(
+    id: string,
+    relations: string[] = [],
+  ): Promise<Booking> {
+    const booking = await this.bookingsRepo.findOne({
+      where: { id },
+      relations,
+    });
+    if (!booking) {
+      throw new NotFoundException('Reserva não encontrada');
+    }
+
+    return booking;
+  }
+
+  private async adjustTripAvailableSeats(
+    tripId: string,
+    seatsDelta: number,
+  ): Promise<Trip | null> {
+    const trip = await this.tripsRepo.findOne({ where: { id: tripId } });
+    if (!trip) {
+      return null;
+    }
+
+    trip.availableSeats += seatsDelta;
+    await this.tripsRepo.save(trip);
+    return trip;
+  }
+
+  private getBookingDistanceKm(booking: Booking): number {
+    return Math.round(Number(booking.trip?.route?.distanceKm ?? 0));
+  }
+
+  private async rewardCompletedBooking(
+    booking: Booking,
+    convertReferral: boolean,
+  ): Promise<void> {
+    await this.gamificationService.awardPoints(
+      booking.passengerId,
+      PointAction.BOOKING_COMPLETED,
+      booking.id,
+    );
+
+    await this.gamificationService.checkFirstTripOfMonthBonus(
+      booking.passengerId,
+      booking.id,
+    );
+
+    if (convertReferral) {
+      await this.gamificationService.convertReferral(booking.passengerId);
+    }
+
+    await this.gamificationService.awardBoatOwnerPassengerCompleted(
+      booking.trip?.boat?.ownerId,
+      booking.id,
+    );
+
+    const distanceKm = this.getBookingDistanceKm(booking);
+    if (distanceKm > 0) {
+      await this.gamificationService.creditKm(
+        booking.passengerId,
+        distanceKm,
+        booking.id,
+      );
+    }
+  }
+
+  private async markBookingCompleted(
+    booking: Booking,
+    convertReferral: boolean,
+  ): Promise<Booking> {
+    booking.status = BookingStatus.COMPLETED;
+    const saved = await this.bookingsRepo.save(booking);
+
+    await this.rewardCompletedBooking(booking, convertReferral);
+
+    return saved;
+  }
+
+  private async assertCaptainCanConfirmPayments(
+    confirmedBy?: string,
+    confirmedByRole?: string,
+  ): Promise<void> {
+    if (confirmedByRole !== 'captain' || !confirmedBy) {
+      return;
+    }
+
+    const captain = await this.usersRepo.findOne({
+      where: { id: confirmedBy },
+      select: ['id', 'isVerified'],
+    });
+    if (!captain?.isVerified) {
+      throw new ForbiddenException(
+        'Conta não verificada. Aguarde a aprovação do NavegaJá.',
+      );
+    }
+  }
+
   async calculatePrice(
     passengerId: string,
     tripId: string,
@@ -401,18 +499,13 @@ export class BookingsService {
   }
 
   async findById(id: string): Promise<Booking> {
-    const booking = await this.bookingsRepo.findOne({
-      where: { id },
-      relations: [
-        'trip',
-        'trip.route',
-        'trip.captain',
-        'trip.boat',
-        'passenger',
-      ],
-    });
-    if (!booking) throw new NotFoundException('Reserva não encontrada');
-    return booking;
+    return this.findBookingByIdOrThrow(id, [
+      'trip',
+      'trip.route',
+      'trip.captain',
+      'trip.boat',
+      'passenger',
+    ]);
   }
 
   async findByTrip(tripId: string): Promise<Booking[]> {
@@ -573,13 +666,7 @@ export class BookingsService {
 
     // Só devolve assentos se estava CONFIRMED (pagamento confirmado)
     if (booking.status === BookingStatus.CONFIRMED) {
-      const trip = await this.tripsRepo.findOne({
-        where: { id: booking.tripId },
-      });
-      if (trip) {
-        trip.availableSeats += booking.seats;
-        await this.tripsRepo.save(trip);
-      }
+      await this.adjustTripAvailableSeats(booking.tripId, booking.seats);
     }
 
     booking.status = BookingStatus.CANCELLED;
@@ -623,41 +710,7 @@ export class BookingsService {
         'Reserva precisa estar em check-in para ser concluída',
       );
     }
-
-    booking.status = BookingStatus.COMPLETED;
-    const saved = await this.bookingsRepo.save(booking);
-
-    // Credita NavegaCoins ao passageiro
-    await this.gamificationService.awardPoints(
-      booking.passengerId,
-      PointAction.BOOKING_COMPLETED,
-      booking.id,
-    );
-
-    // Verifica bônus primeira viagem do mês
-    await this.gamificationService.checkFirstTripOfMonthBonus(
-      booking.passengerId,
-      booking.id,
-    );
-
-    // Converte indicação pendente (dá 50pts ao quem indicou este passageiro)
-    await this.gamificationService.convertReferral(booking.passengerId);
-    await this.gamificationService.awardBoatOwnerPassengerCompleted(
-      booking.trip?.boat?.ownerId,
-      booking.id,
-    );
-
-    // Credita km (milhas fluviais) com base na distância da rota
-    const distanceKm = Math.round(Number(booking.trip?.route?.distanceKm ?? 0));
-    if (distanceKm > 0) {
-      await this.gamificationService.creditKm(
-        booking.passengerId,
-        distanceKm,
-        booking.id,
-      );
-    }
-
-    return saved;
+    return this.markBookingCompleted(booking, true);
   }
 
   /**
@@ -670,17 +723,7 @@ export class BookingsService {
     confirmedByRole?: string,
   ): Promise<Booking> {
     // Capitão não verificado não pode confirmar pagamentos
-    if (confirmedByRole === 'captain' && confirmedBy) {
-      const captain = await this.usersRepo.findOne({
-        where: { id: confirmedBy },
-        select: ['id', 'isVerified'],
-      });
-      if (!captain?.isVerified) {
-        throw new ForbiddenException(
-          'Conta não verificada. Aguarde a aprovação do NavegaJá.',
-        );
-      }
-    }
+    await this.assertCaptainCanConfirmPayments(confirmedBy, confirmedByRole);
 
     const booking = await this.findById(bookingId);
 
@@ -714,13 +757,10 @@ export class BookingsService {
     await this.bookingsRepo.save(saved);
 
     // Reduzir assentos disponíveis AGORA
-    const trip = await this.tripsRepo.findOne({
-      where: { id: booking.tripId },
-    });
-    if (trip) {
-      trip.availableSeats -= booking.seats;
-      await this.tripsRepo.save(trip);
-    }
+    const trip = await this.adjustTripAvailableSeats(
+      booking.tripId,
+      -booking.seats,
+    );
 
     // Notificar passageiro: pagamento confirmado
     await this.notificationsService.sendToUser(booking.passengerId, {
@@ -789,35 +829,7 @@ export class BookingsService {
     });
 
     for (const booking of bookings) {
-      booking.status = BookingStatus.COMPLETED;
-      await this.bookingsRepo.save(booking);
-
-      await this.gamificationService.awardPoints(
-        booking.passengerId,
-        PointAction.BOOKING_COMPLETED,
-        booking.id,
-      );
-
-      await this.gamificationService.checkFirstTripOfMonthBonus(
-        booking.passengerId,
-        booking.id,
-      );
-      await this.gamificationService.awardBoatOwnerPassengerCompleted(
-        booking.trip?.boat?.ownerId,
-        booking.id,
-      );
-
-      // Creditar km da viagem
-      const distanceKm = Math.round(
-        Number(booking.trip?.route?.distanceKm ?? 0),
-      );
-      if (distanceKm > 0) {
-        await this.gamificationService.creditKm(
-          booking.passengerId,
-          distanceKm,
-          booking.id,
-        );
-      }
+      await this.markBookingCompleted(booking, false);
     }
   }
 
@@ -829,11 +841,12 @@ export class BookingsService {
     userId: string,
     userRole: string,
   ): Promise<PdfStream> {
-    const booking = await this.bookingsRepo.findOne({
-      where: { id: bookingId },
-      relations: ['trip', 'trip.boat', 'trip.captain', 'passenger'],
-    });
-    if (!booking) throw new NotFoundException('Reserva não encontrada');
+    const booking = await this.findBookingByIdOrThrow(bookingId, [
+      'trip',
+      'trip.boat',
+      'trip.captain',
+      'passenger',
+    ]);
 
     // Apenas passenger, captain da viagem ou admin
     if (
