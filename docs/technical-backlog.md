@@ -8,7 +8,7 @@ Auditoria local consolidada em 2026-03-25 apos a rodada de hardening, testes, CI
 
 - Swagger esta integrado e os controllers em `src/` estao anotados com `@ApiTags`.
 - O projeto ja tem lint, build, testes unitarios, testes e2e e pipeline de CI.
-- Estado validado nesta auditoria: 17 suites unitarias com 67 testes e 8 suites e2e com 57 testes.
+- Estado validado nesta auditoria: 17 suites unitarias com 69 testes e 8 suites e2e com 57 testes.
 - O principal debito remanescente esta em cobertura por modulo ainda sem suite dedicada, auditoria fina de contratos Swagger e tamanho de alguns services centrais.
 
 ## Contratos e Swagger
@@ -75,7 +75,7 @@ Services mais extensos nesta auditoria:
 
 - Quebrar `AdminService` por dominios internos: usuarios, viagens, reservas, encomendas e moderacao.
 - Continuar a extracao em `TripsService`, separando validacao de criacao, operacao do capitao, busca publica e atualizacao de status.
-- Continuar a reduzir o restante de `BookingsService` e `ShipmentsService` agora que lookups, persistencia de status, reconciliacao de carga, recompensas de conclusao e ajuste de assentos ja comecaram a ser centralizados.
+- Continuar a reduzir o restante de `BookingsService` e `ShipmentsService` agora que lookups, persistencia de status, reconciliacao de carga, recompensas de conclusao e ajuste de assentos ja comecaram a ser centralizados; fluxo de confirmacao de pagamento em reservas agora preserva status do ciclo de vida e evita ajuste duplicado de assentos.
 
 ### P2
 
