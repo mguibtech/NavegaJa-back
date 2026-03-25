@@ -181,6 +181,54 @@ export class AdminService {
     return review;
   }
 
+  private async findBoatWithOwnerOrThrow(id: string): Promise<Boat> {
+    const boat = await this.boatsRepo.findOne({
+      where: { id },
+      relations: ['owner'],
+    });
+    if (!boat) {
+      throw new NotFoundException('Embarcação não encontrada');
+    }
+
+    return boat;
+  }
+
+  private serializeAdminBoat(boat: Boat) {
+    return {
+      ...boat,
+      owner: boat.owner
+        ? { id: boat.owner.id, name: boat.owner.name, phone: boat.owner.phone }
+        : null,
+    };
+  }
+
+  private buildBoatVerificationNotification(
+    boat: Boat,
+    approved: boolean,
+    reason: string,
+  ): { title: string; body: string; data: Record<string, string> } {
+    if (approved) {
+      return {
+        title: '✅ Embarcação aprovada!',
+        body: `Sua embarcação "${boat.name}" foi verificada. Já pode criar viagens com ela.`,
+        data: {
+          type: 'boat_verified',
+          boatId: boat.id,
+        },
+      };
+    }
+
+    return {
+      title: '❌ Embarcação rejeitada',
+      body: `"${boat.name}" — Motivo: ${reason}. Acesse o app para reenviar os documentos.`,
+      data: {
+        type: 'boat_rejected',
+        boatId: boat.id,
+        reason,
+      },
+    };
+  }
+
   private async refreshCaptainRating(captainId: string): Promise<void> {
     const row = await this.reviewsRepo
       .createQueryBuilder('r')
@@ -1284,12 +1332,7 @@ export class AdminService {
 
     const [boats, total] = await qb.getManyAndCount();
     return {
-      boats: boats.map((b) => ({
-        ...b,
-        owner: b.owner
-          ? { id: b.owner.id, name: b.owner.name, phone: b.owner.phone }
-          : null,
-      })),
+      boats: boats.map((boat) => this.serializeAdminBoat(boat)),
       total,
       page,
       pages: Math.ceil(total / limit),
@@ -1297,12 +1340,7 @@ export class AdminService {
   }
 
   async verifyBoat(id: string, approved: boolean, rejectionReason?: string) {
-    const boat = await this.boatsRepo.findOne({
-      where: { id },
-      relations: ['owner'],
-    });
-    if (!boat) throw new NotFoundException('Embarcação não encontrada');
-
+    const boat = await this.findBoatWithOwnerOrThrow(id);
     const reason = rejectionReason ?? 'Documentação inválida ou incompleta';
 
     await this.boatsRepo.update(id, {
@@ -1313,19 +1351,10 @@ export class AdminService {
 
     // Notificação push ao capitão dono do barco
     if (boat.ownerId) {
-      if (approved) {
-        await this.notificationsService.sendToUser(boat.ownerId, {
-          title: '✅ Embarcação aprovada!',
-          body: `Sua embarcação "${boat.name}" foi verificada. Já pode criar viagens com ela.`,
-          data: { type: 'boat_verified', boatId: id },
-        });
-      } else {
-        await this.notificationsService.sendToUser(boat.ownerId, {
-          title: '❌ Embarcação rejeitada',
-          body: `"${boat.name}" — Motivo: ${reason}. Acesse o app para reenviar os documentos.`,
-          data: { type: 'boat_rejected', boatId: id, reason },
-        });
-      }
+      await this.notificationsService.sendToUser(
+        boat.ownerId,
+        this.buildBoatVerificationNotification(boat, approved, reason),
+      );
     }
 
     const action = approved ? 'aprovada' : 'rejeitada';
