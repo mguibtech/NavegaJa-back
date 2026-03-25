@@ -573,6 +573,45 @@ export class AdminService {
     }
   }
 
+  private applyBookingListFilters(
+    qb: SelectQueryBuilder<Booking>,
+    status?: string,
+    paymentStatus?: string,
+    search?: string,
+  ): void {
+    if (status) {
+      qb.andWhere('booking.status = :status', { status });
+    }
+
+    if (paymentStatus) {
+      qb.andWhere('booking.paymentStatus = :paymentStatus', { paymentStatus });
+    }
+
+    if (search) {
+      qb.andWhere(
+        '(LOWER(passenger.name) LIKE LOWER(:search) OR LOWER(passenger.email) LIKE LOWER(:search) OR booking.id LIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+  }
+
+  private applyReviewListFilters(
+    qb: SelectQueryBuilder<Review>,
+    type?: string,
+    search?: string,
+  ): void {
+    if (type) {
+      qb.andWhere('review.review_type = :type', { type });
+    }
+
+    if (search) {
+      qb.andWhere(
+        '(LOWER(reviewer.name) LIKE LOWER(:search) OR LOWER(captain.name) LIKE LOWER(:search) OR LOWER(passenger.name) LIKE LOWER(:search))',
+        { search: `%${search}%` },
+      );
+    }
+  }
+
   // ==================== USUÁRIOS ====================
 
   async createCaptain(dto: {
@@ -1203,21 +1242,7 @@ export class AdminService {
       .leftJoinAndSelect('booking.passenger', 'passenger')
       .leftJoinAndSelect('booking.trip', 'trip')
       .leftJoinAndSelect('trip.captain', 'captain');
-
-    if (status) {
-      qb.andWhere('booking.status = :status', { status });
-    }
-
-    if (paymentStatus) {
-      qb.andWhere('booking.paymentStatus = :paymentStatus', { paymentStatus });
-    }
-
-    if (search) {
-      qb.andWhere(
-        '(LOWER(passenger.name) LIKE LOWER(:search) OR LOWER(passenger.email) LIKE LOWER(:search) OR booking.id LIKE :search)',
-        { search: `%${search}%` },
-      );
-    }
+    this.applyBookingListFilters(qb, status, paymentStatus, search);
 
     const [bookings, total] = await qb
       .orderBy('booking.createdAt', 'DESC')
@@ -1325,17 +1350,7 @@ export class AdminService {
       .leftJoinAndSelect('review.boat', 'boat')
       .leftJoinAndSelect('review.passenger', 'passenger')
       .leftJoinAndSelect('review.trip', 'trip');
-
-    if (type) {
-      qb.andWhere('review.review_type = :type', { type });
-    }
-
-    if (search) {
-      qb.andWhere(
-        '(LOWER(reviewer.name) LIKE LOWER(:search) OR LOWER(captain.name) LIKE LOWER(:search) OR LOWER(passenger.name) LIKE LOWER(:search))',
-        { search: `%${search}%` },
-      );
-    }
+    this.applyReviewListFilters(qb, type, search);
 
     const [reviews, total] = await qb
       .orderBy('review.createdAt', 'DESC')
