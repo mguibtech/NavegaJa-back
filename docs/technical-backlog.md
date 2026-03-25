@@ -8,8 +8,8 @@ Auditoria local consolidada em 2026-03-25 apos a rodada de hardening, testes, CI
 
 - Swagger esta integrado e os controllers em `src/` estao anotados com `@ApiTags`.
 - O projeto ja tem lint, build, testes unitarios, testes e2e e pipeline de CI.
-- Estado validado nesta auditoria: 36 suites unitarias/smoke com 193 testes e 8 suites e2e com 57 testes.
-- Cobertura atual (`npm run test:cov -- --runInBand`): 79.73% statements, 56.60% branches, 77.29% functions e 80.44% lines.
+- Estado validado nesta auditoria: 36 suites unitarias/smoke com 209 testes e 8 suites e2e com 57 testes.
+- Cobertura atual (`npm run test:cov -- --runInBand`): 81.55% statements, 57.92% branches, 79.70% functions e 82.21% lines.
 - O principal debito remanescente esta em cobertura por modulo ainda sem suite dedicada, auditoria fina de contratos Swagger e tamanho de alguns services centrais.
 
 ## Contratos e Swagger
