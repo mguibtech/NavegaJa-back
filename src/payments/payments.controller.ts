@@ -54,6 +54,13 @@ export class PaymentsController {
       },
     },
   })
+  @ApiResponse({ status: 401, description: 'Utilizador nÃ£o autenticado' })
+  @ApiResponse({
+    status: 403,
+    description: 'Reserva nÃ£o pertence ao utilizador autenticado',
+  })
+  @ApiResponse({ status: 404, description: 'Reserva nÃ£o encontrada' })
+  @ApiResponse({ status: 500, description: 'Falha ao gerar dados PIX' })
   async generatePixForBooking(
     @Param('id') id: string,
     @Request() req: AuthenticatedRequest,
@@ -98,6 +105,13 @@ export class PaymentsController {
       },
     },
   })
+  @ApiResponse({ status: 401, description: 'Utilizador nÃ£o autenticado' })
+  @ApiResponse({
+    status: 403,
+    description: 'Encomenda nÃ£o pertence ao utilizador autenticado',
+  })
+  @ApiResponse({ status: 404, description: 'Encomenda nÃ£o encontrada' })
+  @ApiResponse({ status: 500, description: 'Falha ao gerar dados PIX' })
   async generatePixForShipment(
     @Param('id') id: string,
     @Request() req: AuthenticatedRequest,
