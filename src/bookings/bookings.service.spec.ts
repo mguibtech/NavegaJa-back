@@ -3,7 +3,7 @@ import { BookingStatus, PaymentMethod, PaymentStatus } from './booking.entity';
 import type { Repository } from 'typeorm';
 import type { Booking } from './booking.entity';
 import type { Trip } from '../trips/trip.entity';
-import type { User } from '../users/user.entity';
+import { UserRole, type User } from '../users/user.entity';
 import type { GamificationService } from '../gamification/gamification.service';
 
 describe('BookingsService owner rewards', () => {
@@ -143,5 +143,140 @@ describe('BookingsService cancellation policy', () => {
       .calls[0] as [string, { body: string }];
     expect(recipientId).toBe('passenger-1');
     expect(notification.body).toContain('reembolso manual');
+  });
+});
+
+describe('BookingsService payment confirmation flows', () => {
+  it('blocks captain payment confirmation when the captain is not verified', async () => {
+    const usersRepo = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'captain-1',
+        isVerified: false,
+      }),
+    };
+
+    const service = new BookingsService(
+      {} as Repository<Booking>,
+      {} as Repository<Trip>,
+      usersRepo as unknown as Repository<User>,
+      {} as GamificationService,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.confirmPayment('booking-4', 'captain-1', UserRole.CAPTAIN),
+    ).rejects.toMatchObject({
+      response: {
+        message: 'Conta não verificada. Aguarde a aprovação do NavegaJá.',
+      },
+    });
+  });
+
+  it('confirms payment, generates check-in QR and reduces available seats', async () => {
+    const booking = {
+      id: 'booking-5',
+      passengerId: 'passenger-1',
+      tripId: 'trip-1',
+      seats: 3,
+      status: BookingStatus.PENDING,
+      paymentStatus: PaymentStatus.PENDING,
+      paymentMethod: PaymentMethod.PIX,
+      pixExpiresAt: new Date(Date.now() + 60_000),
+    } as unknown as Booking;
+    const trip = {
+      id: 'trip-1',
+      origin: 'Manaus',
+      destination: 'Parintins',
+      availableSeats: 12,
+    } as Trip;
+
+    const bookingsRepo = {
+      findOne: jest.fn().mockResolvedValue(booking),
+      save: jest.fn((value: Booking) => Promise.resolve(value)),
+    };
+    const tripsRepo = {
+      findOne: jest.fn().mockResolvedValue(trip),
+      save: jest.fn((value: Trip) => Promise.resolve(value)),
+    };
+    const pixService = {
+      isExpired: jest.fn().mockReturnValue(false),
+    };
+    const notificationsService = {
+      sendToUser: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const service = new BookingsService(
+      bookingsRepo as unknown as Repository<Booking>,
+      tripsRepo as unknown as Repository<Trip>,
+      {} as Repository<User>,
+      {} as GamificationService,
+      {} as never,
+      pixService as never,
+      notificationsService as never,
+      {} as never,
+      {} as never,
+    );
+
+    const saved = await service.confirmPayment('booking-5');
+
+    expect(saved.paymentStatus).toBe(PaymentStatus.PAID);
+    expect(saved.status).toBe(BookingStatus.CONFIRMED);
+    expect(saved.qrCodeCheckin).toBe('NVGJ-booking-5');
+    expect(trip.availableSeats).toBe(9);
+    expect(bookingsRepo.save).toHaveBeenCalledTimes(2);
+    expect(tripsRepo.save).toHaveBeenCalledWith(trip);
+    expect(notificationsService.sendToUser).toHaveBeenCalledWith(
+      'passenger-1',
+      expect.objectContaining({
+        data: { type: 'payment_confirmed', bookingId: 'booking-5' },
+      }),
+    );
+  });
+});
+
+describe('BookingsService PIX expiration job', () => {
+  it('cancels all expired PIX bookings and returns the processed count', async () => {
+    const expiredBookings = [
+      {
+        id: 'booking-6',
+        status: BookingStatus.PENDING,
+        paymentStatus: PaymentStatus.PENDING,
+        paymentMethod: PaymentMethod.PIX,
+      },
+      {
+        id: 'booking-7',
+        status: BookingStatus.PENDING,
+        paymentStatus: PaymentStatus.PENDING,
+        paymentMethod: PaymentMethod.PIX,
+      },
+    ] as Booking[];
+
+    const bookingsRepo = {
+      find: jest.fn().mockResolvedValue(expiredBookings),
+      save: jest.fn((value: Booking) => Promise.resolve(value)),
+    };
+
+    const service = new BookingsService(
+      bookingsRepo as unknown as Repository<Booking>,
+      {} as Repository<Trip>,
+      {} as Repository<User>,
+      {} as GamificationService,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await service.cancelExpiredPixPayments();
+
+    expect(result).toEqual({ cancelled: 2 });
+    expect(bookingsRepo.save).toHaveBeenCalledTimes(2);
+    expect(expiredBookings[0]?.status).toBe(BookingStatus.CANCELLED);
+    expect(expiredBookings[1]?.status).toBe(BookingStatus.CANCELLED);
   });
 });
