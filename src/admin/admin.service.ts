@@ -316,6 +316,74 @@ export class AdminService {
     return stats;
   }
 
+  private async getRecentCreationCounts(repo: Repository<any>) {
+    const { today, weekAgo, monthAgo } = this.getStatsDateThresholds();
+    const [todayCount, weekCount, monthCount] = await Promise.all([
+      repo.count({ where: { createdAt: MoreThan(today) } }),
+      repo.count({ where: { createdAt: MoreThan(weekAgo) } }),
+      repo.count({ where: { createdAt: MoreThan(monthAgo) } }),
+    ]);
+
+    return {
+      today: todayCount,
+      thisWeek: weekCount,
+      thisMonth: monthCount,
+    };
+  }
+
+  private roundMetric(value: number): number {
+    return Number(value.toFixed(2));
+  }
+
+  private calculateAverageMetric(total: number, count: number): number {
+    if (count === 0) {
+      return 0;
+    }
+
+    return this.roundMetric(total / count);
+  }
+
+  private async getTripsRevenueTotal(): Promise<number> {
+    const revenueRow = await this.bookingsRepo
+      .createQueryBuilder('b')
+      .select('COALESCE(SUM(b.total_price), 0)', 'totalRevenue')
+      .getRawOne<{ totalRevenue: string | null }>();
+
+    return Number(revenueRow?.totalRevenue || 0);
+  }
+
+  private async getShipmentsRevenueTotal(): Promise<number> {
+    const revenueRow = await this.shipmentsRepo
+      .createQueryBuilder('s')
+      .select('COALESCE(SUM(s.total_price), 0)', 'totalRevenue')
+      .getRawOne<{ totalRevenue: string | null }>();
+
+    return Number(revenueRow?.totalRevenue || 0);
+  }
+
+  private async getBookingsRevenueSummary() {
+    const [totalRevenueRow, confirmedRevenueRow] = await Promise.all([
+      this.bookingsRepo
+        .createQueryBuilder('b')
+        .select('COALESCE(SUM(b.total_price), 0)', 'totalRevenue')
+        .getRawOne<{ totalRevenue: string | null }>(),
+      this.bookingsRepo
+        .createQueryBuilder('b')
+        .select('COALESCE(SUM(b.total_price), 0)', 'confirmedRevenue')
+        .where('b.payment_status = :status', { status: PaymentStatus.PAID })
+        .getRawOne<{ confirmedRevenue: string | null }>(),
+    ]);
+
+    const totalRevenue = Number(totalRevenueRow?.totalRevenue || 0);
+    const confirmedRevenue = Number(confirmedRevenueRow?.confirmedRevenue || 0);
+
+    return {
+      total: this.roundMetric(totalRevenue),
+      confirmed: this.roundMetric(confirmedRevenue),
+      pending: this.roundMetric(totalRevenue - confirmedRevenue),
+    };
+  }
+
   private async getAverageReviewRating(
     selectExpression: string,
     reviewType?: ReviewType,
@@ -563,17 +631,7 @@ export class AdminService {
   }
 
   async getTripStats() {
-    const now = new Date();
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const weekAgo = new Date(now);
-    weekAgo.setDate(weekAgo.getDate() - 7);
-
-    const monthAgo = new Date(now);
-    monthAgo.setMonth(monthAgo.getMonth() - 1);
+    const recentCountsPromise = this.getRecentCreationCounts(this.tripsRepo);
 
     const [
       total,
@@ -581,36 +639,26 @@ export class AdminService {
       inProgress,
       completed,
       cancelled,
-      todayTrips,
-      thisWeekTrips,
-      thisMonthTrips,
-      revenueRow,
+      recentCounts,
+      totalRevenue,
     ] = await Promise.all([
       this.tripsRepo.count(),
       this.tripsRepo.count({ where: { status: TripStatus.SCHEDULED } }),
       this.tripsRepo.count({ where: { status: TripStatus.IN_PROGRESS } }),
       this.tripsRepo.count({ where: { status: TripStatus.COMPLETED } }),
       this.tripsRepo.count({ where: { status: TripStatus.CANCELLED } }),
-      this.tripsRepo.count({ where: { createdAt: Between(today, tomorrow) } }),
-      this.tripsRepo.count({ where: { createdAt: Between(weekAgo, now) } }),
-      this.tripsRepo.count({ where: { createdAt: Between(monthAgo, now) } }),
-      this.bookingsRepo
-        .createQueryBuilder('b')
-        .select('COALESCE(SUM(b.total_price), 0)', 'totalRevenue')
-        .getRawOne<{ totalRevenue: string | null }>(),
+      recentCountsPromise,
+      this.getTripsRevenueTotal(),
     ]);
-
-    const totalRevenue = Number(revenueRow?.totalRevenue || 0);
-    const avgPrice = total > 0 ? totalRevenue / total : 0;
 
     return {
       total,
       byStatus: { scheduled, in_progress: inProgress, completed, cancelled },
-      todayTrips,
-      thisWeekTrips,
-      thisMonthTrips,
-      totalRevenue: Number(totalRevenue.toFixed(2)),
-      avgPrice: Number(avgPrice.toFixed(2)),
+      todayTrips: recentCounts.today,
+      thisWeekTrips: recentCounts.thisWeek,
+      thisMonthTrips: recentCounts.thisMonth,
+      totalRevenue: this.roundMetric(totalRevenue),
+      avgPrice: this.calculateAverageMetric(totalRevenue, total),
     };
   }
 
@@ -690,8 +738,6 @@ export class AdminService {
   }
 
   async getShipmentStats() {
-    const { today, weekAgo, monthAgo } = this.getStatsDateThresholds();
-
     const [
       total,
       pending,
@@ -699,10 +745,8 @@ export class AdminService {
       inTransit,
       delivered,
       cancelled,
-      todayShipments,
-      thisWeekShipments,
-      thisMonthShipments,
-      revenueRow,
+      recentCounts,
+      totalRevenue,
     ] = await Promise.all([
       this.shipmentsRepo.count(),
       this.shipmentsRepo.count({ where: { status: ShipmentStatus.PENDING } }),
@@ -712,17 +756,9 @@ export class AdminService {
       }),
       this.shipmentsRepo.count({ where: { status: ShipmentStatus.DELIVERED } }),
       this.shipmentsRepo.count({ where: { status: ShipmentStatus.CANCELLED } }),
-      this.shipmentsRepo.count({ where: { createdAt: MoreThan(today) } }),
-      this.shipmentsRepo.count({ where: { createdAt: MoreThan(weekAgo) } }),
-      this.shipmentsRepo.count({ where: { createdAt: MoreThan(monthAgo) } }),
-      this.shipmentsRepo
-        .createQueryBuilder('s')
-        .select('COALESCE(SUM(s.total_price), 0)', 'totalRevenue')
-        .getRawOne<{ totalRevenue: string | null }>(),
+      this.getRecentCreationCounts(this.shipmentsRepo),
+      this.getShipmentsRevenueTotal(),
     ]);
-
-    const totalRevenue = Number(revenueRow?.totalRevenue || 0);
-    const avgPrice = total > 0 ? totalRevenue / total : 0;
 
     return {
       total,
@@ -733,11 +769,11 @@ export class AdminService {
         delivered,
         cancelled,
       },
-      todayShipments,
-      thisWeekShipments,
-      thisMonthShipments,
-      totalRevenue: Number(totalRevenue.toFixed(2)),
-      avgPrice: Number(avgPrice.toFixed(2)),
+      todayShipments: recentCounts.today,
+      thisWeekShipments: recentCounts.thisWeek,
+      thisMonthShipments: recentCounts.thisMonth,
+      totalRevenue: this.roundMetric(totalRevenue),
+      avgPrice: this.calculateAverageMetric(totalRevenue, total),
     };
   }
 
@@ -1077,8 +1113,6 @@ export class AdminService {
   }
 
   async getBookingsStats() {
-    const { today, weekAgo, monthAgo } = this.getStatsDateThresholds();
-
     const [
       total,
       pending,
@@ -1090,11 +1124,8 @@ export class AdminService {
       paid,
       refundPending,
       refunded,
-      newToday,
-      newThisWeek,
-      newThisMonth,
-      totalRevenueRow,
-      confirmedRevenueRow,
+      recentCounts,
+      revenue,
     ] = await Promise.all([
       this.bookingsRepo.count(),
       this.bookingsRepo.count({ where: { status: BookingStatus.PENDING } }),
@@ -1112,22 +1143,9 @@ export class AdminService {
       this.bookingsRepo.count({
         where: { paymentStatus: PaymentStatus.REFUNDED },
       }),
-      this.bookingsRepo.count({ where: { createdAt: MoreThan(today) } }),
-      this.bookingsRepo.count({ where: { createdAt: MoreThan(weekAgo) } }),
-      this.bookingsRepo.count({ where: { createdAt: MoreThan(monthAgo) } }),
-      this.bookingsRepo
-        .createQueryBuilder('b')
-        .select('COALESCE(SUM(b.total_price), 0)', 'totalRevenue')
-        .getRawOne<{ totalRevenue: string | null }>(),
-      this.bookingsRepo
-        .createQueryBuilder('b')
-        .select('COALESCE(SUM(b.total_price), 0)', 'confirmedRevenue')
-        .where('b.payment_status = :status', { status: PaymentStatus.PAID })
-        .getRawOne<{ confirmedRevenue: string | null }>(),
+      this.getRecentCreationCounts(this.bookingsRepo),
+      this.getBookingsRevenueSummary(),
     ]);
-
-    const totalRevenue = Number(totalRevenueRow?.totalRevenue || 0);
-    const confirmedRevenue = Number(confirmedRevenueRow?.confirmedRevenue || 0);
 
     return {
       total,
@@ -1138,14 +1156,10 @@ export class AdminService {
         refund_pending: refundPending,
         refunded,
       },
-      revenue: {
-        total: Number(totalRevenue.toFixed(2)),
-        confirmed: Number(confirmedRevenue.toFixed(2)),
-        pending: Number((totalRevenue - confirmedRevenue).toFixed(2)),
-      },
-      newToday,
-      newThisWeek,
-      newThisMonth,
+      revenue,
+      newToday: recentCounts.today,
+      newThisWeek: recentCounts.thisWeek,
+      newThisMonth: recentCounts.thisMonth,
     };
   }
 
