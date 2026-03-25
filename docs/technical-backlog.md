@@ -8,7 +8,7 @@ Auditoria local consolidada em 2026-03-25 apos a rodada de hardening, testes, CI
 
 - Swagger esta integrado e os controllers em `src/` estao anotados com `@ApiTags`.
 - O projeto ja tem lint, build, testes unitarios, testes e2e e pipeline de CI.
-- Estado validado nesta auditoria: 17 suites unitarias com 65 testes e 8 suites e2e com 34 testes.
+- Estado validado nesta auditoria: 17 suites unitarias com 65 testes e 8 suites e2e com 39 testes.
 - O principal debito remanescente esta em cobertura por modulo ainda sem suite dedicada, auditoria fina de contratos Swagger e tamanho de alguns services centrais.
 
 ## Contratos e Swagger
@@ -51,7 +51,7 @@ Levantamento por pasta em `src/`:
 Fluxos ainda sem e2e dedicado:
 
 - webhooks e cenarios de falha mais profundos de pagamento
-- localizacoes comunitarias e operacoes administrativas de moderacao mais profundas
+- operacoes administrativas de moderacao mais profundas e cenarios negativos adicionais de localizacoes comunitarias
 
 ## Prioridades de Refactor
 
@@ -69,7 +69,7 @@ Services mais extensos nesta auditoria:
 
 - Revisar respostas Swagger dos endpoints criticos para garantir exemplos e codigos HTTP coerentes com implementacao real.
 - Aprofundar cenarios de pagamento com webhook, falha, idempotencia e reprocessamento.
-- Expandir e2e de `admin` para endpoints de moderacao, verificacao e localizacoes comunitarias.
+- Expandir e2e de `admin` para cenarios negativos e combinacoes de filtros em moderacao, verificacao e localizacoes comunitarias.
 
 ### P1
 
