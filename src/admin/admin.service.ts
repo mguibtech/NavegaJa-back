@@ -332,6 +332,100 @@ export class AdminService {
     };
   }
 
+  private async getTripStatusCounts() {
+    const [scheduled, inProgress, completed, cancelled] = await Promise.all([
+      this.tripsRepo.count({ where: { status: TripStatus.SCHEDULED } }),
+      this.tripsRepo.count({ where: { status: TripStatus.IN_PROGRESS } }),
+      this.tripsRepo.count({ where: { status: TripStatus.COMPLETED } }),
+      this.tripsRepo.count({ where: { status: TripStatus.CANCELLED } }),
+    ]);
+
+    return {
+      scheduled,
+      in_progress: inProgress,
+      completed,
+      cancelled,
+    };
+  }
+
+  private async getShipmentStatusCounts() {
+    const [pending, collected, inTransit, delivered, cancelled] =
+      await Promise.all([
+        this.shipmentsRepo.count({ where: { status: ShipmentStatus.PENDING } }),
+        this.shipmentsRepo.count({
+          where: { status: ShipmentStatus.COLLECTED },
+        }),
+        this.shipmentsRepo.count({
+          where: { status: ShipmentStatus.IN_TRANSIT },
+        }),
+        this.shipmentsRepo.count({
+          where: { status: ShipmentStatus.DELIVERED },
+        }),
+        this.shipmentsRepo.count({
+          where: { status: ShipmentStatus.CANCELLED },
+        }),
+      ]);
+
+    return {
+      pending,
+      collected,
+      in_transit: inTransit,
+      delivered,
+      cancelled,
+    };
+  }
+
+  private async getBookingStatusCounts() {
+    const [pending, confirmed, checkedIn, completed, cancelled] =
+      await Promise.all([
+        this.bookingsRepo.count({ where: { status: BookingStatus.PENDING } }),
+        this.bookingsRepo.count({
+          where: { status: BookingStatus.CONFIRMED },
+        }),
+        this.bookingsRepo.count({
+          where: { status: BookingStatus.CHECKED_IN },
+        }),
+        this.bookingsRepo.count({
+          where: { status: BookingStatus.COMPLETED },
+        }),
+        this.bookingsRepo.count({
+          where: { status: BookingStatus.CANCELLED },
+        }),
+      ]);
+
+    return {
+      pending,
+      confirmed,
+      checkedIn,
+      completed,
+      cancelled,
+    };
+  }
+
+  private async getBookingPaymentStatusCounts() {
+    const [pending, paid, refundPending, refunded] = await Promise.all([
+      this.bookingsRepo.count({
+        where: { paymentStatus: PaymentStatus.PENDING },
+      }),
+      this.bookingsRepo.count({
+        where: { paymentStatus: PaymentStatus.PAID },
+      }),
+      this.bookingsRepo.count({
+        where: { paymentStatus: PaymentStatus.REFUND_PENDING },
+      }),
+      this.bookingsRepo.count({
+        where: { paymentStatus: PaymentStatus.REFUNDED },
+      }),
+    ]);
+
+    return {
+      pending,
+      paid,
+      refund_pending: refundPending,
+      refunded,
+    };
+  }
+
   private roundMetric(value: number): number {
     return Number(value.toFixed(2));
   }
@@ -799,28 +893,18 @@ export class AdminService {
 
   async getTripStats() {
     const recentCountsPromise = this.getRecentCreationCounts(this.tripsRepo);
+    const statusCountsPromise = this.getTripStatusCounts();
 
-    const [
-      total,
-      scheduled,
-      inProgress,
-      completed,
-      cancelled,
-      recentCounts,
-      totalRevenue,
-    ] = await Promise.all([
+    const [total, byStatus, recentCounts, totalRevenue] = await Promise.all([
       this.tripsRepo.count(),
-      this.tripsRepo.count({ where: { status: TripStatus.SCHEDULED } }),
-      this.tripsRepo.count({ where: { status: TripStatus.IN_PROGRESS } }),
-      this.tripsRepo.count({ where: { status: TripStatus.COMPLETED } }),
-      this.tripsRepo.count({ where: { status: TripStatus.CANCELLED } }),
+      statusCountsPromise,
       recentCountsPromise,
       this.getTripsRevenueTotal(),
     ]);
 
     return {
       total,
-      byStatus: { scheduled, in_progress: inProgress, completed, cancelled },
+      byStatus,
       todayTrips: recentCounts.today,
       thisWeekTrips: recentCounts.thisWeek,
       thisMonthTrips: recentCounts.thisMonth,
@@ -896,37 +980,16 @@ export class AdminService {
   }
 
   async getShipmentStats() {
-    const [
-      total,
-      pending,
-      collected,
-      inTransit,
-      delivered,
-      cancelled,
-      recentCounts,
-      totalRevenue,
-    ] = await Promise.all([
+    const [total, byStatus, recentCounts, totalRevenue] = await Promise.all([
       this.shipmentsRepo.count(),
-      this.shipmentsRepo.count({ where: { status: ShipmentStatus.PENDING } }),
-      this.shipmentsRepo.count({ where: { status: ShipmentStatus.COLLECTED } }),
-      this.shipmentsRepo.count({
-        where: { status: ShipmentStatus.IN_TRANSIT },
-      }),
-      this.shipmentsRepo.count({ where: { status: ShipmentStatus.DELIVERED } }),
-      this.shipmentsRepo.count({ where: { status: ShipmentStatus.CANCELLED } }),
+      this.getShipmentStatusCounts(),
       this.getRecentCreationCounts(this.shipmentsRepo),
       this.getShipmentsRevenueTotal(),
     ]);
 
     return {
       total,
-      byStatus: {
-        pending,
-        collected,
-        in_transit: inTransit,
-        delivered,
-        cancelled,
-      },
+      byStatus,
       todayShipments: recentCounts.today,
       thisWeekShipments: recentCounts.thisWeek,
       thisMonthShipments: recentCounts.thisMonth,
@@ -1303,49 +1366,19 @@ export class AdminService {
   }
 
   async getBookingsStats() {
-    const [
-      total,
-      pending,
-      confirmed,
-      checkedIn,
-      completed,
-      cancelled,
-      paymentPending,
-      paid,
-      refundPending,
-      refunded,
-      recentCounts,
-      revenue,
-    ] = await Promise.all([
-      this.bookingsRepo.count(),
-      this.bookingsRepo.count({ where: { status: BookingStatus.PENDING } }),
-      this.bookingsRepo.count({ where: { status: BookingStatus.CONFIRMED } }),
-      this.bookingsRepo.count({ where: { status: BookingStatus.CHECKED_IN } }),
-      this.bookingsRepo.count({ where: { status: BookingStatus.COMPLETED } }),
-      this.bookingsRepo.count({ where: { status: BookingStatus.CANCELLED } }),
-      this.bookingsRepo.count({
-        where: { paymentStatus: PaymentStatus.PENDING },
-      }),
-      this.bookingsRepo.count({ where: { paymentStatus: PaymentStatus.PAID } }),
-      this.bookingsRepo.count({
-        where: { paymentStatus: PaymentStatus.REFUND_PENDING },
-      }),
-      this.bookingsRepo.count({
-        where: { paymentStatus: PaymentStatus.REFUNDED },
-      }),
-      this.getRecentCreationCounts(this.bookingsRepo),
-      this.getBookingsRevenueSummary(),
-    ]);
+    const [total, byStatus, byPaymentStatus, recentCounts, revenue] =
+      await Promise.all([
+        this.bookingsRepo.count(),
+        this.getBookingStatusCounts(),
+        this.getBookingPaymentStatusCounts(),
+        this.getRecentCreationCounts(this.bookingsRepo),
+        this.getBookingsRevenueSummary(),
+      ]);
 
     return {
       total,
-      byStatus: { pending, confirmed, checkedIn, completed, cancelled },
-      byPaymentStatus: {
-        pending: paymentPending,
-        paid,
-        refund_pending: refundPending,
-        refunded,
-      },
+      byStatus,
+      byPaymentStatus,
       revenue,
       newToday: recentCounts.today,
       newThisWeek: recentCounts.thisWeek,
