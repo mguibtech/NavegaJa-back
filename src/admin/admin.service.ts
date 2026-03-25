@@ -42,6 +42,14 @@ import {
   buildRecentTripActivities,
   buildRecentUserActivities,
 } from './admin.activity.util';
+import {
+  buildAdminNotificationsPayload,
+  buildPendingVerificationsPayload,
+} from './admin.notification.util';
+import {
+  AdminNotificationsPayload,
+  PendingVerificationsPayload,
+} from './admin.notification.types';
 
 @Injectable()
 export class AdminService {
@@ -1336,7 +1344,7 @@ export class AdminService {
     );
   }
 
-  async getPendingVerifications() {
+  async getPendingVerifications(): Promise<PendingVerificationsPayload> {
     const [reviewPendingBoats, reviewPendingCaptains] = await Promise.all([
       this.boatsRepo.find({
         where: { isVerified: false, rejectionReason: IsNull() },
@@ -1347,23 +1355,10 @@ export class AdminService {
       this.documentChangeRequestsService.getPendingCaptainSummaries(50),
     ]);
 
-    return {
-      pendingBoats: reviewPendingBoats.map((b) => ({
-        id: b.id,
-        name: b.name,
-        type: b.type,
-        registrationNum: b.registrationNum,
-        documentPhotos: b.documentPhotos,
-        photos: b.photos,
-        rejectionReason: b.rejectionReason,
-        createdAt: b.createdAt,
-        owner: b.owner
-          ? { id: b.owner.id, name: b.owner.name, phone: b.owner.phone }
-          : null,
-      })),
-      pendingCaptains: reviewPendingCaptains,
-      totalPending: reviewPendingBoats.length + reviewPendingCaptains.length,
-    };
+    return buildPendingVerificationsPayload(
+      reviewPendingBoats,
+      reviewPendingCaptains,
+    );
   }
 
   // ==================== NOTIFICAÇÕES ADMIN (badge do header) ====================
@@ -1372,7 +1367,7 @@ export class AdminService {
    * Retorna os alertas pendentes de acção para o badge do header do painel admin.
    * Inclui: SOS activos, verificações pendentes (barcos + capitães), viagens novas (últimas 24h).
    */
-  async getAdminNotifications() {
+  async getAdminNotifications(): Promise<AdminNotificationsPayload> {
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const [
@@ -1402,59 +1397,12 @@ export class AdminService {
       }),
     ]);
 
-    const notificationTotalUnread =
-      notificationSosAlerts.length +
-      notificationPendingBoats.length +
-      notificationPendingCaptains.length +
-      notificationNewTrips.length;
-
-    return {
-      totalUnread: notificationTotalUnread,
-      sos: {
-        count: notificationSosAlerts.length,
-        items: notificationSosAlerts.map((a) => ({
-          id: a.id,
-          type: a.type,
-          description: a.description,
-          location: a.location,
-          userName: a.user?.name ?? 'Desconhecido',
-          createdAt: a.createdAt,
-          link: `/admin/safety/sos/${a.id}`,
-        })),
-      },
-      pendingVerifications: {
-        count:
-          notificationPendingBoats.length + notificationPendingCaptains.length,
-        boats: notificationPendingBoats.map((b) => ({
-          id: b.id,
-          name: b.name,
-          type: b.type,
-          ownerName: b.owner?.name ?? 'Desconhecido',
-          createdAt: b.createdAt,
-          link: `/admin/boats/${b.id}`,
-        })),
-        captains: notificationPendingCaptains.map((u) => ({
-          id: u.id,
-          name: u.name,
-          phone: u.phone,
-          city: u.city,
-          createdAt: u.createdAt,
-          link: `/admin/users/${u.id}`,
-        })),
-      },
-      newTrips: {
-        count: notificationNewTrips.length,
-        items: notificationNewTrips.map((t) => ({
-          id: t.id,
-          origin: t.origin,
-          destination: t.destination,
-          captainName: t.captain?.name ?? 'Desconhecido',
-          departureAt: t.departureAt,
-          createdAt: t.createdAt,
-          link: `/admin/trips/${t.id}`,
-        })),
-      },
-    };
+    return buildAdminNotificationsPayload({
+      sosAlerts: notificationSosAlerts,
+      pendingBoats: notificationPendingBoats,
+      pendingCaptains: notificationPendingCaptains,
+      newTrips: notificationNewTrips,
+    });
   }
 
   // ==================== GAMIFICATION (ADMIN) ====================
