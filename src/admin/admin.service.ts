@@ -172,6 +172,60 @@ export class AdminService {
     return booking;
   }
 
+  private async findReviewOrThrow(id: string): Promise<Review> {
+    const review = await this.reviewsRepo.findOne({ where: { id } });
+    if (!review) {
+      throw new NotFoundException('Avaliação não encontrada');
+    }
+
+    return review;
+  }
+
+  private async refreshCaptainRating(captainId: string): Promise<void> {
+    const row = await this.reviewsRepo
+      .createQueryBuilder('r')
+      .select('ROUND(AVG(r.rating)::numeric, 1)', 'avg')
+      .where('r.captain_id = :id', { id: captainId })
+      .andWhere('r.review_type = :type', {
+        type: ReviewType.PASSENGER_TO_CAPTAIN,
+      })
+      .getRawOne<{ avg: string | null }>();
+
+    await this.usersRepo.update(captainId, {
+      rating: Number(row?.avg || 5.0),
+    });
+  }
+
+  private async refreshBoatRating(boatId: string): Promise<void> {
+    const row = await this.reviewsRepo
+      .createQueryBuilder('r')
+      .select('ROUND(AVG(r.boat_rating)::numeric, 1)', 'avg')
+      .addSelect('COUNT(*)', 'total')
+      .where('r.boat_id = :id', { id: boatId })
+      .andWhere('r.boat_rating IS NOT NULL')
+      .getRawOne<{ avg: string | null; total: string | null }>();
+
+    await this.boatsRepo.update(boatId, {
+      rating: Number(row?.avg || 5.0),
+      reviewCount: parseInt(row?.total || '0', 10),
+    });
+  }
+
+  private async refreshPassengerRating(passengerId: string): Promise<void> {
+    const row = await this.reviewsRepo
+      .createQueryBuilder('r')
+      .select('ROUND(AVG(r.passenger_rating)::numeric, 1)', 'avg')
+      .where('r.passenger_id = :id', { id: passengerId })
+      .andWhere('r.review_type = :type', {
+        type: ReviewType.CAPTAIN_TO_PASSENGER,
+      })
+      .getRawOne<{ avg: string | null }>();
+
+    await this.usersRepo.update(passengerId, {
+      passengerRating: Number(row?.avg || 5.0),
+    });
+  }
+
   // ==================== USUÁRIOS ====================
 
   async createCaptain(dto: {
@@ -1180,55 +1234,21 @@ export class AdminService {
   }
 
   async deleteReview(id: string) {
-    const review = await this.reviewsRepo.findOne({ where: { id } });
-
-    if (!review) {
-      throw new NotFoundException('Avaliação não encontrada');
-    }
+    const review = await this.findReviewOrThrow(id);
 
     await this.reviewsRepo.delete(id);
 
     // Recalcular ratings após remoção
     if (review.captainId) {
-      const row = await this.reviewsRepo
-        .createQueryBuilder('r')
-        .select('ROUND(AVG(r.rating)::numeric, 1)', 'avg')
-        .where('r.captain_id = :id', { id: review.captainId })
-        .andWhere('r.review_type = :type', {
-          type: ReviewType.PASSENGER_TO_CAPTAIN,
-        })
-        .getRawOne<{ avg: string | null }>();
-      await this.usersRepo.update(review.captainId, {
-        rating: Number(row?.avg || 5.0),
-      });
+      await this.refreshCaptainRating(review.captainId);
     }
 
     if (review.boatId) {
-      const row = await this.reviewsRepo
-        .createQueryBuilder('r')
-        .select('ROUND(AVG(r.boat_rating)::numeric, 1)', 'avg')
-        .addSelect('COUNT(*)', 'total')
-        .where('r.boat_id = :id', { id: review.boatId })
-        .andWhere('r.boat_rating IS NOT NULL')
-        .getRawOne<{ avg: string | null; total: string | null }>();
-      await this.boatsRepo.update(review.boatId, {
-        rating: Number(row?.avg || 5.0),
-        reviewCount: parseInt(row?.total || '0'),
-      });
+      await this.refreshBoatRating(review.boatId);
     }
 
     if (review.passengerId) {
-      const row = await this.reviewsRepo
-        .createQueryBuilder('r')
-        .select('ROUND(AVG(r.passenger_rating)::numeric, 1)', 'avg')
-        .where('r.passenger_id = :id', { id: review.passengerId })
-        .andWhere('r.review_type = :type', {
-          type: ReviewType.CAPTAIN_TO_PASSENGER,
-        })
-        .getRawOne<{ avg: string | null }>();
-      await this.usersRepo.update(review.passengerId, {
-        passengerRating: Number(row?.avg || 5.0),
-      });
+      await this.refreshPassengerRating(review.passengerId);
     }
 
     return { message: 'Avaliação removida e ratings recalculados com sucesso' };
