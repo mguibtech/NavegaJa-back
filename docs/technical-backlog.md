@@ -8,8 +8,8 @@ Auditoria local consolidada em 2026-03-25 apos a rodada de hardening, testes, CI
 
 - Swagger esta integrado e os controllers em `src/` estao anotados com `@ApiTags`.
 - O projeto ja tem lint, build, testes unitarios, testes e2e e pipeline de CI.
-- Estado validado nesta auditoria: 32 suites unitarias/smoke com 167 testes e 8 suites e2e com 57 testes.
-- Cobertura atual (`npm run test:cov -- --runInBand`): 73.69% statements, 52.17% branches, 70.99% functions e 74.28% lines.
+- Estado validado nesta auditoria: 36 suites unitarias/smoke com 193 testes e 8 suites e2e com 57 testes.
+- Cobertura atual (`npm run test:cov -- --runInBand`): 79.73% statements, 56.60% branches, 77.29% functions e 80.44% lines.
 - O principal debito remanescente esta em cobertura por modulo ainda sem suite dedicada, auditoria fina de contratos Swagger e tamanho de alguns services centrais.
 
 ## Contratos e Swagger
@@ -24,8 +24,6 @@ Levantamento por pasta em `src/`:
 
 - `boat-staff`
 - `config`
-- `notifications`
-- `pdf`
 - `reviews`
 
 ## Cobertura E2E Atual
@@ -71,7 +69,7 @@ Services mais extensos nesta auditoria:
 ### P2
 
 - Adicionar metricas operacionais basicas para filas/cron, webhook de pagamento e notificacoes.
-- Padronizar testes para os modulos que ainda nao possuem suite dedicada: `boat-staff`, `notifications`, `reviews`, `pdf` e componentes de `config`.
+- Padronizar testes para os modulos que ainda nao possuem suite dedicada: `boat-staff`, `reviews` e componentes de `config`.
 - Revisar documentacao tecnica em `docs/` para ligar arquitetura, backlog e padroes operacionais.
 
 ## Conclusao
