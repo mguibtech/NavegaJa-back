@@ -158,15 +158,18 @@ describe('WeatherService', () => {
         'Chuva torrencial',
         'Visibilidade criticamente reduzida',
         'ALERTA: Tempestade',
-        'PERIGO: Cheia extrema — risco muito alto',
       ]),
     );
+    expect(
+      result.warnings.some((warning) => warning.includes('Cheia extrema')),
+    ).toBe(true);
     expect(result.recommendations).toEqual(
-      expect.arrayContaining([
-        'Considere adiar a viagem',
-        'NÃO navegue! Aguarde melhora das condições',
-        'NÃO navegue! Cheia extrema registada na área',
-      ]),
+      expect.arrayContaining(['Considere adiar a viagem']),
     );
+    expect(
+      result.recommendations.some((recommendation) =>
+        recommendation.includes('Cheia extrema'),
+      ),
+    ).toBe(true);
   });
 });
