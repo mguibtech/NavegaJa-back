@@ -469,6 +469,76 @@ export class ShipmentsService {
       : [ShipmentStatus.PAID];
   }
 
+  private async findShipmentByIdOrThrow(
+    id: string,
+    relations: string[] = [],
+  ): Promise<Shipment> {
+    const shipment = await this.shipmentsRepo.findOne({
+      where: { id },
+      relations,
+    });
+    if (!shipment) {
+      throw new NotFoundException('Encomenda nÃ£o encontrada');
+    }
+
+    return shipment;
+  }
+
+  private async findShipmentByTrackingCodeOrThrow(
+    trackingCode: string,
+    relations: string[] = [],
+  ): Promise<Shipment> {
+    const shipment = await this.shipmentsRepo.findOne({
+      where: { trackingCode },
+      relations,
+    });
+    if (!shipment) {
+      throw new NotFoundException('Encomenda nÃ£o encontrada');
+    }
+
+    return shipment;
+  }
+
+  private async saveShipmentStatus(
+    shipment: Shipment,
+    status: ShipmentStatus,
+    updates: Partial<Shipment> = {},
+  ): Promise<Shipment> {
+    Object.assign(shipment, updates, { status });
+    return this.shipmentsRepo.save(shipment);
+  }
+
+  private getChargedWeight(shipment: Shipment): number {
+    if (shipment.length && shipment.width && shipment.height) {
+      return Math.max(
+        shipment.weight,
+        this.calculateVolumetricWeight(
+          shipment.length,
+          shipment.width,
+          shipment.height,
+        ),
+      );
+    }
+
+    return shipment.weight;
+  }
+
+  private async restoreTripCargoCapacityIfTracked(
+    shipment: Shipment & { trip?: Trip | null },
+  ): Promise<void> {
+    if (
+      shipment.trip?.availableCargoKg === null ||
+      shipment.trip?.availableCargoKg === undefined
+    ) {
+      return;
+    }
+
+    await this.tripsRepo.update(shipment.trip.id, {
+      availableCargoKg:
+        shipment.trip.availableCargoKg + this.getChargedWeight(shipment),
+    });
+  }
+
   async findBySender(senderId: string): Promise<Shipment[]> {
     return this.shipmentsRepo.find({
       where: { senderId },
@@ -478,11 +548,13 @@ export class ShipmentsService {
   }
 
   async findById(id: string, userId?: string): Promise<Shipment> {
-    const shipment = await this.shipmentsRepo.findOne({
-      where: { id },
-      relations: ['trip', 'trip.route', 'trip.captain', 'trip.boat', 'sender'],
-    });
-    if (!shipment) throw new NotFoundException('Encomenda não encontrada');
+    const shipment = await this.findShipmentByIdOrThrow(id, [
+      'trip',
+      'trip.route',
+      'trip.captain',
+      'trip.boat',
+      'sender',
+    ]);
 
     // Verificação de segurança: só o remetente ou capitão da viagem podem ver
     if (
@@ -499,12 +571,12 @@ export class ShipmentsService {
   }
 
   async findByTrackingCode(code: string): Promise<Shipment> {
-    const shipment = await this.shipmentsRepo.findOne({
-      where: { trackingCode: code },
-      relations: ['trip', 'trip.route', 'trip.captain', 'trip.boat'],
-    });
-    if (!shipment) throw new NotFoundException('Encomenda não encontrada');
-    return shipment;
+    return this.findShipmentByTrackingCodeOrThrow(code, [
+      'trip',
+      'trip.route',
+      'trip.captain',
+      'trip.boat',
+    ]);
   }
 
   async getTimeline(shipmentId: string): Promise<ShipmentTimeline[]> {
@@ -519,11 +591,8 @@ export class ShipmentsService {
     status: ShipmentStatus,
     userId?: string,
   ): Promise<Shipment> {
-    const shipment = await this.shipmentsRepo.findOne({ where: { id } });
-    if (!shipment) throw new NotFoundException('Encomenda não encontrada');
-
-    shipment.status = status;
-    const saved = await this.shipmentsRepo.save(shipment);
+    const shipment = await this.findShipmentByIdOrThrow(id);
+    const saved = await this.saveShipmentStatus(shipment, status);
 
     // Registra evento na timeline
     const descriptions = {
@@ -552,16 +621,18 @@ export class ShipmentsService {
    * @deprecated Usar validateDelivery() ao invés - mantido para compatibilidade
    */
   async deliver(id: string, deliveryPhotoUrl?: string): Promise<Shipment> {
-    const shipment = await this.shipmentsRepo.findOne({
-      where: { id },
-      relations: ['trip', 'trip.boat'],
-    });
-    if (!shipment) throw new NotFoundException('Encomenda não encontrada');
-
-    shipment.status = ShipmentStatus.DELIVERED;
-    shipment.deliveredAt = new Date();
-    if (deliveryPhotoUrl) shipment.deliveryPhotoUrl = deliveryPhotoUrl;
-    const saved = await this.shipmentsRepo.save(shipment);
+    const shipment = await this.findShipmentByIdOrThrow(id, [
+      'trip',
+      'trip.boat',
+    ]);
+    const saved = await this.saveShipmentStatus(
+      shipment,
+      ShipmentStatus.DELIVERED,
+      {
+        deliveredAt: new Date(),
+        ...(deliveryPhotoUrl ? { deliveryPhotoUrl } : {}),
+      },
+    );
 
     await this.createTimelineEvent(
       id,
@@ -587,8 +658,7 @@ export class ShipmentsService {
    * Confirmar pagamento (remetente ou admin)
    */
   async confirmPayment(id: string, userId: string): Promise<Shipment> {
-    const shipment = await this.shipmentsRepo.findOne({ where: { id } });
-    if (!shipment) throw new NotFoundException('Encomenda não encontrada');
+    const shipment = await this.findShipmentByIdOrThrow(id);
 
     // Só o remetente pode confirmar o pagamento
     if (shipment.senderId !== userId) {
@@ -615,8 +685,7 @@ export class ShipmentsService {
       );
     }
 
-    shipment.status = ShipmentStatus.PAID;
-    const saved = await this.shipmentsRepo.save(shipment);
+    const saved = await this.saveShipmentStatus(shipment, ShipmentStatus.PAID);
 
     await this.createTimelineEvent(
       id,
@@ -635,18 +704,14 @@ export class ShipmentsService {
     trackingCode: string,
     gatewayRef?: string,
   ): Promise<Shipment> {
-    const shipment = await this.shipmentsRepo.findOne({
-      where: { trackingCode },
-    });
-    if (!shipment) throw new NotFoundException('Encomenda não encontrada');
+    const shipment = await this.findShipmentByTrackingCodeOrThrow(trackingCode);
 
     if (shipment.status !== ShipmentStatus.PENDING) {
       // Idempotente: se já foi pago, retorna sem erro
       return shipment;
     }
 
-    shipment.status = ShipmentStatus.PAID;
-    const saved = await this.shipmentsRepo.save(shipment);
+    const saved = await this.saveShipmentStatus(shipment, ShipmentStatus.PAID);
 
     const description = gatewayRef
       ? `Pagamento confirmado pelo gateway (ref: ${gatewayRef}).`
@@ -674,19 +739,18 @@ export class ShipmentsService {
   ): Promise<Shipment> {
     await this.ensureVerifiedCaptain(captainId);
 
-    const shipment = await this.shipmentsRepo.findOne({
-      where: { id },
-      relations: ['trip'],
-    });
-    if (!shipment) throw new NotFoundException('Encomenda não encontrada');
+    const shipment = await this.findShipmentByIdOrThrow(id, ['trip']);
 
     this.assertCaptainCanCollectShipment(shipment, captainId, validationCode);
 
-    shipment.status = ShipmentStatus.COLLECTED;
-    shipment.collectedAt = new Date();
-    if (collectionPhotoUrl) shipment.collectionPhotoUrl = collectionPhotoUrl;
-
-    const saved = await this.shipmentsRepo.save(shipment);
+    const saved = await this.saveShipmentStatus(
+      shipment,
+      ShipmentStatus.COLLECTED,
+      {
+        collectedAt: new Date(),
+        ...(collectionPhotoUrl ? { collectionPhotoUrl } : {}),
+      },
+    );
 
     await this.createTimelineEvent(
       id,
@@ -710,11 +774,7 @@ export class ShipmentsService {
    * Marcar como saiu para entrega
    */
   async outForDelivery(id: string, captainId: string): Promise<Shipment> {
-    const shipment = await this.shipmentsRepo.findOne({
-      where: { id },
-      relations: ['trip'],
-    });
-    if (!shipment) throw new NotFoundException('Encomenda não encontrada');
+    const shipment = await this.findShipmentByIdOrThrow(id, ['trip']);
 
     if (shipment.trip.captainId !== captainId) {
       throw new BadRequestException('Você não é o capitão desta viagem');
@@ -726,8 +786,10 @@ export class ShipmentsService {
       );
     }
 
-    shipment.status = ShipmentStatus.OUT_FOR_DELIVERY;
-    const saved = await this.shipmentsRepo.save(shipment);
+    const saved = await this.saveShipmentStatus(
+      shipment,
+      ShipmentStatus.OUT_FOR_DELIVERY,
+    );
 
     await this.createTimelineEvent(
       id,
@@ -785,11 +847,10 @@ export class ShipmentsService {
     message: string;
     navegaCoinsEarned: number;
   }> {
-    const shipment = await this.shipmentsRepo.findOne({
-      where: { trackingCode },
-      relations: ['trip', 'trip.boat'],
-    });
-    if (!shipment) throw new NotFoundException('Encomenda não encontrada');
+    const shipment = await this.findShipmentByTrackingCodeOrThrow(
+      trackingCode,
+      ['trip', 'trip.boat'],
+    );
 
     // Validar status (pode estar ARRIVED ou OUT_FOR_DELIVERY)
     if (
@@ -807,11 +868,14 @@ export class ShipmentsService {
       throw new BadRequestException('Código de validação inválido');
     }
 
-    shipment.status = ShipmentStatus.DELIVERED;
-    shipment.deliveredAt = new Date();
-    if (deliveryPhotoUrl) shipment.deliveryPhotoUrl = deliveryPhotoUrl;
-
-    const saved = await this.shipmentsRepo.save(shipment);
+    const saved = await this.saveShipmentStatus(
+      shipment,
+      ShipmentStatus.DELIVERED,
+      {
+        deliveredAt: new Date(),
+        ...(deliveryPhotoUrl ? { deliveryPhotoUrl } : {}),
+      },
+    );
 
     await this.createTimelineEvent(
       shipment.id,
@@ -882,8 +946,7 @@ export class ShipmentsService {
         continue;
       }
 
-      shipment.status = newStatus;
-      await this.shipmentsRepo.save(shipment);
+      await this.saveShipmentStatus(shipment, newStatus);
 
       const descriptions: Record<ShipmentStatus, string> = {
         [ShipmentStatus.PENDING]: 'Status atualizado automaticamente',
@@ -944,11 +1007,7 @@ export class ShipmentsService {
     senderId: string,
     reason?: string,
   ): Promise<Shipment> {
-    const shipment = await this.shipmentsRepo.findOne({
-      where: { id },
-      relations: ['trip'],
-    });
-    if (!shipment) throw new NotFoundException('Encomenda não encontrada');
+    const shipment = await this.findShipmentByIdOrThrow(id, ['trip']);
 
     if (shipment.senderId !== senderId) {
       throw new BadRequestException(
@@ -973,29 +1032,12 @@ export class ShipmentsService {
       );
     }
 
-    shipment.status = ShipmentStatus.CANCELLED;
-    const saved = await this.shipmentsRepo.save(shipment);
+    const saved = await this.saveShipmentStatus(
+      shipment,
+      ShipmentStatus.CANCELLED,
+    );
 
-    // Devolver carga disponível na viagem (se trip tiver cargo tracking)
-    if (
-      shipment.trip?.availableCargoKg !== null &&
-      shipment.trip?.availableCargoKg !== undefined
-    ) {
-      // Recalcular peso cobrado
-      let volumetricWeight = 0;
-      if (shipment.length && shipment.width && shipment.height) {
-        volumetricWeight = this.calculateVolumetricWeight(
-          shipment.length,
-          shipment.width,
-          shipment.height,
-        );
-      }
-      const chargedWeight = Math.max(shipment.weight, volumetricWeight);
-
-      await this.tripsRepo.update(shipment.trip.id, {
-        availableCargoKg: shipment.trip.availableCargoKg + chargedWeight,
-      });
-    }
+    await this.restoreTripCargoCapacityIfTracked(shipment);
 
     // Registra evento
     const description = reason
