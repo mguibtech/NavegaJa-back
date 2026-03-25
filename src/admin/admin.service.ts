@@ -28,22 +28,20 @@ import {
   BookingStatus,
   PaymentStatus,
 } from '../bookings/booking.entity';
-import { Coupon, CouponType } from '../coupons/coupon.entity';
+import { Coupon } from '../coupons/coupon.entity';
 import { Review, ReviewType } from '../reviews/review.entity';
 import { Boat } from '../boats/boat.entity';
 import { DocumentChangeRequestsService } from '../document-change-requests/document-change-requests.service';
-
-export interface AdminActivity {
-  type: string;
-  category: string;
-  description: string;
-  user: string;
-  details: Record<string, unknown>;
-  icon: string;
-  color: string;
-  link: string;
-  timestamp: Date | string;
-}
+import { AdminActivity } from './admin.activity.types';
+import {
+  buildRecentBookingActivities,
+  buildRecentChecklistActivities,
+  buildRecentCouponActivities,
+  buildRecentShipmentActivities,
+  buildRecentSosActivities,
+  buildRecentTripActivities,
+  buildRecentUserActivities,
+} from './admin.activity.util';
 
 @Injectable()
 export class AdminService {
@@ -842,185 +840,15 @@ export class AdminService {
       }),
     ]);
 
-    const activities: AdminActivity[] = [];
-
-    // ==================== VIAGENS ====================
-    recentTrips.forEach((trip) => {
-      const statusInfo = this.getTripStatusInfo(trip.status);
-      activities.push({
-        type: `trip_${trip.status}`,
-        category: 'trip',
-        description: statusInfo.description(trip),
-        user: trip.captain?.name || 'Capitão',
-        details: {
-          tripId: trip.id,
-          route: `${trip.origin} → ${trip.destination}`,
-          departureAt: trip.departureAt,
-          price: Number(trip.price),
-          totalSeats: trip.totalSeats,
-          boat: trip.boat?.name,
-          status: trip.status,
-        },
-        icon: statusInfo.icon,
-        color: statusInfo.color,
-        link: `/admin/trips/${trip.id}`,
-        timestamp: trip.createdAt,
-      });
-    });
-
-    // ==================== ENCOMENDAS ====================
-    recentShipments.forEach((shipment) => {
-      const statusInfo = this.getShipmentStatusInfo(shipment.status);
-      activities.push({
-        type: `shipment_${shipment.status}`,
-        category: 'shipment',
-        description: statusInfo.description(shipment),
-        user: shipment.sender?.name || 'Remetente',
-        details: {
-          shipmentId: shipment.id,
-          trackingCode: shipment.trackingCode,
-          route: shipment.trip
-            ? `${shipment.trip.origin} → ${shipment.trip.destination}`
-            : 'Rota não disponível',
-          weight: Number(shipment.weight),
-          price: Number(shipment.totalPrice),
-          status: shipment.status,
-        },
-        icon: statusInfo.icon,
-        color: statusInfo.color,
-        link: `/admin/shipments/${shipment.id}`,
-        timestamp: shipment.createdAt,
-      });
-    });
-
-    // ==================== USUÁRIOS ====================
-    recentUsers.forEach((user) => {
-      const roleInfo = this.getUserRoleInfo(user.role);
-      activities.push({
-        type: 'user_registered',
-        category: 'user',
-        description: `Novo ${roleInfo.label}: ${user.name}`,
-        user: user.name,
-        details: {
-          userId: user.id,
-          email: user.email,
-          phone: user.phone,
-          role: user.role,
-        },
-        icon: roleInfo.icon,
-        color: roleInfo.color,
-        link: `/admin/users/${user.id}`,
-        timestamp: user.createdAt,
-      });
-    });
-
-    // ==================== RESERVAS ====================
-    recentBookings.forEach((booking) => {
-      const statusInfo = this.getBookingStatusInfo(booking.status);
-      const paymentInfo =
-        booking.paymentStatus === PaymentStatus.PAID
-          ? ' (Pago)'
-          : booking.paymentStatus === PaymentStatus.REFUND_PENDING
-            ? ' (Reembolso pendente)'
-            : '';
-      activities.push({
-        type: `booking_${booking.status}`,
-        category: 'booking',
-        description: `${statusInfo.action}: ${booking.trip?.origin || '?'} → ${booking.trip?.destination || '?'}${paymentInfo}`,
-        user: booking.passenger?.name || 'Passageiro',
-        details: {
-          bookingId: booking.id,
-          route: booking.trip
-            ? `${booking.trip.origin} → ${booking.trip.destination}`
-            : 'Rota não disponível',
-          seats: booking.seats,
-          totalPrice: Number(booking.totalPrice),
-          status: booking.status,
-          paymentStatus: booking.paymentStatus,
-          paymentMethod: booking.paymentMethod,
-        },
-        icon: statusInfo.icon,
-        color: statusInfo.color,
-        link: `/admin/bookings/${booking.id}`,
-        timestamp: booking.createdAt,
-      });
-    });
-
-    // ==================== CUPONS ====================
-    recentCoupons.forEach((coupon) => {
-      const typeLabel =
-        coupon.type === CouponType.PERCENTAGE
-          ? `${Number(coupon.value)}% OFF`
-          : `R$ ${Number(coupon.value)} OFF`;
-      activities.push({
-        type: 'coupon_created',
-        category: 'coupon',
-        description: `Cupom criado: ${coupon.code}`,
-        user: 'Admin',
-        details: {
-          couponId: coupon.id,
-          code: coupon.code,
-          type: coupon.type,
-          value: Number(coupon.value),
-          typeLabel,
-          applicableTo: coupon.applicableTo,
-          usageLimit: coupon.usageLimit,
-          usageCount: coupon.usageCount,
-          validUntil: coupon.validUntil,
-        },
-        icon: '🎟️',
-        color: 'purple',
-        link: `/admin/coupons/${coupon.id}`,
-        timestamp: coupon.createdAt,
-      });
-    });
-
-    // ==================== ALERTAS SOS ====================
-    recentSosAlerts.forEach((sos) => {
-      const isActive = sos.status === SosAlertStatus.ACTIVE;
-      activities.push({
-        type: `sos_${sos.status}`,
-        category: 'sos',
-        description: isActive
-          ? `🆘 Alerta SOS acionado`
-          : `✅ Alerta SOS resolvido`,
-        user: sos.user?.name || 'Usuário',
-        details: {
-          sosId: sos.id,
-          latitude: sos.latitude,
-          longitude: sos.longitude,
-          status: sos.status,
-          description: sos.description,
-          resolvedAt: sos.resolvedAt,
-        },
-        icon: isActive ? '🆘' : '✅',
-        color: isActive ? 'red' : 'green',
-        link: `/admin/safety/sos/${sos.id}`,
-        timestamp: sos.createdAt,
-      });
-    });
-
-    // ==================== CHECKLISTS COMPLETADOS ====================
-    recentChecklists.forEach((checklist) => {
-      activities.push({
-        type: 'checklist_completed',
-        category: 'safety',
-        description: `✅ Checklist de segurança completado`,
-        user: checklist.captain?.name || 'Capitão',
-        details: {
-          checklistId: checklist.id,
-          tripId: checklist.tripId,
-          route: checklist.trip
-            ? `${checklist.trip.origin} → ${checklist.trip.destination}`
-            : 'Rota não disponível',
-          completedAt: checklist.completedAt,
-        },
-        icon: '✅',
-        color: 'green',
-        link: `/admin/safety/checklists/${checklist.id}`,
-        timestamp: checklist.completedAt || checklist.createdAt,
-      });
-    });
+    const activities: AdminActivity[] = [
+      ...buildRecentTripActivities(recentTrips),
+      ...buildRecentShipmentActivities(recentShipments),
+      ...buildRecentUserActivities(recentUsers),
+      ...buildRecentBookingActivities(recentBookings),
+      ...buildRecentCouponActivities(recentCoupons),
+      ...buildRecentSosActivities(recentSosAlerts),
+      ...buildRecentChecklistActivities(recentChecklists),
+    ];
 
     // Ordenar por timestamp e limitar
     return activities
@@ -1029,149 +857,6 @@ export class AdminService {
           new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
       )
       .slice(0, limit);
-  }
-
-  // Helper methods para informações de status
-  private getTripStatusInfo(status: TripStatus) {
-    const statusMap: Record<
-      TripStatus,
-      { description: (trip: Trip) => string; icon: string; color: string }
-    > = {
-      [TripStatus.SCHEDULED]: {
-        description: (trip: Trip) =>
-          `Nova viagem: ${trip.origin} → ${trip.destination}`,
-        icon: '🚤',
-        color: 'blue',
-      },
-      [TripStatus.IN_PROGRESS]: {
-        description: (trip: Trip) =>
-          `Viagem iniciada: ${trip.origin} → ${trip.destination}`,
-        icon: '⛵',
-        color: 'orange',
-      },
-      [TripStatus.COMPLETED]: {
-        description: (trip: Trip) =>
-          `Viagem concluída: ${trip.origin} → ${trip.destination}`,
-        icon: '🏁',
-        color: 'green',
-      },
-      [TripStatus.CANCELLED]: {
-        description: (trip: Trip) =>
-          `Viagem cancelada: ${trip.origin} → ${trip.destination}`,
-        icon: '❌',
-        color: 'red',
-      },
-    };
-    return statusMap[status] || statusMap[TripStatus.SCHEDULED];
-  }
-
-  private getShipmentStatusInfo(status: ShipmentStatus) {
-    const statusMap: Record<
-      ShipmentStatus,
-      {
-        description: (shipment: Shipment) => string;
-        icon: string;
-        color: string;
-      }
-    > = {
-      [ShipmentStatus.PENDING]: {
-        description: (shipment: Shipment) =>
-          `Nova encomenda: ${shipment.trackingCode}`,
-        icon: '📦',
-        color: 'blue',
-      },
-      [ShipmentStatus.PAID]: {
-        description: (shipment: Shipment) =>
-          `Encomenda paga: ${shipment.trackingCode}`,
-        icon: '💰',
-        color: 'green',
-      },
-      [ShipmentStatus.COLLECTED]: {
-        description: (shipment: Shipment) =>
-          `Encomenda coletada: ${shipment.trackingCode}`,
-        icon: '📮',
-        color: 'orange',
-      },
-      [ShipmentStatus.IN_TRANSIT]: {
-        description: (shipment: Shipment) =>
-          `Encomenda em trânsito: ${shipment.trackingCode}`,
-        icon: '🚢',
-        color: 'blue',
-      },
-      [ShipmentStatus.ARRIVED]: {
-        description: (shipment: Shipment) =>
-          `Encomenda chegou: ${shipment.trackingCode}`,
-        icon: '🎯',
-        color: 'blue',
-      },
-      [ShipmentStatus.OUT_FOR_DELIVERY]: {
-        description: (shipment: Shipment) =>
-          `Saiu para entrega: ${shipment.trackingCode}`,
-        icon: '🚚',
-        color: 'orange',
-      },
-      [ShipmentStatus.DELIVERED]: {
-        description: (shipment: Shipment) =>
-          `Encomenda entregue: ${shipment.trackingCode}`,
-        icon: '✅',
-        color: 'green',
-      },
-      [ShipmentStatus.CANCELLED]: {
-        description: (shipment: Shipment) =>
-          `Encomenda cancelada: ${shipment.trackingCode}`,
-        icon: '❌',
-        color: 'red',
-      },
-    };
-    return statusMap[status] || statusMap[ShipmentStatus.PENDING];
-  }
-
-  private getBookingStatusInfo(status: BookingStatus) {
-    const statusMap = {
-      [BookingStatus.PENDING]: {
-        action: 'Nova reserva',
-        icon: '🎫',
-        color: 'blue',
-      },
-      [BookingStatus.CONFIRMED]: {
-        action: 'Reserva confirmada',
-        icon: '✅',
-        color: 'green',
-      },
-      [BookingStatus.CHECKED_IN]: {
-        action: 'Check-in realizado',
-        icon: '🎟️',
-        color: 'purple',
-      },
-      [BookingStatus.COMPLETED]: {
-        action: 'Viagem concluída',
-        icon: '🏁',
-        color: 'green',
-      },
-      [BookingStatus.CANCELLED]: {
-        action: 'Reserva cancelada',
-        icon: '❌',
-        color: 'red',
-      },
-    };
-    return statusMap[status] || statusMap[BookingStatus.PENDING];
-  }
-
-  private getUserRoleInfo(role: UserRole) {
-    const roleMap: Record<
-      UserRole,
-      { label: string; icon: string; color: string }
-    > = {
-      [UserRole.PASSENGER]: { label: 'passageiro', icon: '👤', color: 'gray' },
-      [UserRole.CAPTAIN]: { label: 'capitão', icon: '⚓', color: 'blue' },
-      [UserRole.ADMIN]: { label: 'administrador', icon: '👑', color: 'purple' },
-      [UserRole.BOAT_MANAGER]: {
-        label: 'gestor de barco',
-        icon: '🚢',
-        color: 'teal',
-      },
-    };
-    return roleMap[role] || roleMap[UserRole.PASSENGER];
   }
 
   // ==================== SEGURANÇA ====================

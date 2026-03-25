@@ -21,7 +21,8 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
-import { AdminService, type AdminActivity } from './admin.service';
+import { AdminService } from './admin.service';
+import { type AdminActivity } from './admin.activity.types';
 import { LocationsService } from '../locations/locations.service';
 import { CommunityLocationStatus } from '../locations/community-location.entity';
 import { UserRole } from '../users/user.entity';
