@@ -16,6 +16,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiQuery,
+  ApiResponse,
 } from '@nestjs/swagger';
 import { BoatStaffService } from './boat-staff.service';
 import {
@@ -40,6 +41,10 @@ export class CaptainBoatStaffController {
       'O capitão adiciona um utilizador existente como gestor de um dos seus barcos. ' +
       'Se o utilizador tiver role passageiro, é elevado automaticamente para boat_manager.',
   })
+  @ApiResponse({
+    status: 201,
+    description: 'Gestor associado a um barco do capitÃ£o',
+  })
   assign(
     @Request() req: AuthenticatedRequest,
     @Body() dto: CaptainAssignManagerDto,
@@ -58,6 +63,10 @@ export class CaptainBoatStaffController {
     description: 'Telefone do utilizador',
   })
   @ApiQuery({ name: 'cpf', required: false, description: 'CPF do utilizador' })
+  @ApiResponse({
+    status: 200,
+    description: 'PrÃ©-visualizaÃ§Ã£o do utilizador encontrado',
+  })
   lookup(@Query('phone') phone?: string, @Query('cpf') cpf?: string) {
     return this.boatStaffService.lookupUser({ phone, cpf });
   }
@@ -71,6 +80,10 @@ export class CaptainBoatStaffController {
       'Captain: devolve todos os gestores dos seus barcos. ' +
       'Boat_manager: devolve os registos BoatStaff onde userId = currentUser (barcos que gere).',
   })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de gestores ou atribuiÃ§Ãµes do utilizador autenticado',
+  })
   getMyStaff(@Request() req: AuthenticatedRequest) {
     return this.boatStaffService.getMyStaff(req.user.sub, req.user.role);
   }
@@ -78,6 +91,10 @@ export class CaptainBoatStaffController {
   @Patch(':id')
   @ApiOperation({ summary: 'Actualizar permissões de um gestor' })
   @ApiParam({ name: 'id', description: 'UUID do registo BoatStaff' })
+  @ApiResponse({
+    status: 200,
+    description: 'PermissÃµes do gestor actualizadas pelo capitÃ£o',
+  })
   update(
     @Param('id') id: string,
     @Request() req: AuthenticatedRequest,
@@ -89,6 +106,15 @@ export class CaptainBoatStaffController {
   @Delete(':id')
   @ApiOperation({ summary: 'Remover gestor do barco' })
   @ApiParam({ name: 'id', description: 'UUID do registo BoatStaff' })
+  @ApiResponse({
+    status: 200,
+    description: 'Gestor removido do barco do capitÃ£o',
+    schema: {
+      example: {
+        message: 'Gestor removido com sucesso',
+      },
+    },
+  })
   remove(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     return this.boatStaffService.captainRemoveStaff(id, req.user.sub);
   }
