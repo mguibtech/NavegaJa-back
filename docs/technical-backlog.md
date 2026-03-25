@@ -75,7 +75,7 @@ Services mais extensos nesta auditoria:
 
 - Quebrar `AdminService` por dominios internos: usuarios, viagens, reservas, encomendas e moderacao.
 - Continuar a extracao em `TripsService`, separando validacao de criacao, operacao do capitao, busca publica e atualizacao de status.
-- Continuar a reduzir `BookingsService` e o restante do `ShipmentsService` agora que lookups, persistencia de status e reconciliacao de carga ja comecaram a ser centralizados.
+- Continuar a reduzir o restante de `BookingsService` e `ShipmentsService` agora que lookups, persistencia de status, reconciliacao de carga, recompensas de conclusao e ajuste de assentos ja comecaram a ser centralizados.
 
 ### P2
 
