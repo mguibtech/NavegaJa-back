@@ -205,101 +205,68 @@ export class TripsService {
     }
   }
 
-  async create(
-    userId: string,
-    dto: CreateTripDto,
+  private async findBoatForTripCreation(
+    captainId: string,
+    boatId: string,
     role?: string,
-  ): Promise<TripResponse> {
-    // Alias para compatibilidade interna (trip.captainId = quem criou)
-    const captainId = userId;
-    const departureAt = new Date(dto.departureTime);
-    const estimatedArrivalAt = new Date(dto.arrivalTime);
-    await this.ensureVerifiedCaptainForTripCreation(captainId, role);
-    this.validateTripRouteAndSchedule(dto, departureAt, estimatedArrivalAt);
-
-    // ========== VALIDAÇÕES CRÍTICAS ==========
-
-    // 0. Capitão deve ter documentação verificada pelo admin (boat_manager isento — não é capitão)
-    if (role !== 'boat_manager') {
-      const captain = await this.usersRepo.findOne({
-        where: { id: captainId },
-        select: ['id', 'isVerified'],
-      });
-      if (!captain?.isVerified) {
-        throw new ForbiddenException(
-          'Conta não verificada. Envie sua habilitação náutica e aguarde a aprovação do NavegaJá.',
-        );
-      }
-    }
-
-    // 1. Origem e destino não podem ser iguais
-    if (
-      dto.origin.trim().toLowerCase() === dto.destination.trim().toLowerCase()
-    ) {
-      throw new BadRequestException('Origem e destino não podem ser iguais.');
-    }
-
-    // 2. Validar datas
-    const now = new Date();
-    if (departureAt < now) {
-      throw new BadRequestException(
-        'Data de partida deve ser futura. Não é possível criar viagens no passado.',
-      );
-    }
-
-    if (estimatedArrivalAt <= departureAt) {
-      throw new BadRequestException(
-        'Data de chegada deve ser posterior à data de partida.',
-      );
-    }
-
-    // 2. Validar embarcação (deve existir e o utilizador ter acesso)
-    let boat: Boat;
+  ): Promise<Boat> {
     if (role === 'boat_manager') {
-      const foundBoat = await this.boatsRepo.findOne({
-        where: { id: dto.boatId },
+      const boat = await this.boatsRepo.findOne({
+        where: { id: boatId },
       });
-      if (!foundBoat) throw new NotFoundException('Embarcação não encontrada');
+      if (!boat) {
+        throw new NotFoundException('Embarcação não encontrada');
+      }
+
       const staff = await this.boatStaffService.canManageBoat(
         captainId,
-        dto.boatId,
+        boatId,
       );
       if (!staff?.canCreateTrips) {
         throw new ForbiddenException(
           'Sem permissão para criar viagens nesta embarcação',
         );
       }
-      boat = foundBoat;
-    } else {
-      const foundBoat = await this.boatsRepo.findOne({
-        where: { id: dto.boatId, ownerId: captainId },
-      });
-      if (!foundBoat) {
-        throw new NotFoundException(
-          'Embarcação não encontrada ou você não é o proprietário desta embarcação.',
-        );
-      }
-      boat = foundBoat;
+
+      return boat;
     }
 
-    // 2a. Embarcação deve estar aprovada pelo admin
+    const boat = await this.boatsRepo.findOne({
+      where: { id: boatId, ownerId: captainId },
+    });
+    if (!boat) {
+      throw new NotFoundException(
+        'Embarcação não encontrada ou você não é o proprietário desta embarcação.',
+      );
+    }
+
+    return boat;
+  }
+
+  private ensureVerifiedBoatForTripCreation(boat: Boat): void {
     if (!boat.isVerified) {
       throw new ForbiddenException(
         'Embarcação ainda não aprovada pelo NavegaJá. Aguarde a verificação dos documentos.',
       );
     }
+  }
 
-    // 3. Validar capacidade (totalSeats não pode exceder capacidade da embarcação)
+  private ensureTripCapacityWithinBoat(dto: CreateTripDto, boat: Boat): void {
     if (dto.totalSeats > boat.capacity) {
       throw new BadRequestException(
         `Total de assentos (${dto.totalSeats}) excede a capacidade da embarcação (${boat.capacity} assentos).`,
       );
     }
+  }
 
-    // 4. Verificar conflitos de horário (embarcação não pode estar em duas viagens ao mesmo tempo)
+  private async ensureNoTripConflictForBoat(
+    boatId: string,
+    departureAt: Date,
+    estimatedArrivalAt: Date,
+  ): Promise<void> {
     const conflictingTrips = await this.tripsRepo
       .createQueryBuilder('trip')
-      .where('trip.boat_id = :boatId', { boatId: dto.boatId })
+      .where('trip.boat_id = :boatId', { boatId })
       .andWhere('trip.status IN (:...statuses)', {
         statuses: [...TripsService.BLOCKING_CONFLICT_STATUSES],
       })
@@ -319,8 +286,9 @@ export class TripsService {
           'Verifique o calendário de viagens e escolha outro horário.',
       );
     }
+  }
 
-    // 5. Validar preços (devem ser positivos)
+  private validateTripPricing(dto: CreateTripDto): void {
     if (dto.price <= 0) {
       throw new BadRequestException('Preço deve ser maior que zero.');
     }
@@ -328,10 +296,9 @@ export class TripsService {
     if (dto.cargoPriceKg !== undefined && dto.cargoPriceKg < 0) {
       throw new BadRequestException('Preço de carga não pode ser negativo.');
     }
+  }
 
-    // 6. Verificar risco de cheia EXTREME (bloqueia criação da viagem)
-    const normalizedCargoPriceKg = normalizeCargoPriceKg(dto.cargoPriceKg);
-
+  private async ensureTripCreationAllowedByFloodRisk(): Promise<void> {
     try {
       const flood = await this.floodService.getFloodStatus(
         -3.119,
@@ -344,9 +311,64 @@ export class TripsService {
         );
       }
     } catch (err) {
-      if (err instanceof ForbiddenException) throw err;
-      // Erro na API de cheias não bloqueia a criação da viagem
+      if (err instanceof ForbiddenException) {
+        throw err;
+      }
+      // Erro na API de cheias não bloqueia a criação da viagem.
     }
+  }
+
+  private async resolveTripOriginCoordinates(origin: string): Promise<{
+    originLat?: number;
+    originLng?: number;
+  }> {
+    const cityCoordinates = geocodeCity(origin);
+    if (cityCoordinates) {
+      return {
+        originLat: cityCoordinates.lat,
+        originLng: cityCoordinates.lng,
+      };
+    }
+
+    const location = await this.locationsService.findConfirmedByName(origin);
+    if (!location) {
+      return {};
+    }
+
+    return {
+      originLat: location.lat,
+      originLng: location.lng,
+    };
+  }
+
+  async create(
+    userId: string,
+    dto: CreateTripDto,
+    role?: string,
+  ): Promise<TripResponse> {
+    // Alias para compatibilidade interna (trip.captainId = quem criou)
+    const captainId = userId;
+    const departureAt = new Date(dto.departureTime);
+    const estimatedArrivalAt = new Date(dto.arrivalTime);
+    await this.ensureVerifiedCaptainForTripCreation(captainId, role);
+    this.validateTripRouteAndSchedule(dto, departureAt, estimatedArrivalAt);
+    const boat = await this.findBoatForTripCreation(
+      captainId,
+      dto.boatId,
+      role,
+    );
+    this.ensureVerifiedBoatForTripCreation(boat);
+    this.ensureTripCapacityWithinBoat(dto, boat);
+    await this.ensureNoTripConflictForBoat(
+      dto.boatId,
+      departureAt,
+      estimatedArrivalAt,
+    );
+    this.validateTripPricing(dto);
+    await this.ensureTripCreationAllowedByFloodRisk();
+
+    // ========== VALIDAÇÕES CRÍTICAS ==========
+    const normalizedCargoPriceKg = normalizeCargoPriceKg(dto.cargoPriceKg);
 
     // ========== CRIAR VIAGEM ==========
 
@@ -363,12 +385,7 @@ export class TripsService {
       cargoPriceKg: normalizedCargoPriceKg,
       cargoCapacityKg: dto.cargoCapacityKg || null,
       availableCargoKg: dto.cargoCapacityKg || null, // Inicializa com capacidade total
-      ...(await (async () => {
-        const lk = geocodeCity(dto.origin);
-        if (lk) return { originLat: lk.lat, originLng: lk.lng };
-        const db = await this.locationsService.findConfirmedByName(dto.origin);
-        return db ? { originLat: db.lat, originLng: db.lng } : {};
-      })()),
+      ...(await this.resolveTripOriginCoordinates(dto.origin)),
     } as Partial<Trip>);
 
     const saved = await this.tripsRepo.save(trip);
