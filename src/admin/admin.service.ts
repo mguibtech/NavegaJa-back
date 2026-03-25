@@ -120,6 +120,52 @@ export class AdminService {
     };
   }
 
+  private getStatsDateThresholds() {
+    const today = this.startOfToday();
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const monthAgo = new Date(today);
+    monthAgo.setMonth(monthAgo.getMonth() - 1);
+
+    return { today, weekAgo, monthAgo };
+  }
+
+  private async findUserOrThrow(id: string): Promise<User> {
+    const user = await this.usersRepo.findOne({ where: { id } });
+    if (!user) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
+
+    return user;
+  }
+
+  private async findTripOrThrow(id: string): Promise<Trip> {
+    const trip = await this.tripsRepo.findOne({ where: { id } });
+    if (!trip) {
+      throw new NotFoundException('Viagem não encontrada');
+    }
+
+    return trip;
+  }
+
+  private async findShipmentOrThrow(id: string): Promise<Shipment> {
+    const shipment = await this.shipmentsRepo.findOne({ where: { id } });
+    if (!shipment) {
+      throw new NotFoundException('Encomenda não encontrada');
+    }
+
+    return shipment;
+  }
+
+  private async findBookingOrThrow(id: string): Promise<Booking> {
+    const booking = await this.bookingsRepo.findOne({ where: { id } });
+    if (!booking) {
+      throw new NotFoundException('Reserva não encontrada');
+    }
+
+    return booking;
+  }
+
   // ==================== USUÁRIOS ====================
 
   async createCaptain(dto: {
@@ -196,6 +242,7 @@ export class AdminService {
 
   async getUserStats() {
     const total = await this.usersRepo.count();
+    const { today, weekAgo, monthAgo } = this.getStatsDateThresholds();
 
     // Por role
     const byRole = {
@@ -207,16 +254,6 @@ export class AdminService {
       }),
       admin: await this.usersRepo.count({ where: { role: UserRole.ADMIN } }),
     };
-
-    // Novos usuários
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const weekAgo = new Date(today);
-    weekAgo.setDate(weekAgo.getDate() - 7);
-
-    const monthAgo = new Date(today);
-    monthAgo.setMonth(monthAgo.getMonth() - 1);
 
     const newToday = await this.usersRepo.count({
       where: { createdAt: MoreThan(today) },
@@ -289,11 +326,7 @@ export class AdminService {
   }
 
   async updateUserRole(id: string, role: UserRole) {
-    const user = await this.usersRepo.findOne({ where: { id } });
-    if (!user) {
-      throw new NotFoundException('Usuário não encontrado');
-    }
-
+    const user = await this.findUserOrThrow(id);
     user.role = role;
     await this.usersRepo.save(user);
 
@@ -301,11 +334,7 @@ export class AdminService {
   }
 
   async updateUserStatus(id: string, active: boolean) {
-    const user = await this.usersRepo.findOne({ where: { id } });
-    if (!user) {
-      throw new NotFoundException('Usuário não encontrado');
-    }
-
+    const user = await this.findUserOrThrow(id);
     user.isActive = active;
     await this.usersRepo.save(user);
 
@@ -316,10 +345,7 @@ export class AdminService {
   }
 
   async deleteUser(id: string) {
-    const user = await this.usersRepo.findOne({ where: { id } });
-    if (!user) {
-      throw new NotFoundException('Usuário não encontrado');
-    }
+    await this.findUserOrThrow(id);
 
     // Verificar se usuário tem viagens ativas
     const activeTrips = await this.tripsRepo.count({
@@ -431,15 +457,11 @@ export class AdminService {
   }
 
   async updateTripStatus(id: string, status: TripStatus) {
-    const trip = await this.tripsRepo.findOne({ where: { id } });
-    if (!trip) {
-      throw new NotFoundException('Viagem não encontrada');
-    }
-
     if (status === TripStatus.CANCELLED) {
       return this.tripsService.cancelTripWithPropagation(id);
     }
 
+    const trip = await this.findTripOrThrow(id);
     trip.status = status as TripStatus;
     await this.tripsRepo.save(trip);
 
@@ -447,11 +469,7 @@ export class AdminService {
   }
 
   async deleteTrip(id: string) {
-    const trip = await this.tripsRepo.findOne({ where: { id } });
-    if (!trip) {
-      throw new NotFoundException('Viagem não encontrada');
-    }
-
+    const trip = await this.findTripOrThrow(id);
     if (trip.status === TripStatus.IN_PROGRESS) {
       throw new BadRequestException(
         'Não é possível deletar viagem em andamento',
@@ -514,14 +532,7 @@ export class AdminService {
   }
 
   async getShipmentStats() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-
-    const monthAgo = new Date();
-    monthAgo.setMonth(monthAgo.getMonth() - 1);
+    const { today, weekAgo, monthAgo } = this.getStatsDateThresholds();
 
     const [
       total,
@@ -573,11 +584,7 @@ export class AdminService {
   }
 
   async updateShipmentStatus(id: string, status: ShipmentStatus) {
-    const shipment = await this.shipmentsRepo.findOne({ where: { id } });
-    if (!shipment) {
-      throw new NotFoundException('Encomenda não encontrada');
-    }
-
+    const shipment = await this.findShipmentOrThrow(id);
     shipment.status = status;
     await this.shipmentsRepo.save(shipment);
 
@@ -725,12 +732,7 @@ export class AdminService {
     const active = await this.sosRepo.count({
       where: { status: SosAlertStatus.ACTIVE },
     });
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const weekAgo = new Date(today);
-    weekAgo.setDate(weekAgo.getDate() - 7);
+    const { today, weekAgo } = this.getStatsDateThresholds();
 
     const totalToday = await this.sosRepo.count({
       where: { createdAt: MoreThan(today) },
@@ -1249,14 +1251,7 @@ export class AdminService {
   }
 
   async getBookingsStats() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-
-    const monthAgo = new Date();
-    monthAgo.setMonth(monthAgo.getMonth() - 1);
+    const { today, weekAgo, monthAgo } = this.getStatsDateThresholds();
 
     const [
       total,
@@ -1342,24 +1337,14 @@ export class AdminService {
   }
 
   async updateBookingStatus(id: string, status: BookingStatus) {
-    const booking = await this.bookingsRepo.findOne({ where: { id } });
-
-    if (!booking) {
-      throw new NotFoundException('Reserva não encontrada');
-    }
-
+    const booking = await this.findBookingOrThrow(id);
     booking.status = status;
 
     return this.bookingsRepo.save(booking);
   }
 
   async deleteBooking(id: string) {
-    const booking = await this.bookingsRepo.findOne({ where: { id } });
-
-    if (!booking) {
-      throw new NotFoundException('Reserva não encontrada');
-    }
-
+    await this.findBookingOrThrow(id);
     await this.bookingsRepo.delete(id);
 
     return { message: 'Reserva deletada com sucesso' };
@@ -1646,10 +1631,7 @@ export class AdminService {
     rejectionReason?: string,
     adminId = 'admin-legacy-bulk',
   ) {
-    const existingUser = await this.usersRepo.findOne({ where: { id } });
-    if (!existingUser) {
-      throw new NotFoundException('Usuário não encontrado');
-    }
+    await this.findUserOrThrow(id);
 
     if (!verified && !rejectionReason) {
       throw new BadRequestException('Informe o motivo da rejeição');
@@ -1794,6 +1776,7 @@ export class AdminService {
 
   async getAdminGamificationStats() {
     const leaderboard = await this.gamificationService.getLeaderboard(10);
+    const { today, weekAgo, monthAgo } = this.getStatsDateThresholds();
 
     // Distribuição por nível
     const [marinheiro, navegador, capitao, almirante] = await Promise.all([
@@ -1815,13 +1798,6 @@ export class AdminService {
       .getRawOne<{ total: string | null }>();
 
     // Referrals: total, convertidos, pendentes
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const weekAgo = new Date(today);
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    const monthAgo = new Date(today);
-    monthAgo.setMonth(monthAgo.getMonth() - 1);
-
     const [totalUsers, newToday, newThisWeek, newThisMonth] = await Promise.all(
       [
         this.usersRepo.count({
