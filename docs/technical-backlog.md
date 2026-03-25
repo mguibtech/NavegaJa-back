@@ -8,7 +8,7 @@ Auditoria local consolidada em 2026-03-25 apos a rodada de hardening, testes, CI
 
 - Swagger esta integrado e os controllers em `src/` estao anotados com `@ApiTags`.
 - O projeto ja tem lint, build, testes unitarios, testes e2e e pipeline de CI.
-- Estado validado nesta auditoria: 17 suites unitarias com 65 testes e 5 suites e2e com 18 testes.
+- Estado validado nesta auditoria: 17 suites unitarias com 65 testes e 8 suites e2e com 34 testes.
 - O principal debito remanescente esta em cobertura por modulo ainda sem suite dedicada, auditoria fina de contratos Swagger e tamanho de alguns services centrais.
 
 ## Contratos e Swagger
@@ -40,16 +40,18 @@ Levantamento por pasta em `src/`:
 ## Cobertura E2E Atual
 
 - `test/app.e2e-spec.ts`
+- `test/admin.e2e-spec.ts`
 - `test/auth.e2e-spec.ts`
+- `test/boat-staff.e2e-spec.ts`
 - `test/bookings.e2e-spec.ts`
+- `test/captain.e2e-spec.ts`
 - `test/payments.e2e-spec.ts`
 - `test/shipments.e2e-spec.ts`
 
 Fluxos ainda sem e2e dedicado:
 
-- admin
-- captain / boat-staff
 - webhooks e cenarios de falha mais profundos de pagamento
+- localizacoes comunitarias e operacoes administrativas de moderacao mais profundas
 
 ## Prioridades de Refactor
 
@@ -66,8 +68,8 @@ Services mais extensos nesta auditoria:
 ### P0
 
 - Revisar respostas Swagger dos endpoints criticos para garantir exemplos e codigos HTTP coerentes com implementacao real.
-- Criar e2e dedicado para `admin` e para fluxos de `captain` / `boat-staff`.
 - Aprofundar cenarios de pagamento com webhook, falha, idempotencia e reprocessamento.
+- Expandir e2e de `admin` para endpoints de moderacao, verificacao e localizacoes comunitarias.
 
 ### P1
 
