@@ -145,6 +145,18 @@ export class AdminService {
     return user;
   }
 
+  private async findUserWithBoatsOrThrow(id: string): Promise<User> {
+    const user = await this.usersRepo.findOne({
+      where: { id },
+      relations: ['boats'],
+    });
+    if (!user) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
+
+    return user;
+  }
+
   private async findTripOrThrow(id: string): Promise<Trip> {
     const trip = await this.tripsRepo.findOne({ where: { id } });
     if (!trip) {
@@ -274,6 +286,36 @@ export class AdminService {
     });
   }
 
+  private async buildUserDetailsStats(user: User) {
+    const stats = {
+      totalTrips: 0,
+      totalShipments: 0,
+      totalSpent: 0,
+    };
+
+    if (user.role === UserRole.CAPTAIN) {
+      stats.totalTrips = await this.tripsRepo.count({
+        where: { captainId: user.id },
+      });
+    }
+
+    if (user.role === UserRole.PASSENGER) {
+      const bookings = await this.bookingsRepo.find({
+        where: { passengerId: user.id },
+      });
+      stats.totalSpent = bookings.reduce(
+        (sum, booking) => sum + Number(booking.totalPrice || 0),
+        0,
+      );
+    }
+
+    stats.totalShipments = await this.shipmentsRepo.count({
+      where: { senderId: user.id },
+    });
+
+    return stats;
+  }
+
   // ==================== USUÁRIOS ====================
 
   async createCaptain(dto: {
@@ -391,41 +433,8 @@ export class AdminService {
   }
 
   async getUserDetails(id: string) {
-    const user = await this.usersRepo.findOne({
-      where: { id },
-      relations: ['boats'],
-    });
-
-    if (!user) {
-      throw new NotFoundException('Usuário não encontrado');
-    }
-
-    // Estatísticas do usuário
-    const stats = {
-      totalTrips: 0,
-      totalShipments: 0,
-      totalSpent: 0,
-    };
-
-    if (user.role === UserRole.CAPTAIN) {
-      stats.totalTrips = await this.tripsRepo.count({
-        where: { captainId: id },
-      });
-    }
-
-    if (user.role === UserRole.PASSENGER) {
-      const bookings = await this.bookingsRepo.find({
-        where: { passengerId: id },
-      });
-      stats.totalSpent = bookings.reduce(
-        (sum, b) => sum + Number(b.totalPrice || 0),
-        0,
-      );
-    }
-
-    stats.totalShipments = await this.shipmentsRepo.count({
-      where: { senderId: id },
-    });
+    const user = await this.findUserWithBoatsOrThrow(id);
+    const stats = await this.buildUserDetailsStats(user);
 
     return {
       ...this.sanitizeUser(user),
