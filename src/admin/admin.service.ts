@@ -1094,31 +1094,7 @@ export class AdminService {
     };
   }
 
-  private async getRevenueByPeriod(
-    period: 'today' | 'week' | 'month',
-  ): Promise<number> {
-    const startDate = this.getRevenuePeriodStart(period);
-
-    const [bookingsRow, shipmentsRow] = await Promise.all([
-      this.bookingsRepo
-        .createQueryBuilder('b')
-        .select('COALESCE(SUM(b.total_price), 0)', 'revenue')
-        .where('b.created_at > :startDate', { startDate })
-        .getRawOne<{ revenue: string | null }>(),
-      this.shipmentsRepo
-        .createQueryBuilder('s')
-        .select('COALESCE(SUM(s.total_price), 0)', 'revenue')
-        .where('s.created_at > :startDate', { startDate })
-        .getRawOne<{ revenue: string | null }>(),
-    ]);
-
-    const total =
-      Number(bookingsRow?.revenue || 0) + Number(shipmentsRow?.revenue || 0);
-    return Number(total.toFixed(2));
-  }
-
-  async getRecentActivity(limit: number) {
-    // Buscar dados recentes de diferentes entidades
+  private async loadRecentActivitySources() {
     const [
       recentTrips,
       recentShipments,
@@ -1175,23 +1151,76 @@ export class AdminService {
       }),
     ]);
 
-    const activities: AdminActivity[] = [
-      ...buildRecentTripActivities(recentTrips),
-      ...buildRecentShipmentActivities(recentShipments),
-      ...buildRecentUserActivities(recentUsers),
-      ...buildRecentBookingActivities(recentBookings),
-      ...buildRecentCouponActivities(recentCoupons),
-      ...buildRecentSosActivities(recentSosAlerts),
-      ...buildRecentChecklistActivities(recentChecklists),
-    ];
+    return {
+      recentTrips,
+      recentShipments,
+      recentUsers,
+      recentBookings,
+      recentCoupons,
+      recentSosAlerts,
+      recentChecklists,
+    };
+  }
 
-    // Ordenar por timestamp e limitar
+  private buildRecentActivitiesFromSources(sources: {
+    recentTrips: Trip[];
+    recentShipments: Shipment[];
+    recentUsers: User[];
+    recentBookings: Booking[];
+    recentCoupons: Coupon[];
+    recentSosAlerts: SosAlert[];
+    recentChecklists: SafetyChecklist[];
+  }): AdminActivity[] {
+    return [
+      ...buildRecentTripActivities(sources.recentTrips),
+      ...buildRecentShipmentActivities(sources.recentShipments),
+      ...buildRecentUserActivities(sources.recentUsers),
+      ...buildRecentBookingActivities(sources.recentBookings),
+      ...buildRecentCouponActivities(sources.recentCoupons),
+      ...buildRecentSosActivities(sources.recentSosAlerts),
+      ...buildRecentChecklistActivities(sources.recentChecklists),
+    ];
+  }
+
+  private sortAndLimitRecentActivities(
+    activities: AdminActivity[],
+    limit: number,
+  ): AdminActivity[] {
     return activities
       .sort(
         (a, b) =>
           new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
       )
       .slice(0, limit);
+  }
+
+  private async getRevenueByPeriod(
+    period: 'today' | 'week' | 'month',
+  ): Promise<number> {
+    const startDate = this.getRevenuePeriodStart(period);
+
+    const [bookingsRow, shipmentsRow] = await Promise.all([
+      this.bookingsRepo
+        .createQueryBuilder('b')
+        .select('COALESCE(SUM(b.total_price), 0)', 'revenue')
+        .where('b.created_at > :startDate', { startDate })
+        .getRawOne<{ revenue: string | null }>(),
+      this.shipmentsRepo
+        .createQueryBuilder('s')
+        .select('COALESCE(SUM(s.total_price), 0)', 'revenue')
+        .where('s.created_at > :startDate', { startDate })
+        .getRawOne<{ revenue: string | null }>(),
+    ]);
+
+    const total =
+      Number(bookingsRow?.revenue || 0) + Number(shipmentsRow?.revenue || 0);
+    return Number(total.toFixed(2));
+  }
+
+  async getRecentActivity(limit: number) {
+    const activitySources = await this.loadRecentActivitySources();
+    const activities = this.buildRecentActivitiesFromSources(activitySources);
+    return this.sortAndLimitRecentActivities(activities, limit);
   }
 
   // ==================== SEGURANÇA ====================
