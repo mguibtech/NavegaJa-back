@@ -19,7 +19,15 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "ci": "npm run lint && npm run build && npm test -- --runInBand && npm run test:e2e -- --runInBand"
+    "ci": "npm run lint && npm run build && npm test -- --runInBand && npm run test:e2e -- --runInBand",
+    "typeorm": "node --env-file=.env ./node_modules/typeorm/cli-ts-node-commonjs.js -d src/database/data-source.ts",
+    "migration:generate": "npm run typeorm -- migration:generate src/database/migrations/GeneratedMigration",
+    "migration:create": "npm run typeorm -- migration:create src/database/migrations/ManualMigration",
+    "migration:run": "npm run typeorm -- migration:run",
+    "migration:revert": "npm run typeorm -- migration:revert",
+    "migration:show": "npm run typeorm -- migration:show",
+    "migration:run:prod": "node ./node_modules/typeorm/cli.js -d dist/database/data-source.js migration:run",
+    "migration:baseline": "node --env-file=.env scripts/mark-initial-migration.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.990.0",

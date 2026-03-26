@@ -32,6 +32,11 @@ export function validateEnv(config: EnvConfig): EnvConfig {
     nodeEnv !== 'production',
     'DB_SYNCHRONIZE',
   );
+  env.DB_MIGRATIONS_RUN = readBoolean(
+    env.DB_MIGRATIONS_RUN,
+    nodeEnv === 'production',
+    'DB_MIGRATIONS_RUN',
+  );
   env.MAIL_PORT = mailPort;
   env.HTTP_LOGGING = readBoolean(
     env.HTTP_LOGGING,

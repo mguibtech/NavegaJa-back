@@ -99,7 +99,7 @@ Variaveis operacionais principais:
 - `CORS_ORIGINS`
 - `HTTP_LOGGING`
 - `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE`
-- `DB_SYNCHRONIZE`
+- `DB_SYNCHRONIZE`, `DB_MIGRATIONS_RUN`
 - `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`
 - `PAYMENT_WEBHOOK_SECRET`
 
@@ -111,10 +111,30 @@ Consulte [`.env.example`](/C:/www/softLive/projects/navegaja/backend/.env.exampl
 npm run lint
 npm run lint:fix
 npm run build
+npm run migration:show
+npm run migration:run
 npm test -- --runInBand
 npm run test:e2e -- --runInBand
 npm run ci
 ```
+
+## Migrations (TypeORM)
+
+Comandos principais:
+
+```bash
+npm run migration:generate
+npm run migration:create
+npm run migration:show
+npm run migration:run
+npm run migration:revert
+```
+
+Notas:
+
+- Em producao, manter `DB_SYNCHRONIZE=false`.
+- Para deploy (ex.: Railway), use `DB_MIGRATIONS_RUN=true` para aplicar pendencias ao iniciar a API.
+- Se o banco ja existe e foi criado via `synchronize`, rode `npm run migration:baseline` uma vez antes do primeiro `migration:run`.
 
 ## Qualidade
 
