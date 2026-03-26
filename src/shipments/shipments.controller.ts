@@ -25,8 +25,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { ShipmentsService } from './shipments.service';
 import { CreateShipmentDto } from './dto/create-shipment.dto';
 import {
-  CalculatePriceDto,
-  CalculatePriceResponseDto,
+  ShipmentCalculatePriceDto,
+  ShipmentCalculatePriceResponseDto,
 } from './dto/calculate-price.dto';
 import { CreateShipmentReviewDto } from './dto/create-review.dto';
 import {
@@ -68,10 +68,10 @@ export class ShipmentsController {
   @ApiResponse({
     status: 200,
     description: 'Cálculo realizado com sucesso',
-    type: CalculatePriceResponseDto,
+    type: ShipmentCalculatePriceResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Utilizador nÃ£o autenticado' })
-  async calculatePrice(@Body() dto: CalculatePriceDto) {
+  async calculatePrice(@Body() dto: ShipmentCalculatePriceDto) {
     return this.shipmentsService.calculatePrice(dto);
   }
 

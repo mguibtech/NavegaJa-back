@@ -21,7 +21,7 @@ import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard, Roles } from '../common/roles.guard';
-import { CalculatePriceDto } from '../coupons/dto/coupon.dto';
+import { BookingCalculatePriceDto } from '../coupons/dto/coupon.dto';
 
 @ApiTags('Bookings')
 @Controller('bookings')
@@ -84,7 +84,7 @@ export class BookingsController {
   })
   calculatePrice(
     @Request() req: AuthenticatedRequest,
-    @Body() dto: CalculatePriceDto,
+    @Body() dto: BookingCalculatePriceDto,
   ) {
     return this.bookingsService.calculatePrice(
       req.user.sub,

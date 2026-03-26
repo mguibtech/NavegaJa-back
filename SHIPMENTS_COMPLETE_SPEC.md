@@ -223,10 +223,10 @@ interface CreateShipmentDto {
 }
 ```
 
-### **CalculatePriceDto**
+### **ShipmentCalculatePriceDto**
 
 ```typescript
-interface CalculatePriceDto {
+interface ShipmentCalculatePriceDto {
   tripId: string;
   weightKg: number;                  // Ou 'weight'
   weight?: number;

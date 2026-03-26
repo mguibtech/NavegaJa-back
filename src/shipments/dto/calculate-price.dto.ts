@@ -11,7 +11,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { DimensionsDto } from './dimensions.dto';
 
-export class CalculatePriceDto {
+export class ShipmentCalculatePriceDto {
   @ApiProperty({ description: 'ID da viagem' })
   @IsString()
   @IsNotEmpty()
@@ -86,7 +86,7 @@ export class CalculatePriceDto {
   couponCode?: string;
 }
 
-export class CalculatePriceResponseDto {
+export class ShipmentCalculatePriceResponseDto {
   @ApiProperty({
     example: 55.0,
     description: 'Preço base (peso cobrado × preço/kg)',

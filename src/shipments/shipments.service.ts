@@ -20,8 +20,8 @@ import { Coupon, CouponType } from '../coupons/coupon.entity';
 import { User } from '../users/user.entity';
 import { CreateShipmentDto } from './dto/create-shipment.dto';
 import {
-  CalculatePriceDto,
-  CalculatePriceResponseDto,
+  ShipmentCalculatePriceDto,
+  ShipmentCalculatePriceResponseDto,
 } from './dto/calculate-price.dto';
 import { GamificationService } from '../gamification/gamification.service';
 import { PointAction } from '../gamification/point-transaction.entity';
@@ -212,8 +212,8 @@ export class ShipmentsService {
    * Calcula preço da encomenda com peso volumétrico e desconto de cupom
    */
   async calculatePrice(
-    dto: CalculatePriceDto,
-  ): Promise<CalculatePriceResponseDto> {
+    dto: ShipmentCalculatePriceDto,
+  ): Promise<ShipmentCalculatePriceResponseDto> {
     const trip = await this.tripsRepo.findOne({ where: { id: dto.tripId } });
     if (!trip) throw new NotFoundException('Viagem não encontrada');
 

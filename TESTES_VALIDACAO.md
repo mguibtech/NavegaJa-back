@@ -56,8 +56,8 @@ yarn start:dev
 ✅ 📚 Swagger docs em http://localhost:3000/api/docs
 ```
 
-**⚠️ Avisos não-críticos:**
-- Duplicate DTO: `CalculatePriceDto` (aviso do Swagger - não afeta funcionalidade)
+**⚠️ Avisos corrigidos:**
+- [x] Duplicate DTO: `CalculatePriceDto` (Corrigido: renomeados para `ShipmentCalculatePriceDto` e `BookingCalculatePriceDto`)
 
 ---
 

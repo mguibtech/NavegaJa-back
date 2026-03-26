@@ -147,7 +147,7 @@ export class ValidateCouponDto {
   quantity: number;
 }
 
-export class CalculatePriceDto {
+export class BookingCalculatePriceDto {
   @ApiProperty({ example: 'trip-uuid' })
   @IsString()
   tripId: string;
