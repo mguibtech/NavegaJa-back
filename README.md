@@ -47,6 +47,45 @@ Servidor local: `http://localhost:3000`
 
 Swagger: `http://localhost:3000/api/docs`
 
+## Deploy com Docker
+
+1. Copie e ajuste as variaveis:
+
+```bash
+cp .env.example .env
+```
+
+2. Para usar o banco do `docker-compose`, deixe no `.env`:
+
+- `NODE_ENV=production`
+- `DB_HOST=db`
+- `DB_PORT=5432`
+- `DB_SYNCHRONIZE=false`
+- Defina valores fortes para `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` e `PAYMENT_WEBHOOK_SECRET`
+
+3. Suba aplicacao e banco:
+
+```bash
+docker compose up -d --build
+```
+
+4. Acompanhe logs:
+
+```bash
+docker compose logs -f app
+```
+
+5. Parar servicos:
+
+```bash
+docker compose down
+```
+
+Persistencia:
+
+- Banco PostgreSQL no volume `pgdata`
+- Uploads no volume `uploads`
+
 ## Variaveis de Ambiente
 
 O bootstrap valida o ambiente em [`src/config/env.validation.ts`](/C:/www/softLive/projects/navegaja/backend/src/config/env.validation.ts).
