@@ -153,6 +153,23 @@ export class TripResponseDto extends TripShipmentPolicyDto {
 
   @ApiProperty({ enum: TripStatus, example: TripStatus.SCHEDULED })
   status: TripStatus;
+
+  @ApiProperty({
+    example: 'https://cdn.navegaja.com/boats/barco-1-cover.jpg',
+    nullable: true,
+    description:
+      'Imagem principal do barco para uso direto nos cards do app.',
+  })
+  boatImageUrl: string | null;
+
+  @ApiProperty({
+    example: [
+      'https://cdn.navegaja.com/boats/barco-1-cover.jpg',
+      'https://cdn.navegaja.com/boats/barco-1-inside.jpg',
+    ],
+    description: 'Lista normalizada das fotos do barco vinculadas a viagem.',
+  })
+  boatImages: string[];
 }
 
 export class ManagedTripPassengerDto {

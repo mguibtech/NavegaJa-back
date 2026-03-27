@@ -1,5 +1,7 @@
 const { DataSource } = require('typeorm');
 const bcrypt = require('bcryptjs');
+const fs = require('fs');
+const path = require('path');
 
 const AppDataSource = new DataSource({
   type: 'postgres',
@@ -13,78 +15,158 @@ const AppDataSource = new DataSource({
   },
 });
 
+function normalizeBaseUrl(url) {
+  return (url || 'http://localhost:3000').replace(/\/+$/, '');
+}
+
+function getBoatSeedImages(appUrl) {
+  const boatsDir = path.join(__dirname, 'uploads', 'boats');
+  if (!fs.existsSync(boatsDir)) {
+    return [];
+  }
+
+  const supportedExtensions = new Set([
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.webp',
+    '.heic',
+  ]);
+
+  const baseUrl = normalizeBaseUrl(appUrl);
+
+  return fs
+    .readdirSync(boatsDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .filter((filename) =>
+      supportedExtensions.has(path.extname(filename).toLowerCase()),
+    )
+    .sort()
+    .map((filename) => `${baseUrl}/uploads/boats/${filename}`);
+}
+
 async function populate() {
   await AppDataSource.initialize();
-  console.log('🌱 Populando banco com dados de teste...\n');
+  console.log('Populando banco com dados de teste...\n');
 
   const passwordHash = bcrypt.hashSync('123456', 10);
+  const boatSeedImages = getBoatSeedImages(process.env.APP_URL);
 
-  // ====== USERS ======
-  console.log('1. Criando usuários...');
+  console.log('1. Criando usuarios...');
 
-  // Passageiros
   const passengerIds = [];
   for (let i = 1; i <= 5; i++) {
-    const result = await AppDataSource.query(`
-      INSERT INTO users (name, phone, password_hash, role, rating, total_trips)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name
-      RETURNING id
-    `, [`Passageiro ${i}`, `9299100100${i}`, passwordHash, 'passenger', 4.5 + (i * 0.1), i * 2]);
+    const result = await AppDataSource.query(
+      `
+        INSERT INTO users (name, phone, password_hash, role, rating, total_trips)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name
+        RETURNING id
+      `,
+      [
+        `Passageiro ${i}`,
+        `9299100100${i}`,
+        passwordHash,
+        'passenger',
+        4.5 + i * 0.1,
+        i * 2,
+      ],
+    );
 
     passengerIds.push(result[0].id);
   }
 
-  // Admin
-  const adminResult = await AppDataSource.query(`
-    INSERT INTO users (name, phone, email, password_hash, role, rating, total_trips)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
-    ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role
-    RETURNING id
-  `, ['Admin NavegaJá', '92900000000', 'admin@navegaja.com', passwordHash, 'admin', 5.0, 0]);
-  const adminId = adminResult[0].id;
+  await AppDataSource.query(
+    `
+      INSERT INTO users (name, phone, email, password_hash, role, rating, total_trips)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role
+      RETURNING id
+    `,
+    [
+      'Admin NavegaJa',
+      '92900000000',
+      'admin@navegaja.com',
+      passwordHash,
+      'admin',
+      5.0,
+      0,
+    ],
+  );
 
-  // Capitães
   const captainIds = [];
   for (let i = 1; i <= 4; i++) {
-    const result = await AppDataSource.query(`
-      INSERT INTO users (name, phone, password_hash, role, rating, total_trips)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name
-      RETURNING id
-    `, [`Capitão ${i}`, `9299200100${i}`, passwordHash, 'captain', 4.6 + (i * 0.1), i * 50]);
+    const result = await AppDataSource.query(
+      `
+        INSERT INTO users (name, phone, password_hash, role, rating, total_trips)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name
+        RETURNING id
+      `,
+      [
+        `Capitao ${i}`,
+        `9299200100${i}`,
+        passwordHash,
+        'captain',
+        4.6 + i * 0.1,
+        i * 50,
+      ],
+    );
 
     captainIds.push(result[0].id);
   }
 
-  console.log(`  ✓ ${1 + passengerIds.length + captainIds.length} usuários criados (1 admin + ${passengerIds.length} passageiros + ${captainIds.length} capitães)`);
+  console.log(
+    `  OK ${1 + passengerIds.length + captainIds.length} usuarios criados (1 admin + ${passengerIds.length} passageiros + ${captainIds.length} capitaes)`,
+  );
 
-  // ====== BOATS ======
-  console.log('2. Criando embarcações...');
+  console.log('2. Criando embarcacoes...');
 
   const boatIds = [];
   const boatTypes = ['lancha', 'voadeira', 'recreio'];
 
   for (let i = 0; i < 3; i++) {
-    const result = await AppDataSource.query(`
-      INSERT INTO boats (owner_id, name, type, capacity, registration_num, is_verified)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id
-    `, [captainIds[i], `Embarcação ${i + 1}`, boatTypes[i], 20 + (i * 10), `AM-2024-00${i + 1}`, true]);
+    const coverImage = boatSeedImages[i % boatSeedImages.length] || null;
+    const galleryImages = coverImage ? [coverImage] : [];
+
+    const result = await AppDataSource.query(
+      `
+        INSERT INTO boats (
+          owner_id, name, type, capacity, registration_num, is_verified, photo_url, photos
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+        RETURNING id
+      `,
+      [
+        captainIds[i],
+        `Embarcacao ${i + 1}`,
+        boatTypes[i],
+        20 + i * 10,
+        `AM-2024-00${i + 1}`,
+        true,
+        coverImage,
+        JSON.stringify(galleryImages),
+      ],
+    );
 
     boatIds.push(result[0].id);
   }
 
-  console.log(`  ✓ ${boatIds.length} embarcações criadas`);
+  console.log(`  OK ${boatIds.length} embarcacoes criadas`);
+  console.log(
+    boatSeedImages.length > 0
+      ? `  OK fotos vinculadas aos barcos usando ${Math.min(boatIds.length, boatSeedImages.length)} arquivo(s) de uploads/boats`
+      : '  AVISO nenhuma foto encontrada em uploads/boats; os cards podem continuar com imagem padrao',
+  );
 
-  // ====== ROUTES ======
   console.log('3. Criando rotas...');
 
   const routeIds = [];
   const routes = [
     {
       originName: 'Manaus (Porto da Ceasa)',
-      originLat: -3.1190,
+      originLat: -3.119,
       originLng: -60.0217,
       destinationName: 'Parintins',
       destinationLat: -2.6287,
@@ -94,7 +176,7 @@ async function populate() {
     },
     {
       originName: 'Manaus (Porto da Ceasa)',
-      originLat: -3.1190,
+      originLat: -3.119,
       originLng: -60.0217,
       destinationName: 'Manacapuru',
       destinationLat: -3.2906,
@@ -104,7 +186,7 @@ async function populate() {
     },
     {
       originName: 'Manaus (Porto da Ceasa)',
-      originLat: -3.1190,
+      originLat: -3.119,
       originLng: -60.0217,
       destinationName: 'Iranduba',
       destinationLat: -3.2847,
@@ -115,69 +197,85 @@ async function populate() {
   ];
 
   for (const route of routes) {
-    const result = await AppDataSource.query(`
-      INSERT INTO routes (origin_name, origin_lat, origin_lng, destination_name, destination_lat, destination_lng, distance_km, duration_min)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING id
-    `, [route.originName, route.originLat, route.originLng, route.destinationName, route.destinationLat, route.destinationLng, route.distanceKm, route.durationMin]);
+    const result = await AppDataSource.query(
+      `
+        INSERT INTO routes (
+          origin_name, origin_lat, origin_lng, destination_name,
+          destination_lat, destination_lng, distance_km, duration_min
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id
+      `,
+      [
+        route.originName,
+        route.originLat,
+        route.originLng,
+        route.destinationName,
+        route.destinationLat,
+        route.destinationLng,
+        route.distanceKm,
+        route.durationMin,
+      ],
+    );
 
     routeIds.push(result[0].id);
   }
 
-  console.log(`  ✓ ${routeIds.length} rotas criadas`);
+  console.log(`  OK ${routeIds.length} rotas criadas`);
 
-  // ====== TRIPS ======
   console.log('4. Criando viagens...');
 
   const tripIds = [];
   const now = new Date();
 
   for (let i = 0; i < 10; i++) {
-    // Viagens sempre no futuro (próximos dias) para não conflitar com status
-    const departureTime = new Date(now.getTime() + ((i + 1) * 24 * 3600000)); // +1 dia cada
-    const arrivalTime = new Date(departureTime.getTime() + (routes[i % 3].durationMin * 60000));
+    const departureTime = new Date(now.getTime() + (i + 1) * 24 * 3600000);
+    const route = routes[i % routes.length];
+    const arrivalTime = new Date(
+      departureTime.getTime() + route.durationMin * 60000,
+    );
 
-    const route = routes[i % 3];
-
-    const result = await AppDataSource.query(`
-      INSERT INTO trips (
-        captain_id, boat_id, route_id, origin, destination,
-        departure_at, estimated_arrival_at,
-        total_seats, available_seats, price, status,
-        cargo_price_kg, cargo_capacity_kg, available_cargo_kg
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-      RETURNING id
-    `, [
-      captainIds[i % captainIds.length],
-      boatIds[i % boatIds.length],
-      routeIds[i % routeIds.length],
-      route.originName,
-      route.destinationName,
-      departureTime,
-      arrivalTime,
-      20 + (i % 3) * 10,
-      15 + (i % 3) * 5,
-      50 + (i * 5),
-      'scheduled',
-      5 + (i % 3) * 2,
-      500 + (i % 3) * 100,
-      500 + (i % 3) * 100,
-    ]);
+    const result = await AppDataSource.query(
+      `
+        INSERT INTO trips (
+          captain_id, boat_id, route_id, origin, destination,
+          departure_at, estimated_arrival_at,
+          total_seats, available_seats, price, status,
+          cargo_price_kg, cargo_capacity_kg, available_cargo_kg
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        RETURNING id
+      `,
+      [
+        captainIds[i % captainIds.length],
+        boatIds[i % boatIds.length],
+        routeIds[i % routeIds.length],
+        route.originName,
+        route.destinationName,
+        departureTime,
+        arrivalTime,
+        20 + (i % 3) * 10,
+        15 + (i % 3) * 5,
+        50 + i * 5,
+        'scheduled',
+        5 + (i % 3) * 2,
+        500 + (i % 3) * 100,
+        500 + (i % 3) * 100,
+      ],
+    );
 
     tripIds.push(result[0].id);
   }
 
-  console.log(`  ✓ ${tripIds.length} viagens criadas`);
+  console.log(`  OK ${tripIds.length} viagens criadas`);
 
-  // ====== SHIPMENTS ======
   console.log('5. Criando encomendas de teste...');
 
   const shipments = [
     {
       senderId: passengerIds[0],
       tripId: tripIds[0],
-      description: 'Caixa com medicamentos e alimentos não perecíveis',
+      description: 'Caixa com medicamentos e alimentos nao pereciveis',
       weightKg: 8.5,
       recipientName: 'Dona Teresa',
       recipientPhone: '92993001001',
@@ -190,7 +288,7 @@ async function populate() {
     {
       senderId: passengerIds[1],
       tripId: tripIds[1],
-      description: 'Peças de motor para gerador',
+      description: 'Pecas de motor para gerador',
       weightKg: 15,
       recipientName: 'Sr. Manoel',
       recipientPhone: '92993001002',
@@ -205,9 +303,9 @@ async function populate() {
       tripId: tripIds[2],
       description: 'Encomenda de artesanato regional',
       weightKg: 3,
-      recipientName: 'Loja Artesã',
+      recipientName: 'Loja Artesa',
       recipientPhone: '92993001003',
-      recipientAddress: 'Rua do Comércio, 789 - Centro, Beruri-AM',
+      recipientAddress: 'Rua do Comercio, 789 - Centro, Beruri-AM',
       totalPrice: 30,
       trackingCode: 'NVJAM09012',
       status: 'pending',
@@ -216,44 +314,51 @@ async function populate() {
   ];
 
   for (const shipment of shipments) {
-    const validationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const validationCode = Math.floor(
+      100000 + Math.random() * 900000,
+    ).toString();
 
-    await AppDataSource.query(`
-      INSERT INTO shipments (
-        sender_id, trip_id, description, weight_kg, recipient_name,
-        recipient_phone, recipient_address, total_price, tracking_code,
-        validation_code, status, payment_method
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      ON CONFLICT (tracking_code) DO NOTHING
-    `, [
-      shipment.senderId,
-      shipment.tripId,
-      shipment.description,
-      shipment.weightKg,
-      shipment.recipientName,
-      shipment.recipientPhone,
-      shipment.recipientAddress,
-      shipment.totalPrice,
-      shipment.trackingCode,
-      validationCode,
-      shipment.status,
-      shipment.paymentMethod,
-    ]);
+    await AppDataSource.query(
+      `
+        INSERT INTO shipments (
+          sender_id, trip_id, description, weight_kg, recipient_name,
+          recipient_phone, recipient_address, total_price, tracking_code,
+          validation_code, status, payment_method
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (tracking_code) DO NOTHING
+      `,
+      [
+        shipment.senderId,
+        shipment.tripId,
+        shipment.description,
+        shipment.weightKg,
+        shipment.recipientName,
+        shipment.recipientPhone,
+        shipment.recipientAddress,
+        shipment.totalPrice,
+        shipment.trackingCode,
+        validationCode,
+        shipment.status,
+        shipment.paymentMethod,
+      ],
+    );
   }
 
-  console.log(`  ✓ ${shipments.length} encomendas criadas`);
-  console.log('\n✅ População concluída com sucesso!\n');
-  console.log('📦 Encomendas de teste:');
-  shipments.forEach(s => {
-    console.log(`  - ${s.trackingCode}: ${s.description} (${s.status})`);
+  console.log(`  OK ${shipments.length} encomendas criadas`);
+  console.log('\nPopulacao concluida com sucesso.\n');
+  console.log('Encomendas de teste:');
+  shipments.forEach((shipment) => {
+    console.log(
+      `  - ${shipment.trackingCode}: ${shipment.description} (${shipment.status})`,
+    );
   });
 
   await AppDataSource.destroy();
 }
 
-populate().catch(err => {
-  console.error('❌ Erro:', err.message);
+populate().catch((err) => {
+  console.error('Erro:', err.message);
   console.error(err);
   process.exit(1);
 });

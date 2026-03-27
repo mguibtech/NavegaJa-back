@@ -733,7 +733,14 @@ describe('TripsService broader behaviors', () => {
   it('builds search query with time window and rating filters', async () => {
     const { service, tripsRepoQb } = createService();
     tripsRepoQb.getMany.mockResolvedValue([
-      { id: 'trip-2', status: TripStatus.SCHEDULED },
+      {
+        id: 'trip-2',
+        status: TripStatus.SCHEDULED,
+        boat: {
+          photoUrl: 'https://cdn.example/boats/cover.jpg',
+          photos: ['https://cdn.example/boats/gallery-1.jpg'],
+        },
+      },
     ]);
 
     const result = await service.search(
@@ -748,6 +755,10 @@ describe('TripsService broader behaviors', () => {
     );
 
     expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      boatImageUrl: 'https://cdn.example/boats/cover.jpg',
+      boatImages: ['https://cdn.example/boats/gallery-1.jpg'],
+    });
     expect(tripsRepoQb.andWhere).toHaveBeenCalledWith(
       'trip.route_id = :routeId',
       { routeId: 'route-2' },
@@ -1137,6 +1148,33 @@ describe('TripsService broader behaviors', () => {
         }),
       }),
     );
+  });
+
+  it('falls back to the first boat gallery image when there is no cover image', async () => {
+    const { service, tripsRepo } = createService();
+    tripsRepo.find.mockResolvedValue([
+      {
+        id: 'trip-boat-image',
+        status: TripStatus.SCHEDULED,
+        boat: {
+          photoUrl: null,
+          photos: [
+            'https://cdn.example/boats/gallery-1.jpg',
+            'https://cdn.example/boats/gallery-2.jpg',
+          ],
+        },
+      },
+    ]);
+
+    const result = await service.findAvailable();
+
+    expect(result[0]).toMatchObject({
+      boatImageUrl: 'https://cdn.example/boats/gallery-1.jpg',
+      boatImages: [
+        'https://cdn.example/boats/gallery-1.jpg',
+        'https://cdn.example/boats/gallery-2.jpg',
+      ],
+    });
   });
 
   it('validates maxPrice and minRating search parameters', async () => {

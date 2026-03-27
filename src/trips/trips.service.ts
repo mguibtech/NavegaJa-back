@@ -64,7 +64,12 @@ export type TripStatusUpdateResult = Trip & {
   weatherWarning?: WeatherWarning;
 };
 
-type TripResponse = Trip & TripShipmentPolicy;
+type TripImagePayload = {
+  boatImageUrl: string | null;
+  boatImages: string[];
+};
+
+type TripResponse = Trip & TripShipmentPolicy & TripImagePayload;
 
 @Injectable()
 export class TripsService {
@@ -129,11 +134,19 @@ export class TripsService {
     private locationsService: LocationsService,
   ) {}
 
-  private serializeTrip<T extends Trip>(trip: T): T & TripShipmentPolicy {
+  private serializeTrip<T extends Trip>(
+    trip: T,
+  ): T & TripShipmentPolicy & TripImagePayload {
     const shipmentPolicy = getTripShipmentPolicy(trip);
+    const boatImages = Array.isArray(trip.boat?.photos)
+      ? trip.boat.photos.filter((photo): photo is string => Boolean(photo))
+      : [];
+    const boatImageUrl = trip.boat?.photoUrl || boatImages[0] || null;
 
     return {
       ...trip,
+      boatImageUrl,
+      boatImages,
       cargoPriceKg: shipmentPolicy.shipmentPricePerKg,
       ...shipmentPolicy,
     };
@@ -141,7 +154,7 @@ export class TripsService {
 
   private serializeTrips<T extends Trip>(
     trips: T[],
-  ): Array<T & TripShipmentPolicy> {
+  ): Array<T & TripShipmentPolicy & TripImagePayload> {
     return trips.map((trip) => this.serializeTrip(trip));
   }
 
