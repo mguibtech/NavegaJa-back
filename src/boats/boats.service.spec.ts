@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 import { BoatsService } from './boats.service';
 import { TripStatus } from '../trips/trip.entity';
 import type { Repository } from 'typeorm';

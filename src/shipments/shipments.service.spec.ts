@@ -607,13 +607,13 @@ describe('ShipmentsService extended flows', () => {
       },
     } as Shipment);
 
-    await expect(service.findById('shipment-12', 'intruder')).rejects.toMatchObject(
-      {
-        response: expect.objectContaining({
-          message: expect.stringContaining('permiss'),
-        }),
-      },
-    );
+    await expect(
+      service.findById('shipment-12', 'intruder'),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        message: expect.stringContaining('permiss'),
+      }),
+    });
   });
 
   it('updates shipment status and creates a timeline event', async () => {
@@ -622,6 +622,9 @@ describe('ShipmentsService extended flows', () => {
       id: 'shipment-13',
       senderId: 'sender-13',
       status: ShipmentStatus.PENDING,
+      trip: {
+        captainId: 'captain-13',
+      },
     } as Shipment);
 
     const saved = await service.updateStatus(
@@ -647,11 +650,16 @@ describe('ShipmentsService extended flows', () => {
       senderId: 'sender-14',
       status: ShipmentStatus.OUT_FOR_DELIVERY,
       trip: {
+        captainId: 'captain-14',
         boat: { ownerId: 'owner-14' },
       },
     } as Shipment);
 
-    const saved = await service.deliver('shipment-14', 'https://photo');
+    const saved = await service.deliver(
+      'shipment-14',
+      'https://photo',
+      'captain-14',
+    );
 
     expect(saved.status).toBe(ShipmentStatus.DELIVERED);
     expect(gamificationService.awardPoints).toHaveBeenCalledWith(
@@ -771,8 +779,12 @@ describe('ShipmentsService extended flows', () => {
   });
 
   it('validates delivery, awards coins and notifies both parties', async () => {
-    const { service, shipmentsRepo, gamificationService, notificationsService } =
-      createHarness();
+    const {
+      service,
+      shipmentsRepo,
+      gamificationService,
+      notificationsService,
+    } = createHarness();
     shipmentsRepo.findOne.mockResolvedValue({
       id: 'shipment-21',
       senderId: 'sender-21',

@@ -460,6 +460,17 @@ export class ShipmentsService {
     }
   }
 
+  private assertCaptainOwnsShipment(
+    shipment: Shipment & { trip?: Trip | null },
+    captainId: string,
+  ): void {
+    if (!shipment.trip || shipment.trip.captainId !== captainId) {
+      throw new ForbiddenException(
+        'VocÃª nÃ£o tem permissÃ£o para gerir esta encomenda',
+      );
+    }
+  }
+
   private getCollectableStatuses(shipment: Shipment): ShipmentStatus[] {
     const isCash = shipment.paymentMethod === PaymentMethod.CASH;
     const isRecipientPays = shipment.paidBy === PaidBy.RECIPIENT;
@@ -591,7 +602,13 @@ export class ShipmentsService {
     status: ShipmentStatus,
     userId?: string,
   ): Promise<Shipment> {
-    const shipment = await this.findShipmentByIdOrThrow(id);
+    const shipment = await this.findShipmentByIdOrThrow(id, ['trip']);
+
+    if (!userId) {
+      throw new ForbiddenException('Utilizador nÃ£o autenticado');
+    }
+
+    this.assertCaptainOwnsShipment(shipment, userId);
     const saved = await this.saveShipmentStatus(shipment, status);
 
     // Registra evento na timeline
@@ -620,11 +637,21 @@ export class ShipmentsService {
   /**
    * @deprecated Usar validateDelivery() ao invés - mantido para compatibilidade
    */
-  async deliver(id: string, deliveryPhotoUrl?: string): Promise<Shipment> {
+  async deliver(
+    id: string,
+    deliveryPhotoUrl?: string,
+    captainId?: string,
+  ): Promise<Shipment> {
     const shipment = await this.findShipmentByIdOrThrow(id, [
       'trip',
       'trip.boat',
     ]);
+
+    if (!captainId) {
+      throw new ForbiddenException('Utilizador nÃ£o autenticado');
+    }
+
+    this.assertCaptainOwnsShipment(shipment, captainId);
     const saved = await this.saveShipmentStatus(
       shipment,
       ShipmentStatus.DELIVERED,

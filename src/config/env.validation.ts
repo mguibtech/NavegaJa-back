@@ -43,6 +43,17 @@ export function validateEnv(config: EnvConfig): EnvConfig {
     nodeEnv !== 'production',
     'HTTP_LOGGING',
   );
+  env.SEED_ON_BOOT = readBoolean(env.SEED_ON_BOOT, false, 'SEED_ON_BOOT');
+  env.SWAGGER_ENABLED = readBoolean(
+    env.SWAGGER_ENABLED,
+    nodeEnv !== 'production',
+    'SWAGGER_ENABLED',
+  );
+  env.UPLOADS_PUBLIC = readBoolean(
+    env.UPLOADS_PUBLIC,
+    nodeEnv !== 'production',
+    'UPLOADS_PUBLIC',
+  );
   env.APP_URL = appUrl;
   env.BASE_URL = baseUrl;
   env.CORS_ORIGINS = corsOrigins;
@@ -58,6 +69,7 @@ export function validateEnv(config: EnvConfig): EnvConfig {
       'JWT_REFRESH_SECRET',
       'APP_URL',
       'CORS_ORIGINS',
+      'PAYMENT_WEBHOOK_SECRET',
     ]);
   }
 

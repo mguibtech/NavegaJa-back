@@ -10,6 +10,9 @@ describe('validateEnv', () => {
     expect(result.DB_PORT).toBe(5432);
     expect(result.DB_SYNCHRONIZE).toBe(true);
     expect(result.HTTP_LOGGING).toBe(true);
+    expect(result.SEED_ON_BOOT).toBe(false);
+    expect(result.SWAGGER_ENABLED).toBe(true);
+    expect(result.UPLOADS_PUBLIC).toBe(true);
     expect(result.APP_URL).toBe('http://localhost:3000');
     expect(result.BASE_URL).toBe('http://localhost:3000');
     expect(result.CORS_ORIGINS).toEqual([
@@ -55,6 +58,7 @@ describe('validateEnv', () => {
       JWT_ACCESS_SECRET: 'a',
       JWT_REFRESH_SECRET: 'b',
       APP_URL: 'https://api.navegaja.com',
+      PAYMENT_WEBHOOK_SECRET: 'shared-secret',
     });
     const list = validateEnv({
       CORS_ORIGINS: ['https://one', ' https://two '],
@@ -90,5 +94,22 @@ describe('validateEnv', () => {
         APP_URL: 'https://api.navegaja.com',
       }),
     ).toThrow(/CORS_ORIGINS is required in production/i);
+  });
+
+  it('requires webhook secret in production', () => {
+    expect(() =>
+      validateEnv({
+        NODE_ENV: 'production',
+        DB_HOST: 'db',
+        DB_PORT: '5432',
+        DB_USERNAME: 'postgres',
+        DB_PASSWORD: 'secret',
+        DB_DATABASE: 'navegaja',
+        JWT_ACCESS_SECRET: 'a',
+        JWT_REFRESH_SECRET: 'b',
+        APP_URL: 'https://api.navegaja.com',
+        CORS_ORIGINS: 'https://app.navegaja.com',
+      }),
+    ).toThrow(/PAYMENT_WEBHOOK_SECRET is required in production/i);
   });
 });

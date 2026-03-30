@@ -13,6 +13,10 @@ services:
       DB_HOST: db
       DB_PORT: 5432
       DB_SYNCHRONIZE: "false"
+      DB_MIGRATIONS_RUN: "true"
+      SEED_ON_BOOT: "false"
+      SWAGGER_ENABLED: "false"
+      UPLOADS_PUBLIC: "false"
     depends_on:
       db:
         condition: service_healthy
@@ -30,7 +34,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
       POSTGRES_DB: ${DB_DATABASE:-navegaja}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test:
         [

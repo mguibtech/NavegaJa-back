@@ -31,6 +31,9 @@ describe('ShipmentsController', () => {
   };
   const storageService = {
     generatePresignedUrls: jest.fn(),
+    buildFileUrl: jest.fn((folder: string, filename: string) => {
+      return `https://app.example.com/upload/files/${folder}/${filename}`;
+    }),
   };
   const couponsService = {
     validateForShipment: jest.fn(),
@@ -128,12 +131,12 @@ describe('ShipmentsController', () => {
   it('generates presigned upload urls', async () => {
     storageService.generatePresignedUrls.mockResolvedValue(['url-1', 'url-2']);
 
-    await expect(controller.generatePresignedUrls({ count: 2 })).resolves.toEqual(
-      {
-        urls: ['url-1', 'url-2'],
-        expiresIn: 300,
-      },
-    );
+    await expect(
+      controller.generatePresignedUrls({ count: 2 }),
+    ).resolves.toEqual({
+      urls: ['url-1', 'url-2'],
+      expiresIn: 300,
+    });
     expect(storageService.generatePresignedUrls).toHaveBeenCalledWith(2);
   });
 
@@ -161,8 +164,8 @@ describe('ShipmentsController', () => {
         height: 10,
         photos: [
           'https://cdn/input-photo.jpg',
-          'https://app.example.com/uploads/shipments/upload-a.jpg',
-          'https://app.example.com/uploads/shipments/upload-b.jpg',
+          'https://app.example.com/upload/files/shipments/upload-a.jpg',
+          'https://app.example.com/upload/files/shipments/upload-b.jpg',
         ],
       }),
     );
@@ -170,14 +173,11 @@ describe('ShipmentsController', () => {
 
   it('create throws when weight is missing or not parseable', async () => {
     await expect(
-      controller.create(
-        createReq(),
-        {
-          tripId: 'trip-1',
-          description: 'Sem peso',
-          weight: '',
-        } as never,
-      ),
+      controller.create(createReq(), {
+        tripId: 'trip-1',
+        description: 'Sem peso',
+        weight: '',
+      } as never),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -218,19 +218,23 @@ describe('ShipmentsController', () => {
   it('findById delegates to service with authenticated user', async () => {
     shipmentsService.findById.mockResolvedValue(makeShipment());
 
-    await expect(controller.findById('shipment-1', createReq())).resolves.toEqual(
-      expect.objectContaining({ id: 'shipment-1' }),
+    await expect(
+      controller.findById('shipment-1', createReq()),
+    ).resolves.toEqual(expect.objectContaining({ id: 'shipment-1' }));
+    expect(shipmentsService.findById).toHaveBeenCalledWith(
+      'shipment-1',
+      'user-1',
     );
-    expect(shipmentsService.findById).toHaveBeenCalledWith('shipment-1', 'user-1');
   });
 
   it('getTimeline adds timestamp aliases', async () => {
     const createdAt = new Date('2030-01-01T12:00:00.000Z');
+    shipmentsService.findById.mockResolvedValue(makeShipment());
     shipmentsService.getTimeline.mockResolvedValue([{ id: 'x', createdAt }]);
 
-    await expect(controller.getTimeline('shipment-1')).resolves.toEqual([
-      { id: 'x', createdAt, timestamp: createdAt },
-    ]);
+    await expect(
+      controller.getTimeline('shipment-1', createReq()),
+    ).resolves.toEqual([{ id: 'x', createdAt, timestamp: createdAt }]);
   });
 
   it('confirmPayment returns shipment payload plus success message', async () => {
@@ -238,7 +242,9 @@ describe('ShipmentsController', () => {
 
     const result = await controller.confirmPayment('shipment-1', createReq());
 
-    expect(result.shipment).toEqual(expect.objectContaining({ id: 'shipment-1' }));
+    expect(result.shipment).toEqual(
+      expect.objectContaining({ id: 'shipment-1' }),
+    );
     expect(result.message).toContain('Pagamento confirmado');
   });
 
@@ -299,7 +305,11 @@ describe('ShipmentsController', () => {
       ShipmentStatus.IN_TRANSIT,
       createReq('captain'),
     );
-    await controller.deliver('shipment-1', 'photo-delivery');
+    await controller.deliver(
+      'shipment-1',
+      createReq('captain'),
+      'photo-delivery',
+    );
 
     expect(shipmentsService.validateDelivery).toHaveBeenCalledWith(
       'TRK123',
@@ -319,12 +329,14 @@ describe('ShipmentsController', () => {
     expect(shipmentsService.deliver).toHaveBeenCalledWith(
       'shipment-1',
       'photo-delivery',
+      'user-1',
     );
   });
 
   it('createReview only allows delivered shipments', async () => {
     shipmentsService.findById.mockResolvedValue({
       id: 'shipment-1',
+      senderId: 'user-1',
       status: ShipmentStatus.PAID,
     });
 
@@ -338,6 +350,7 @@ describe('ShipmentsController', () => {
   it('createReview blocks duplicate review submissions', async () => {
     shipmentsService.findById.mockResolvedValue({
       id: 'shipment-1',
+      senderId: 'user-1',
       status: ShipmentStatus.DELIVERED,
     });
     reviewsRepo.findOne.mockResolvedValue({ id: 'existing-review' });
@@ -352,6 +365,7 @@ describe('ShipmentsController', () => {
   it('createReview persists sender-bound review when valid', async () => {
     shipmentsService.findById.mockResolvedValue({
       id: 'shipment-1',
+      senderId: 'user-1',
       status: ShipmentStatus.DELIVERED,
     });
     reviewsRepo.findOne.mockResolvedValue(null);
@@ -372,12 +386,19 @@ describe('ShipmentsController', () => {
     );
   });
 
-  it('loads review with sender relation', async () => {
+  it('loads review with sender relation after access check', async () => {
+    shipmentsService.findById.mockResolvedValue(makeShipment());
     reviewsRepo.findOne.mockResolvedValue({ id: 'review-1' });
 
-    await expect(controller.getReview('shipment-1')).resolves.toEqual({
+    await expect(
+      controller.getReview('shipment-1', createReq()),
+    ).resolves.toEqual({
       id: 'review-1',
     });
+    expect(shipmentsService.findById).toHaveBeenCalledWith(
+      'shipment-1',
+      'user-1',
+    );
     expect(reviewsRepo.findOne).toHaveBeenCalledWith({
       where: { shipmentId: 'shipment-1' },
       relations: ['sender'],
@@ -446,7 +467,11 @@ describe('ShipmentsController', () => {
       controller as unknown as {
         serializeShipment: (shipment: ReturnType<typeof makeShipment>) => {
           trip?: { origin: string; destination: string };
-          dimensions: { length: number | null; width: number | null; height: number | null } | null;
+          dimensions: {
+            length: number | null;
+            width: number | null;
+            height: number | null;
+          } | null;
           photos: string[];
           weight: number | null;
           price: number | null;
@@ -472,7 +497,11 @@ describe('ShipmentsController', () => {
     const serialized = (
       controller as unknown as {
         serializeShipment: (shipment: Record<string, unknown>) => {
-          dimensions: { length: number | null; width: number | null; height: number | null } | null;
+          dimensions: {
+            length: number | null;
+            width: number | null;
+            height: number | null;
+          } | null;
           photos: string[];
           weight: number | null;
           price: number | null;
@@ -512,6 +541,7 @@ function createReq(role = 'passenger'): AuthenticatedRequest {
 function makeShipment() {
   return {
     id: 'shipment-1',
+    senderId: 'user-1',
     totalPrice: 120,
     weightKg: 2.5,
     photos: ['https://cdn/current-photo.jpg'],

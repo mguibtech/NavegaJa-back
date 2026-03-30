@@ -3,10 +3,16 @@ describe('main bootstrap', () => {
     port?: number;
     corsOrigins?: string[];
     httpLogging?: boolean;
+    nodeEnv?: string;
+    swaggerEnabled?: boolean;
+    uploadsPublic?: boolean;
   }) => {
     const port = opts?.port ?? 3333;
     const corsOrigins = opts?.corsOrigins ?? ['http://localhost:3000'];
     const httpLogging = opts?.httpLogging ?? false;
+    const nodeEnv = opts?.nodeEnv ?? 'development';
+    const swaggerEnabled = opts?.swaggerEnabled ?? true;
+    const uploadsPublic = opts?.uploadsPublic ?? true;
 
     jest.resetModules();
 
@@ -21,6 +27,9 @@ describe('main bootstrap', () => {
         if (key === 'PORT') return port;
         if (key === 'CORS_ORIGINS') return corsOrigins;
         if (key === 'HTTP_LOGGING') return httpLogging;
+        if (key === 'NODE_ENV') return nodeEnv;
+        if (key === 'SWAGGER_ENABLED') return swaggerEnabled;
+        if (key === 'UPLOADS_PUBLIC') return uploadsPublic;
         return defaultValue;
       }),
     };
@@ -35,7 +44,9 @@ describe('main bootstrap', () => {
     };
 
     const nestFactoryCreate = jest.fn().mockResolvedValue(app);
-    const swaggerCreateDocument = jest.fn().mockReturnValue({ openapi: '3.0.0' });
+    const swaggerCreateDocument = jest
+      .fn()
+      .mockReturnValue({ openapi: '3.0.0' });
     const swaggerSetup = jest.fn();
 
     class DocumentBuilderMock {
@@ -87,7 +98,6 @@ describe('main bootstrap', () => {
       AppModule: class AppModule {},
     }));
 
-    // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
     require('./main');
     await new Promise((resolve) => setImmediate(resolve));
 
@@ -107,6 +117,8 @@ describe('main bootstrap', () => {
         port: 4567,
         corsOrigins: ['*'],
         httpLogging: false,
+        swaggerEnabled: true,
+        uploadsPublic: true,
       });
 
     expect(nestFactoryCreate).toHaveBeenCalledTimes(1);
@@ -122,6 +134,18 @@ describe('main bootstrap', () => {
     expect(app.listen).toHaveBeenCalledWith(4567);
   });
 
+  it('does not expose swagger or local uploads when disabled', async () => {
+    const { app, swaggerCreateDocument, swaggerSetup } = await loadMain({
+      nodeEnv: 'production',
+      swaggerEnabled: false,
+      uploadsPublic: false,
+    });
+
+    expect(app.useStaticAssets).not.toHaveBeenCalled();
+    expect(swaggerCreateDocument).not.toHaveBeenCalled();
+    expect(swaggerSetup).not.toHaveBeenCalled();
+  });
+
   it('logs sanitized request bodies when HTTP logging is enabled', async () => {
     const { app, logger } = await loadMain({
       httpLogging: true,
@@ -129,7 +153,7 @@ describe('main bootstrap', () => {
     });
 
     expect(app.enableCors).toHaveBeenCalledWith({
-      origin: ['http://localhost:3000'],
+      origin: expect.any(Function),
     });
     expect(app.use).toHaveBeenCalledTimes(1);
 
@@ -178,10 +202,7 @@ describe('main bootstrap', () => {
     };
     const reqArrayBody = {
       ...reqWithBody,
-      body: [
-        { password: 'abc' },
-        { refreshToken: 'def' },
-      ],
+      body: [{ password: 'abc' }, { refreshToken: 'def' }],
       get: () => 'application/json',
     };
     middleware(reqNoBody, res, next);
@@ -197,5 +218,45 @@ describe('main bootstrap', () => {
     expect(incomingLog).toContain('[REDACTED]');
     expect(incomingLog).not.toContain('secret');
     expect(incomingLog).not.toContain('abc123');
+  });
+
+  it('allows LAN origins in development but blocks unknown external origins', async () => {
+    const { app } = await loadMain({
+      corsOrigins: ['http://localhost:3000'],
+      nodeEnv: 'development',
+    });
+
+    const originChecker = app.enableCors.mock.calls[0]?.[0]?.origin as (
+      origin: string | undefined,
+      callback: (error: Error | null, allow?: boolean) => void,
+    ) => void;
+
+    const successCb = jest.fn();
+    originChecker('http://192.168.190.153:3001', successCb);
+    expect(successCb).toHaveBeenCalledWith(null, true);
+
+    const failureCb = jest.fn();
+    originChecker('https://evil.example.com', failureCb);
+    const [error, allow] = failureCb.mock.calls[0] ?? [];
+    expect(error).toBeInstanceOf(Error);
+    expect(allow).toBe(false);
+  });
+
+  it('keeps strict origin list in production', async () => {
+    const { app } = await loadMain({
+      corsOrigins: ['https://app.navegaja.com'],
+      nodeEnv: 'production',
+    });
+
+    const originChecker = app.enableCors.mock.calls[0]?.[0]?.origin as (
+      origin: string | undefined,
+      callback: (error: Error | null, allow?: boolean) => void,
+    ) => void;
+
+    const failureCb = jest.fn();
+    originChecker('http://192.168.190.153:3001', failureCb);
+    const [error, allow] = failureCb.mock.calls[0] ?? [];
+    expect(error).toBeInstanceOf(Error);
+    expect(allow).toBe(false);
   });
 });

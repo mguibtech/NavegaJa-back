@@ -1,11 +1,15 @@
 import {
   Controller,
+  Get,
   Post,
   UseGuards,
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  NotFoundException,
+  Param,
   Query,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -18,8 +22,9 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { memoryStorage, type FileFilterCallback } from 'multer';
+import * as fs from 'fs';
 import * as path from 'path';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { StorageService } from './storage.service';
 
 // Tipos de ficheiro permitidos por categoria
@@ -49,6 +54,26 @@ function matchesAllowedFile(
 @ApiBearerAuth()
 export class UploadController {
   constructor(private storageService: StorageService) {}
+
+  @Get('files/:folder/:filename')
+  @ApiOperation({
+    summary: 'Download autenticado de ficheiro privado',
+    description:
+      'Usado quando UPLOADS_PUBLIC=false. Requer autenticação para aceder aos ficheiros guardados em disco.',
+  })
+  getPrivateFile(
+    @Param('folder') folder: string,
+    @Param('filename') filename: string,
+    @Res() res: Response,
+  ) {
+    const filePath = this.storageService.resolveFilePath(folder, filename);
+
+    if (!fs.existsSync(filePath)) {
+      throw new NotFoundException('Ficheiro não encontrado');
+    }
+
+    res.sendFile(filePath);
+  }
 
   @Post('image')
   @ApiOperation({

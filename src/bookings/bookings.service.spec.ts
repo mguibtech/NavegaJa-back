@@ -1115,9 +1115,18 @@ describe('BookingsService broader coverage', () => {
         },
       });
 
-    const scheduled = await service.getTracking('booking-track-s', 'user-track');
-    const completed = await service.getTracking('booking-track-c', 'user-track');
-    const cancelled = await service.getTracking('booking-track-x', 'user-track');
+    const scheduled = await service.getTracking(
+      'booking-track-s',
+      'user-track',
+    );
+    const completed = await service.getTracking(
+      'booking-track-c',
+      'user-track',
+    );
+    const cancelled = await service.getTracking(
+      'booking-track-x',
+      'user-track',
+    );
 
     expect(scheduled.progress).toBe(0);
     expect(completed.progress).toBe(100);

@@ -157,8 +157,7 @@ export class TripResponseDto extends TripShipmentPolicyDto {
   @ApiProperty({
     example: 'https://cdn.navegaja.com/boats/barco-1-cover.jpg',
     nullable: true,
-    description:
-      'Imagem principal do barco para uso direto nos cards do app.',
+    description: 'Imagem principal do barco para uso direto nos cards do app.',
   })
   boatImageUrl: string | null;
 

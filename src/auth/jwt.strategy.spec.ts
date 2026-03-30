@@ -22,11 +22,8 @@ describe('JwtStrategy', () => {
     );
   });
 
-  it('reads JWT secret from config with fallback value', () => {
-    expect(config.get).toHaveBeenCalledWith(
-      'JWT_ACCESS_SECRET',
-      'navegaja-secret-2026',
-    );
+  it('reads JWT secret from config without fallback secret', () => {
+    expect(config.get).toHaveBeenCalledWith('JWT_ACCESS_SECRET');
   });
 
   it('returns normalized jwt payload for active users', async () => {

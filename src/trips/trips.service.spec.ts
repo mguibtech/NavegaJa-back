@@ -946,10 +946,9 @@ describe('TripsService broader behaviors', () => {
       'trip-6',
       ShipmentStatus.ARRIVED,
     );
-    expect(gamificationService.awardBoatOwnerTripCompleted).toHaveBeenCalledWith(
-      'owner-6',
-      'trip-6',
-    );
+    expect(
+      gamificationService.awardBoatOwnerTripCompleted,
+    ).toHaveBeenCalledWith('owner-6', 'trip-6');
   });
 
   it('updates and retrieves location snapshots by trip status', async () => {
@@ -1201,7 +1200,14 @@ describe('TripsService broader behaviors', () => {
     const { service, tripsRepoQb } = createService();
     tripsRepoQb.getMany.mockResolvedValue([]);
 
-    await service.search('Manaus', 'Parintins', '2030-01-03', 10, 100, 'morning');
+    await service.search(
+      'Manaus',
+      'Parintins',
+      '2030-01-03',
+      10,
+      100,
+      'morning',
+    );
     await service.search(
       'Manaus',
       'Parintins',

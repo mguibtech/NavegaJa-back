@@ -23,6 +23,16 @@ import { MailService } from '../mail/mail.service';
 import { GamificationService } from '../gamification/gamification.service';
 import { JwtPayload } from './jwt-payload';
 
+function getRequiredSecret(config: ConfigService, key: string): string {
+  const value = config.get<string>(key);
+
+  if (!value) {
+    throw new Error(`Environment variable ${key} is required.`);
+  }
+
+  return value;
+}
+
 @Injectable()
 export class AuthService {
   private readonly refreshSecret: string;
@@ -35,10 +45,7 @@ export class AuthService {
     private gamificationService: GamificationService,
     config: ConfigService,
   ) {
-    this.refreshSecret = config.get(
-      'JWT_REFRESH_SECRET',
-      'navegaja-refresh-secret-2026',
-    );
+    this.refreshSecret = getRequiredSecret(config, 'JWT_REFRESH_SECRET');
   }
 
   async register(dto: RegisterDto) {

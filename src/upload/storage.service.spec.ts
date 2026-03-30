@@ -17,11 +17,12 @@ describe('Upload StorageService', () => {
     jest.restoreAllMocks();
   });
 
-  const createConfig = () =>
+  const createConfig = (uploadsPublic = true) =>
     ({
       get: jest.fn((key: string, fallback?: string | number) => {
         if (key === 'APP_URL') return 'https://api.navegaja.local';
         if (key === 'PORT') return 3000;
+        if (key === 'UPLOADS_PUBLIC') return uploadsPublic;
         return fallback;
       }),
     }) as unknown as ConfigService;
@@ -43,7 +44,7 @@ describe('Upload StorageService', () => {
   });
 
   it('uploads file to disk and returns normalized public url', async () => {
-    const service = new StorageService(createConfig());
+    const service = new StorageService(createConfig(true));
     const existsMock = fs.existsSync as jest.Mock;
     const mkdirMock = fs.mkdirSync as jest.Mock;
     const writeMock = fs.writeFileSync as jest.Mock;
@@ -66,6 +67,16 @@ describe('Upload StorageService', () => {
     expect(writeMock).toHaveBeenCalled();
     expect(url).toMatch(
       /^https:\/\/api\.navegaja\.local\/uploads\/shipments\/proofs\/fixed-uuid\.jpg$/,
+    );
+  });
+
+  it('returns authenticated file urls when uploads are private', async () => {
+    const service = new StorageService(createConfig(false));
+
+    const url = service.buildFileUrl('documents', 'fixed-uuid.pdf');
+
+    expect(url).toBe(
+      'https://api.navegaja.local/upload/files/documents/fixed-uuid.pdf',
     );
   });
 });

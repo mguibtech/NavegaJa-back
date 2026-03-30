@@ -261,7 +261,9 @@ describe('SafetyService', () => {
 
   it('lists and removes personal contacts', async () => {
     const { service, personalContactsRepo } = createService();
-    personalContactsRepo.find.mockResolvedValue([{ id: 'pc-1', userId: 'u-1' }]);
+    personalContactsRepo.find.mockResolvedValue([
+      { id: 'pc-1', userId: 'u-1' },
+    ]);
     personalContactsRepo.findOne
       .mockResolvedValueOnce({
         id: 'pc-1',
@@ -349,11 +351,7 @@ describe('SafetyService', () => {
     sosAlertsRepo.findOne.mockResolvedValue(null);
 
     await expect(
-      service.resolveSosAlert(
-        'missing',
-        'admin-1',
-        SosAlertStatus.FALSE_ALARM,
-      ),
+      service.resolveSosAlert('missing', 'admin-1', SosAlertStatus.FALSE_ALARM),
     ).rejects.toBeInstanceOf(NotFoundException);
     await expect(
       service.cancelSosAlert('missing', 'user-1'),

@@ -78,4 +78,26 @@ describe('SeedService', () => {
     expect(ensureReferralCode).toHaveBeenCalledTimes(6);
     expect(assignUniqueReferralCode).not.toHaveBeenCalled();
   });
+
+  it('skips seeding when SEED_ON_BOOT is disabled via config', async () => {
+    const usersRepo = createUsersRepo();
+    const service = new SeedService(
+      usersRepo as unknown as Repository<User>,
+      {
+        get: jest.fn().mockImplementation((key: string, fallback?: boolean) => {
+          if (key === 'SEED_ON_BOOT') {
+            return false;
+          }
+
+          return fallback;
+        }),
+      } as never,
+    );
+
+    await service.onModuleInit();
+
+    expect(usersRepo.findOne).not.toHaveBeenCalled();
+    expect(usersRepo.save).not.toHaveBeenCalled();
+    expect(usersRepo.update).not.toHaveBeenCalled();
+  });
 });

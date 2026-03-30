@@ -33,10 +33,7 @@ export class StorageService implements OnModuleInit {
     filename: string,
   ): string {
     const rootDir = './uploads';
-    const normalizedFolder = folder
-      .replace(/^\/+/, '')
-      .replace(/\\/g, '/')
-      .replace(/\.\./g, '');
+    const normalizedFolder = this.normalizeFolder(folder);
     const targetDir = path.join(rootDir, normalizedFolder);
 
     if (!fs.existsSync(targetDir)) {
@@ -46,14 +43,38 @@ export class StorageService implements OnModuleInit {
     const filepath = path.join(targetDir, filename);
     fs.writeFileSync(filepath, buffer);
 
+    return this.buildFileUrl(normalizedFolder, filename);
+  }
+
+  buildFileUrl(folder: string, filename: string): string {
     const appUrl = this.configService.get<string>(
       'APP_URL',
       `http://localhost:${this.configService.get<number>('PORT', 3000)}`,
     );
-
-    return `${appUrl}/uploads/${normalizedFolder}/${filename}`.replace(
-      /([^:]\/)\/+/g,
-      '$1',
+    const normalizedFolder = this.normalizeFolder(folder);
+    const uploadsPublic = this.configService.get<boolean>(
+      'UPLOADS_PUBLIC',
+      false,
     );
+
+    if (uploadsPublic) {
+      return `${appUrl}/uploads/${normalizedFolder}/${filename}`.replace(
+        /([^:]\/)\/+/g,
+        '$1',
+      );
+    }
+
+    return `${appUrl}/upload/files/${encodeURIComponent(normalizedFolder)}/${encodeURIComponent(filename)}`;
+  }
+
+  resolveFilePath(folder: string, filename: string): string {
+    const normalizedFolder = this.normalizeFolder(folder);
+    const safeFilename = path.basename(filename);
+
+    return path.resolve(path.join('./uploads', normalizedFolder, safeFilename));
+  }
+
+  private normalizeFolder(folder: string): string {
+    return folder.replace(/^\/+/, '').replace(/\\/g, '/').replace(/\.\./g, '');
   }
 }

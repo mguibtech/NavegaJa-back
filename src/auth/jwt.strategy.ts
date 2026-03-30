@@ -7,6 +7,16 @@ import { Repository } from 'typeorm';
 import { User } from '../users/user.entity';
 import { JwtPayload } from './jwt-payload';
 
+function getRequiredSecret(config: ConfigService, key: string): string {
+  const value = config.get<string>(key);
+
+  if (!value) {
+    throw new Error(`Environment variable ${key} is required.`);
+  }
+
+  return value;
+}
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
@@ -17,7 +27,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const options: StrategyOptions = {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: config.get('JWT_ACCESS_SECRET', 'navegaja-secret-2026'),
+      secretOrKey: getRequiredSecret(config, 'JWT_ACCESS_SECRET'),
     };
     super(options);
   }

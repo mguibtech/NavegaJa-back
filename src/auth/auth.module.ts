@@ -10,6 +10,16 @@ import { User } from '../users/user.entity';
 import { MailModule } from '../mail/mail.module';
 import { GamificationModule } from '../gamification/gamification.module';
 
+function getRequiredSecret(config: ConfigService, key: string): string {
+  const value = config.get<string>(key);
+
+  if (!value) {
+    throw new Error(`Environment variable ${key} is required.`);
+  }
+
+  return value;
+}
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([User]),
@@ -19,7 +29,7 @@ import { GamificationModule } from '../gamification/gamification.module';
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get('JWT_ACCESS_SECRET', 'navegaja-secret-2026'),
+        secret: getRequiredSecret(config, 'JWT_ACCESS_SECRET'),
         signOptions: { expiresIn: '15m' },
       }),
     }),

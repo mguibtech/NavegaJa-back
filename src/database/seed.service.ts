@@ -1,4 +1,5 @@
-import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
@@ -12,10 +13,28 @@ import {
 export class SeedService implements OnModuleInit {
   private readonly logger = new Logger('SeedService');
 
-  constructor(@InjectRepository(User) private usersRepo: Repository<User>) {}
+  constructor(
+    @InjectRepository(User) private usersRepo: Repository<User>,
+    @Optional() private configService?: ConfigService,
+  ) {}
 
   async onModuleInit() {
+    if (!this.shouldSeedOnBoot()) {
+      this.logger.log(
+        'Seed on boot desativado. Defina SEED_ON_BOOT=true apenas em ambientes controlados.',
+      );
+      return;
+    }
+
     await this.seedAdmins();
+  }
+
+  private shouldSeedOnBoot(): boolean {
+    if (!this.configService) {
+      return true;
+    }
+
+    return this.configService.get<boolean>('SEED_ON_BOOT', false);
   }
 
   private async seedAdmins() {

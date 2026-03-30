@@ -25,17 +25,26 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
+  const nodeEnv = configService.get<string>('NODE_ENV', 'development');
   const port = configService.get<number>('PORT', 3000);
   const corsOrigins = configService.get<string[]>('CORS_ORIGINS', [
     'http://localhost:3000',
     'http://localhost:3001',
   ]);
+  const swaggerEnabled = configService.get<boolean>('SWAGGER_ENABLED', false);
+  const uploadsPublic = configService.get<boolean>('UPLOADS_PUBLIC', false);
+  const isDevelopment = nodeEnv !== 'production';
+  const isWildcardCors = corsOrigins.includes('*');
 
   app.enableCors({
-    origin: corsOrigins.includes('*') ? true : corsOrigins,
+    origin: isWildcardCors
+      ? true
+      : buildCorsOriginChecker(corsOrigins, isDevelopment),
   });
 
-  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
+  if (uploadsPublic) {
+    app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
+  }
 
   if (configService.get<boolean>('HTTP_LOGGING', false)) {
     app.use((req: Request, res: Response, next: NextFunction) => {
@@ -69,18 +78,22 @@ async function bootstrap() {
     }),
   );
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('NavegaJa API')
-    .setDescription('API do NavegaJa - Transporte Fluvial sob Demanda')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document);
+  if (swaggerEnabled) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('NavegaJa API')
+      .setDescription('API do NavegaJa - Transporte Fluvial sob Demanda')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   await app.listen(port);
   logger.log(`NavegaJa API running at http://localhost:${port}`);
-  logger.log(`Swagger docs available at http://localhost:${port}/api/docs`);
+  if (swaggerEnabled) {
+    logger.log(`Swagger docs available at http://localhost:${port}/api/docs`);
+  }
 }
 void bootstrap();
 
@@ -121,4 +134,58 @@ function sanitizeForLogging(value: unknown): unknown {
   }
 
   return value;
+}
+
+type CorsCallback = (error: Error | null, allow?: boolean) => void;
+
+function buildCorsOriginChecker(
+  configuredOrigins: string[],
+  allowPrivateNetworkOrigins: boolean,
+): (origin: string | undefined, callback: CorsCallback) => void {
+  const allowedOrigins = new Set(configuredOrigins);
+
+  return (origin, callback) => {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+
+    if (allowedOrigins.has(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    if (allowPrivateNetworkOrigins && isPrivateNetworkOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`Origin ${origin} is not allowed by CORS`), false);
+  };
+}
+
+function isPrivateNetworkOrigin(origin: string): boolean {
+  let url: URL;
+
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    return false;
+  }
+
+  const host = url.hostname.toLowerCase();
+
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return true;
+  }
+
+  return (
+    /^10\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(host) ||
+    /^192\.168\.(\d{1,3})\.(\d{1,3})$/.test(host) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.(\d{1,3})\.(\d{1,3})$/.test(host)
+  );
 }

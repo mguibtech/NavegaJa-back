@@ -1,15 +1,17 @@
 import {
-  Controller,
-  Post,
-  Get,
-  Patch,
-  Param,
-  Body,
   BadRequestException,
-  UseGuards,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Patch,
+  Post,
   Request,
-  UseInterceptors,
+  ServiceUnavailableException,
   UploadedFiles,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -182,13 +184,9 @@ export class ShipmentsController {
     @Body() dto: CreateShipmentDto,
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
-    const baseUrl =
-      this.configService.get<string>('BASE_URL') ||
-      this.configService.get<string>('APP_URL', 'http://localhost:3000');
-
     // Converter arquivos recebidos em URLs públicas
-    const uploadedPhotoUrls = (files || []).map(
-      (f) => `${baseUrl}/uploads/shipments/${f.filename}`,
+    const uploadedPhotoUrls = (files || []).map((file) =>
+      this.storageService.buildFileUrl('shipments', file.filename),
     );
 
     // Normalizar dados (aceitar tanto JSON quanto FormData)
@@ -261,7 +259,11 @@ export class ShipmentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Timeline de eventos da encomenda' })
-  async getTimeline(@Param('id') id: string) {
+  async getTimeline(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    await this.shipmentsService.findById(id, req.user.sub);
     const timeline = await this.shipmentsService.getTimeline(id);
 
     // Adicionar campo 'timestamp' como alias para 'createdAt' (compatibilidade frontend)
@@ -313,7 +315,13 @@ export class ShipmentsController {
     const expectedSecret = this.configService.get<string>(
       'PAYMENT_WEBHOOK_SECRET',
     );
-    if (expectedSecret && secret !== expectedSecret) {
+    if (!expectedSecret) {
+      throw new ServiceUnavailableException(
+        'PAYMENT_WEBHOOK_SECRET não configurado',
+      );
+    }
+
+    if (secret !== expectedSecret) {
       return { received: false, error: 'Unauthorized' };
     }
 
@@ -326,7 +334,7 @@ export class ShipmentsController {
 
   @Post(':id/collect')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('captain', 'boat_manager')
+  @Roles('captain')
   @ApiBearerAuth()
   @ApiOperation({
     summary:
@@ -354,7 +362,7 @@ export class ShipmentsController {
 
   @Post(':id/out-for-delivery')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('captain', 'boat_manager')
+  @Roles('captain')
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Marcar como saiu para entrega (captain ou boat_manager)',
@@ -403,9 +411,9 @@ export class ShipmentsController {
 
   @Patch(':id/status')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('captain', 'boat_manager')
+  @Roles('captain')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Atualizar status (captain ou boat_manager)' })
+  @ApiOperation({ summary: 'Atualizar status (captain da viagem)' })
   updateStatus(
     @Param('id') id: string,
     @Body('status') status: ShipmentStatus,
@@ -416,16 +424,15 @@ export class ShipmentsController {
 
   @Patch(':id/deliver')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('captain', 'boat_manager')
+  @Roles('captain')
   @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Confirmar entrega + foto (captain ou boat_manager)',
-  })
+  @ApiOperation({ summary: 'Confirmar entrega + foto (captain da viagem)' })
   deliver(
     @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
     @Body('deliveryPhotoUrl') photoUrl?: string,
   ) {
-    return this.shipmentsService.deliver(id, photoUrl);
+    return this.shipmentsService.deliver(id, photoUrl, req.user.sub);
   }
 
   // ========== REVIEWS ==========
@@ -438,7 +445,16 @@ export class ShipmentsController {
     @Request() req: AuthenticatedRequest,
     @Body() dto: CreateShipmentReviewDto,
   ) {
-    const shipment = await this.shipmentsService.findById(dto.shipmentId);
+    const shipment = await this.shipmentsService.findById(
+      dto.shipmentId,
+      req.user.sub,
+    );
+
+    if (shipment.senderId !== req.user.sub) {
+      throw new ForbiddenException(
+        'Apenas o remetente pode avaliar esta encomenda',
+      );
+    }
 
     // Verifica se a encomenda foi entregue
     if (shipment.status !== ShipmentStatus.DELIVERED) {
@@ -465,7 +481,12 @@ export class ShipmentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Buscar avaliação da encomenda' })
-  getReview(@Param('id') id: string) {
+  async getReview(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    await this.shipmentsService.findById(id, req.user.sub);
+
     return this.reviewsRepo.findOne({
       where: { shipmentId: id },
       relations: ['sender'],

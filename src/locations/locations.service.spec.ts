@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
 import axios from 'axios';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { LocationsService } from './locations.service';

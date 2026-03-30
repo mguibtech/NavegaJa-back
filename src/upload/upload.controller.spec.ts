@@ -19,13 +19,15 @@ describe('UploadController', () => {
   });
 
   it('uploadImage throws when file is missing', async () => {
-    await expect(controller.uploadImage(undefined as never)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      controller.uploadImage(undefined as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('uploadImage uploads using default folder and returns serialized payload', async () => {
-    storageService.upload.mockResolvedValue('https://cdn.example.com/a/image.jpg');
+    storageService.upload.mockResolvedValue(
+      'https://cdn.example.com/a/image.jpg',
+    );
     const file = createFile({
       originalname: 'image.jpg',
       mimetype: 'image/jpeg',
@@ -52,7 +54,9 @@ describe('UploadController', () => {
   });
 
   it('uploadDocument uploads using custom folder and includes mimeType', async () => {
-    storageService.upload.mockResolvedValue('https://cdn.example.com/documents/a.pdf');
+    storageService.upload.mockResolvedValue(
+      'https://cdn.example.com/documents/a.pdf',
+    );
     const file = createFile({
       originalname: 'a.pdf',
       mimetype: 'application/pdf',
@@ -74,13 +78,15 @@ describe('UploadController', () => {
   });
 
   it('uploadVideo throws when file is missing', async () => {
-    await expect(controller.uploadVideo(undefined as never)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      controller.uploadVideo(undefined as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('uploadVideo uploads using default folder', async () => {
-    storageService.upload.mockResolvedValue('https://cdn.example.com/videos/clip.mp4');
+    storageService.upload.mockResolvedValue(
+      'https://cdn.example.com/videos/clip.mp4',
+    );
     const file = createFile({
       originalname: 'clip.mp4',
       mimetype: 'video/mp4',

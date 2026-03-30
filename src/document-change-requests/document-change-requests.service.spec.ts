@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { ConflictException } from '@nestjs/common';
 import type { Repository } from 'typeorm';
 import { DocumentChangeRequestsService } from './document-change-requests.service';

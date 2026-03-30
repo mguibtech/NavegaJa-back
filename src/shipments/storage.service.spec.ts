@@ -11,18 +11,19 @@ jest.mock('uuid', () => ({
 }));
 
 describe('Shipments StorageService', () => {
-  const createConfig = () =>
+  const createConfig = (uploadsPublic = true) =>
     ({
       get: jest.fn((key: string, fallback?: string | number) => {
         if (key === 'BASE_URL') return 'https://api.navegaja.local';
         if (key === 'AWS_S3_BUCKET') return 'bucket-test';
         if (key === 'AWS_REGION') return 'us-east-1';
+        if (key === 'UPLOADS_PUBLIC') return uploadsPublic;
         return fallback;
       }),
     }) as unknown as ConfigService;
 
   it('generates local fallback upload urls when S3 is disabled', async () => {
-    const service = new StorageService(createConfig());
+    const service = new StorageService(createConfig(true));
 
     const urls = await service.generatePresignedUrls(2);
 
@@ -34,6 +35,14 @@ describe('Shipments StorageService', () => {
       'https://api.navegaja.local/uploads/shipments/',
     );
     expect(service.isS3Enabled()).toBe(false);
+  });
+
+  it('builds authenticated urls when local uploads are private', () => {
+    const service = new StorageService(createConfig(false));
+
+    expect(service.buildFileUrl('shipments', 'fixed-uuid.jpg')).toBe(
+      'https://api.navegaja.local/upload/files/shipments/fixed-uuid.jpg',
+    );
   });
 
   it('generates S3 presigned urls when S3 is enabled at runtime', async () => {

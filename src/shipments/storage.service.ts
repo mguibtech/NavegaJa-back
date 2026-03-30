@@ -53,7 +53,8 @@ export class StorageService {
     const urls: PresignedUrlDto[] = [];
 
     for (let i = 0; i < count; i++) {
-      const key = `shipments/${new Date().getFullYear()}/${uuidv4()}.jpg`;
+      const key = `shipments/${uuidv4()}.jpg`;
+      const filename = key.split('/').pop() as string;
 
       if (this.useS3 && this.s3Client) {
         // Gera presigned URL real do S3
@@ -74,7 +75,7 @@ export class StorageService {
         const baseUrl =
           this.configService.get<string>('BASE_URL') || 'http://localhost:3000';
         const uploadUrl = `${baseUrl}/shipments/upload/${key}`;
-        const publicUrl = `${baseUrl}/uploads/${key}`;
+        const publicUrl = this.buildFileUrl('shipments', filename);
 
         urls.push({ uploadUrl, publicUrl, key });
       }
@@ -88,5 +89,22 @@ export class StorageService {
    */
   isS3Enabled(): boolean {
     return this.useS3;
+  }
+
+  buildFileUrl(folder: string, filename: string): string {
+    const baseUrl =
+      this.configService.get<string>('BASE_URL') ||
+      this.configService.get<string>('APP_URL') ||
+      'http://localhost:3000';
+    const uploadsPublic = this.configService.get<boolean>(
+      'UPLOADS_PUBLIC',
+      false,
+    );
+
+    if (uploadsPublic) {
+      return `${baseUrl}/uploads/${folder}/${filename}`;
+    }
+
+    return `${baseUrl}/upload/files/${encodeURIComponent(folder)}/${encodeURIComponent(filename)}`;
   }
 }
