@@ -1,8 +1,10 @@
 [phases.install]
-cmds = ["npm ci"]
+# --include=dev garante @nestjs/cli e typescript mesmo com NODE_ENV=production
+cmds = ["npm ci --include=dev"]
 
 [phases.build]
-cmds = ["npm run build"]
+# ls -la dist falha o build cedo (e com log claro) se o nest build nao gerar saida
+cmds = ["npm run build", "ls -la dist"]
 
 [start]
 cmd = "node dist/main"
