@@ -16,12 +16,31 @@ import { ensureReferralCode } from '../users/referral-code.util';
 import {
   RegisterDto,
   LoginDto,
+  LoginWithOtpDto,
   ForgotPasswordDto,
   ResetPasswordDto,
 } from './dto/auth.dto';
 import { MailService } from '../mail/mail.service';
 import { GamificationService } from '../gamification/gamification.service';
+import { FirebaseAdminService } from '../firebase/firebase-admin.service';
 import { JwtPayload } from './jwt-payload';
+
+/**
+ * O Firebase devolve o telefone em E.164 (+5592991234567), mas a coluna
+ * users.phone guarda só dígitos com DDD (92991234567), porque é o que o app
+ * envia depois do unformatPhone. Sem esta normalização o login por OTP nunca
+ * encontra o utilizador, mesmo com o telefone certo.
+ */
+export function normalizeBrazilianPhone(value: string): string {
+  const digits = value.replace(/\D/g, '');
+
+  // E.164 brasileiro tem 12 ou 13 dígitos: 55 + DDD (2) + número (8 ou 9).
+  if (digits.length > 11 && digits.startsWith('55')) {
+    return digits.slice(2);
+  }
+
+  return digits;
+}
 
 function getRequiredSecret(config: ConfigService, key: string): string {
   const value = config.get<string>(key);
@@ -36,6 +55,7 @@ function getRequiredSecret(config: ConfigService, key: string): string {
 @Injectable()
 export class AuthService {
   private readonly refreshSecret: string;
+  private readonly otpLoginEnabled: boolean;
 
   constructor(
     @InjectRepository(User)
@@ -43,9 +63,11 @@ export class AuthService {
     private jwtService: JwtService,
     private mailService: MailService,
     private gamificationService: GamificationService,
+    private firebaseAdmin: FirebaseAdminService,
     config: ConfigService,
   ) {
     this.refreshSecret = getRequiredSecret(config, 'JWT_REFRESH_SECRET');
+    this.otpLoginEnabled = config.get<boolean>('FEATURE_OTP_LOGIN') === true;
   }
 
   async register(dto: RegisterDto) {
@@ -111,6 +133,66 @@ export class AuthService {
 
     await ensureReferralCode(this.usersRepo, user);
     const tokens = this.generateTokens(user);
+    return {
+      user: this.sanitizeUser(user),
+      ...tokens,
+    };
+  }
+
+  /**
+   * Login por OTP (SMS) — App Mobile.
+   *
+   * O app faz a verificação do código com o Firebase e manda só o ID token
+   * resultante. Aqui confirmamos o token, extraímos o telefone que o Firebase
+   * já verificou e devolvemos exatamente os mesmos tokens do login por senha,
+   * para que nada no resto da API precise saber que existe um segundo caminho
+   * de entrada.
+   *
+   * Não substitui o login por senha: quem está sem sinal de SMS continua a
+   * entrar pelo fluxo antigo.
+   */
+  async loginWithPhoneOtp(dto: LoginWithOtpDto) {
+    // Desligado por padrão. Responde 404 em vez de 403 para que o endpoint não
+    // se anuncie quando o flag está fora: para quem sonda a API, ele não existe.
+    if (!this.otpLoginEnabled) {
+      throw new NotFoundException('Cannot POST /auth/login-otp');
+    }
+
+    const decoded = await this.firebaseAdmin.verifyIdToken(dto.idToken);
+
+    if (!decoded) {
+      throw new UnauthorizedException('Código de verificação inválido ou expirado');
+    }
+
+    // Só aceitamos token cuja identidade veio mesmo do fluxo de telefone.
+    // Hoje o provedor de telefone é o único ativo no projeto, mas se amanhã
+    // alguém ligar Google ou Apple no console, este guard evita que um token
+    // de outro provedor vire login de telefone sem ninguém reparar.
+    if (decoded.firebase?.sign_in_provider !== 'phone') {
+      throw new UnauthorizedException('Token não corresponde a uma verificação por SMS');
+    }
+
+    if (!decoded.phone_number) {
+      throw new UnauthorizedException('Token sem telefone verificado');
+    }
+
+    const phone = normalizeBrazilianPhone(decoded.phone_number);
+    const user = await this.usersRepo.findOne({ where: { phone } });
+
+    if (!user) {
+      // O telefone está verificado, mas o cadastro exige nome, CPF e cidade —
+      // dados que o Firebase não tem. O app usa este erro para levar a pessoa
+      // ao cadastro já com o número preenchido.
+      throw new NotFoundException({
+        message: 'Nenhuma conta encontrada para este telefone',
+        code: 'PHONE_NOT_REGISTERED',
+        phone,
+      });
+    }
+
+    await ensureReferralCode(this.usersRepo, user);
+    const tokens = this.generateTokens(user);
+
     return {
       user: this.sanitizeUser(user),
       ...tokens,

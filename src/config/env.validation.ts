@@ -44,6 +44,14 @@ export function validateEnv(config: EnvConfig): EnvConfig {
     'HTTP_LOGGING',
   );
   env.SEED_ON_BOOT = readBoolean(env.SEED_ON_BOOT, false, 'SEED_ON_BOOT');
+  // Login por OTP (SMS) fica atrás de flag: o padrão continua sendo telefone +
+  // senha no app e e-mail + senha no dashboard. Ligar só nos ambientes onde se
+  // quer exercitar o fluxo, porque cada tentativa consome cota de SMS.
+  env.FEATURE_OTP_LOGIN = readBoolean(
+    env.FEATURE_OTP_LOGIN,
+    false,
+    'FEATURE_OTP_LOGIN',
+  );
   env.SWAGGER_ENABLED = readBoolean(
     env.SWAGGER_ENABLED,
     nodeEnv !== 'production',

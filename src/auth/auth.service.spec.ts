@@ -12,6 +12,7 @@ import { AuthService } from './auth.service';
 import { KycStatus, type User, UserRole } from '../users/user.entity';
 import type { MailService } from '../mail/mail.service';
 import type { GamificationService } from '../gamification/gamification.service';
+import type { FirebaseAdminService } from '../firebase/firebase-admin.service';
 
 describe('AuthService', () => {
   let usersRepo: {
@@ -30,6 +31,9 @@ describe('AuthService', () => {
   };
   let gamificationService: {
     processReferral: jest.Mock;
+  };
+  let firebaseAdmin: {
+    verifyIdToken: jest.Mock;
   };
   let service: AuthService;
 
@@ -54,12 +58,16 @@ describe('AuthService', () => {
     gamificationService = {
       processReferral: jest.fn().mockResolvedValue(undefined),
     };
+    firebaseAdmin = {
+      verifyIdToken: jest.fn(),
+    };
 
     service = new AuthService(
       usersRepo as unknown as Repository<User>,
       jwtService as unknown as JwtService,
       mailService as unknown as MailService,
       gamificationService as unknown as GamificationService,
+      firebaseAdmin as unknown as FirebaseAdminService,
       {
         get: jest.fn((key: string, fallback?: string) => {
           if (key === 'JWT_REFRESH_SECRET') {
@@ -287,6 +295,99 @@ describe('AuthService', () => {
         newPassword: 'new-password',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  describe('loginWithPhoneOtp', () => {
+    /** Reconstrói o serviço com o flag ligado, sem tocar nos outros testes. */
+    function enableOtp() {
+      service = new AuthService(
+        usersRepo as unknown as Repository<User>,
+        jwtService as unknown as JwtService,
+        mailService as unknown as MailService,
+        gamificationService as unknown as GamificationService,
+        firebaseAdmin as unknown as FirebaseAdminService,
+        {
+          get: jest.fn((key: string, fallback?: string) => {
+            if (key === 'JWT_REFRESH_SECRET') return 'refresh-secret';
+            if (key === 'FEATURE_OTP_LOGIN') return true;
+            return fallback;
+          }),
+        } as unknown as ConfigService,
+      );
+    }
+
+    function phoneToken(phoneNumber: string) {
+      return {
+        phone_number: phoneNumber,
+        firebase: { sign_in_provider: 'phone' },
+      };
+    }
+
+    it('behaves as if the route does not exist while the flag is off', async () => {
+      await expect(
+        service.loginWithPhoneOtp({ idToken: 'any-token' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      // Não deve nem chegar a verificar o token: o flag corta antes.
+      expect(firebaseAdmin.verifyIdToken).not.toHaveBeenCalled();
+    });
+
+    it('matches the E.164 phone from Firebase against the digits stored in the database', async () => {
+      enableOtp();
+      const user = makeUser({ phone: '92991234567', referralCode: 'NVJ-OTP' });
+      firebaseAdmin.verifyIdToken.mockResolvedValue(
+        phoneToken('+5592991234567'),
+      );
+      usersRepo.findOne.mockResolvedValue(user);
+
+      const result = await service.loginWithPhoneOtp({ idToken: 'valid' });
+
+      expect(usersRepo.findOne).toHaveBeenCalledWith({
+        where: { phone: '92991234567' },
+      });
+      expect(result.accessToken).toBe('access-token');
+      expect(result.refreshToken).toBe('refresh-token');
+      expect(result.user).not.toHaveProperty('passwordHash');
+    });
+
+    it('rejects an invalid or expired token', async () => {
+      enableOtp();
+      firebaseAdmin.verifyIdToken.mockResolvedValue(null);
+
+      await expect(
+        service.loginWithPhoneOtp({ idToken: 'expired' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('rejects a token that did not come from the phone provider', async () => {
+      enableOtp();
+      firebaseAdmin.verifyIdToken.mockResolvedValue({
+        phone_number: '+5592991234567',
+        firebase: { sign_in_provider: 'google.com' },
+      });
+
+      await expect(
+        service.loginWithPhoneOtp({ idToken: 'google-token' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(usersRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('tells the app to send the user to registration when the phone has no account', async () => {
+      enableOtp();
+      firebaseAdmin.verifyIdToken.mockResolvedValue(
+        phoneToken('+5592988887777'),
+      );
+      usersRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.loginWithPhoneOtp({ idToken: 'valid' }),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'PHONE_NOT_REGISTERED',
+          phone: '92988887777',
+        },
+      });
+    });
   });
 });
 

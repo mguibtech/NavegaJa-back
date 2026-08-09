@@ -12,6 +12,7 @@ import { AuthService } from './auth.service';
 import {
   RegisterDto,
   LoginDto,
+  LoginWithOtpDto,
   LoginWebDto,
   RefreshTokenDto,
   ForgotPasswordDto,
@@ -36,6 +37,17 @@ export class AuthController {
   @ApiOperation({ summary: 'Login com telefone e senha (App Mobile)' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Post('login-otp')
+  @Throttle({ strict: { limit: 5, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Login com código SMS (App Mobile)',
+    description:
+      'Recebe o ID token do Firebase gerado após a confirmação do código SMS e devolve os mesmos tokens do login por senha. Responde 404 com code PHONE_NOT_REGISTERED quando o telefone verificado ainda não tem cadastro.',
+  })
+  loginWithOtp(@Body() dto: LoginWithOtpDto) {
+    return this.authService.loginWithPhoneOtp(dto);
   }
 
   @Post('login-web')

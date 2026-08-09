@@ -9,6 +9,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { User } from '../users/user.entity';
 import { MailModule } from '../mail/mail.module';
 import { GamificationModule } from '../gamification/gamification.module';
+import { FirebaseModule } from '../firebase/firebase.module';
 
 function getRequiredSecret(config: ConfigService, key: string): string {
   const value = config.get<string>(key);
@@ -26,6 +27,7 @@ function getRequiredSecret(config: ConfigService, key: string): string {
     PassportModule,
     MailModule,
     GamificationModule,
+    FirebaseModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

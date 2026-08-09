@@ -2,6 +2,7 @@ import {
   IsString,
   IsNotEmpty,
   MinLength,
+  MaxLength,
   IsOptional,
   IsEmail,
   Length,
@@ -42,6 +43,10 @@ export class RegisterDto {
   @ApiProperty({ example: 'Manaus' })
   @IsString({ message: 'A cidade deve ser um texto' })
   @IsNotEmpty({ message: 'A cidade é obrigatória' })
+  // Texto livre por desenho: quem mora em comunidade ribeirinha digita a
+  // localidade. O limite acompanha a coluna users.city (varchar(100)) para
+  // devolver 400 em vez de estourar no banco.
+  @MaxLength(100, { message: 'A cidade deve ter no máximo 100 caracteres' })
   city: string;
 
   @ApiProperty({ example: 'AM', required: false })
@@ -71,6 +76,17 @@ export class LoginDto {
   @IsString({ message: 'A senha deve ser um texto' })
   @IsNotEmpty({ message: 'A senha é obrigatória' })
   password: string;
+}
+
+export class LoginWithOtpDto {
+  @ApiProperty({
+    example: 'eyJhbGciOiJSUzI1NiIs...',
+    description:
+      'ID token devolvido pelo Firebase Authentication após o utilizador confirmar o código SMS no app. O telefone verificado é lido do token — o cliente não envia o número.',
+  })
+  @IsString({ message: 'O token deve ser um texto' })
+  @IsNotEmpty({ message: 'O ID token é obrigatório' })
+  idToken: string;
 }
 
 export class LoginWebDto {
