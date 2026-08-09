@@ -20,6 +20,7 @@ import { Public } from '../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { LocationsService } from './locations.service';
 import { SuggestLocationDto } from './dto/suggest-location.dto';
+import { ReverseGeocodeResponseDto } from './dto/reverse-geocode-response.dto';
 
 @ApiTags('Locations')
 @Controller('locations')
@@ -124,18 +125,7 @@ export class LocationsController {
   @ApiResponse({
     status: 200,
     description: 'Endereço encontrado ou fallback com coordenadas',
-    schema: {
-      example: {
-        display: 'Porto da Ceasa, São Raimundo, Manaus, Amazonas, Brasil',
-        road: 'Porto da Ceasa',
-        district: 'São Raimundo',
-        city: 'Manaus',
-        state: 'Amazonas',
-        country: 'Brasil',
-        latitude: -3.119,
-        longitude: -60.0217,
-      },
-    },
+    type: ReverseGeocodeResponseDto,
   })
   reverseGeocode(@Query('lat') lat: string, @Query('lng') lng: string) {
     return this.service.reverseGeocode(parseFloat(lat), parseFloat(lng));

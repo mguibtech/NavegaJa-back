@@ -16,6 +16,8 @@ import {
   CommunityLocationStatus,
 } from './community-location.entity';
 import { SuggestLocationDto } from './dto/suggest-location.dto';
+import { ReverseGeocodeResponseDto } from './dto/reverse-geocode-response.dto';
+import { LocationSuggestionResponseDto } from './dto/location-suggestion-response.dto';
 import { AMAZON_CITY_SUGGESTIONS } from '../trips/city-coords';
 import { normalizeLocationText } from './location-text';
 
@@ -73,16 +75,12 @@ interface NominatimReverseResponse {
   address?: NominatimAddress;
 }
 
-export interface ReverseGeocodeDto {
-  display: string;
-  road: string | null;
-  district: string | null;
-  city: string | null;
-  state: string | null;
-  country: string;
-  latitude: number;
-  longitude: number;
-}
+/**
+ * O formato agora é declarado em dto/reverse-geocode-response.dto.ts, como
+ * classe com @ApiProperty, para que saia no schema do OpenAPI e possa gerar o
+ * tipo do lado do app. Este alias mantém o nome que o service já usava.
+ */
+export type ReverseGeocodeDto = ReverseGeocodeResponseDto;
 
 /** Raio em km para considerar duas sugestões como o mesmo ponto */
 const DEDUP_RADIUS_KM = 2;
@@ -115,13 +113,11 @@ function distanceKm(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-export interface LocationSuggestion {
-  name: string;
-  lat: number;
-  lng: number;
-  municipio: string | null;
-  source: 'lookup' | 'community';
-}
+/**
+ * Declarado em dto/location-suggestion-response.dto.ts pelo mesmo motivo do
+ * reverse-geocode: o contrato precisa sair no schema do OpenAPI.
+ */
+export type LocationSuggestion = LocationSuggestionResponseDto;
 
 type RankedLocationSuggestion = LocationSuggestion & {
   normalizedName: string;

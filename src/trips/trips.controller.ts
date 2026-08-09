@@ -22,9 +22,11 @@ import {
   ApiQuery,
   ApiParam,
   ApiOkResponse,
+  ApiResponse,
 } from '@nestjs/swagger';
 import { TripsService } from './trips.service';
 import { LocationsService } from '../locations/locations.service';
+import { LocationSuggestionResponseDto } from '../locations/dto/location-suggestion-response.dto';
 import {
   CreateTripDto,
   UpdateTripStatusDto,
@@ -141,6 +143,12 @@ export class TripsController {
     description: 'Latitude atual (ordena por proximidade)',
   })
   @ApiQuery({ name: 'lng', required: false, description: 'Longitude atual' })
+  @ApiResponse({
+    status: 200,
+    description: 'Localidades que casam com a busca',
+    type: LocationSuggestionResponseDto,
+    isArray: true,
+  })
   geocodeLocations(
     @Query('q') q: string,
     @Query('lat') lat?: string,
