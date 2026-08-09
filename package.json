@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
-    "openapi": "nest build && node dist/scripts/generate-openapi.js",
+    "openapi": "ts-node --transpile-only -r tsconfig-paths/register scripts/generate-openapi.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
