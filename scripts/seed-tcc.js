@@ -129,6 +129,16 @@ const EMBARCACOES = [
     comodidades: ['Ar-condicionado', 'Poltrona reclinável', 'Banheiro', 'TV'] },
   { nome: 'Voadeira Boto Cor-de-Rosa', tipo: 'voadeira', capacidade: 12, ano: 2022, registro: 'AM-6530-2022', capitao: 2,
     comodidades: ['Colete salva-vidas', 'Cobertura'] },
+
+  // Fica de fora da geracao de viagens (agendaLivre) e pertence ao capitao de
+  // teste. Sem ela, criar viagem e impossivel: o seed enche as duas
+  // embarcacoes do Raimundo com saidas as 11h e 18h por 45 dias, e a validacao
+  // de conflito -- corretamente -- recusa qualquer horario novo. O teste
+  // automatizado ficava trocando de barco e de data ate estourar o tempo,
+  // parecendo bug de codigo quando era o calendario que nao tinha brecha.
+  { nome: 'Curumim do Solimões', tipo: 'recreio', capacidade: 60, ano: 2021, registro: 'AM-4312-2021', capitao: 0,
+    agendaLivre: true,
+    comodidades: ['Rede', 'Banheiro', 'Lanchonete'] },
 ];
 
 const CONTAS_TESTE = [
@@ -146,7 +156,27 @@ async function main() {
     await c.query('BEGIN');
 
     // Sempre limpa o que este script criou antes (idempotencia)
-    const del = await c.query(`DELETE FROM trips WHERE notes LIKE $1`, [`%${MARCADOR}%`]);
+    //
+    // As reservas vem primeiro, e por dois motivos. O tecnico: elas apontam
+    // para as viagens por FK, entao o DELETE abaixo falharia com elas vivas.
+    // O que de fato doi: a regra "uma reserva ativa por passageiro por viagem"
+    // faz a bateria de testes automatizados passar na primeira rodada e falhar
+    // em todas as seguintes -- a reserva que a rodada anterior deixou para tras
+    // bloqueia a nova, e o sintoma aparece como "ja existe uma reserva ativa
+    // para essa viagem" num teste que nao mudou nada.
+    const alvo = [`%${MARCADOR}%`];
+    const viagensSeed = `SELECT id FROM trips WHERE notes LIKE $1`;
+
+    const delChat = await c.query(
+      `DELETE FROM chat_messages WHERE booking_id IN
+         (SELECT id FROM bookings WHERE trip_id IN (${viagensSeed}))`, alvo);
+    if (delChat.rowCount) console.log(`Removidas ${delChat.rowCount} mensagens de chat.`);
+
+    const delRes = await c.query(
+      `DELETE FROM bookings WHERE trip_id IN (${viagensSeed})`, alvo);
+    if (delRes.rowCount) console.log(`Removidas ${delRes.rowCount} reservas de rodadas anteriores.`);
+
+    const del = await c.query(`DELETE FROM trips WHERE notes LIKE $1`, alvo);
     if (del.rowCount) console.log(`Removidas ${del.rowCount} viagens de seeds anteriores.`);
 
     if (LIMPAR) {
@@ -253,7 +283,11 @@ async function main() {
         );
         id = ins.rows[0].id;
       }
-      barcosPorTipo[b.tipo].push({ id, dono, capacidade: b.capacidade, nome: b.nome });
+      // agendaLivre entra no banco como embarcacao normal, mas fica fora do
+      // sorteio de viagens — e o unico barco com horario vago o tempo todo.
+      if (!b.agendaLivre) {
+        barcosPorTipo[b.tipo].push({ id, dono, capacidade: b.capacidade, nome: b.nome });
+      }
     }
     console.log(`Embarcacoes: ${EMBARCACOES.length} (todas verificadas).`);
 
@@ -326,8 +360,18 @@ async function main() {
       const p = proxima.rows[0];
       console.log(`\nProxima viagem: ${p.origin} -> ${p.destination} em ${new Date(p.departure_at).toLocaleString('pt-BR')}`);
     }
+    const livres = EMBARCACOES.filter((b) => b.agendaLivre).map((b) => b.nome);
+    if (livres.length) {
+      console.log(`\nPara criar viagem no teste, use: ${livres.join(', ')}`);
+      console.log('  (as demais embarcacoes tem agenda cheia e o conflito de');
+      console.log('   horario recusa qualquer criacao — isso e proposital)');
+    }
+
     console.log('\nSugestao de busca no teste: Manaus -> Parintins (sai em dias impares)');
     console.log('                            Manaus -> Manacapuru (sai todo dia)\n');
+    console.log('Rode este script ANTES de cada rodada de testes automatizados:');
+    console.log('ele limpa as reservas da rodada anterior, que senao bloqueiam');
+    console.log('as novas com "ja existe uma reserva ativa para essa viagem".\n');
   } catch (e) {
     await c.query('ROLLBACK');
     console.error('\nERRO — nada foi gravado:\n', e.message);
